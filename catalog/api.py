@@ -164,3 +164,19 @@ def register_routes(app: FastAPI):
         vec = search.embed_image(open(body.image_path, 'rb').read())
         return {'hits': search.query(app.state.conn, vec,
                                      top_k=body.top_k, exclude=body.exclude_ids)}
+
+    # ---- 报价单 ----
+    class QuoteIn(BaseModel):
+        category: str
+        product_ids: list[str]
+
+    @app.post('/quote')
+    def do_quote(body: QuoteIn, request: Request):
+        _auth(request, app.state.token)
+        import uuid
+        from . import quote as quote_mod
+        out_dir = os.path.join(app.state.storage.base, '_quotes')
+        os.makedirs(out_dir, exist_ok=True)
+        out = os.path.join(out_dir, f'quote-{uuid.uuid4().hex[:8]}.xlsx')
+        return {'path': quote_mod.generate(app.state.conn, app.state.storage,
+                                           body.category, body.product_ids, out)}
