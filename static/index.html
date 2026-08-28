@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>档口商品管理</title>
+<style>
+body{font-family:-apple-system,'PingFang SC',sans-serif;margin:0;background:#f5f6f8;color:#222}
+header{background:#fff;border-bottom:1px solid #e5e5e5;padding:10px 16px;display:flex;gap:16px;position:sticky;top:0;z-index:9}
+header button{border:0;background:none;font-size:16px;padding:8px 12px;border-radius:8px;cursor:pointer}
+header button.on{background:#1652f0;color:#fff}
+main{padding:16px;max-width:1100px;margin:0 auto}
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tabs button{border:1px solid #ddd;background:#fff;border-radius:8px;padding:6px 14px}
+.tabs button.on{background:#222;color:#fff}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;font-size:14px}
+th,td{padding:8px;border-bottom:1px solid #f0f0f0;text-align:left;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+img.p{width:54px;height:54px;object-fit:cover;border-radius:6px;cursor:zoom-in}
+.card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button.a{background:#1652f0;color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
+button.g{background:#e5484d;color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
+button.ghost{background:#fff;border:1px solid #ddd;border-radius:8px;padding:8px 14px;cursor:pointer}
+input,select{padding:8px;border:1px solid #ddd;border-radius:8px;font-size:14px}
+#lightbox{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center;z-index:99}
+#lightbox img{max-width:96vw;max-height:96vh}
+.muted{color:#888;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <button id="v-review" class="on" onclick="show('review')">审核</button>
+  <button id="v-products" onclick="show('products')">商品</button>
+</header>
+<main>
+  <div id="review"><div id="tickets"></div></div>
+  <div id="products" style="display:none">
+    <div class="tabs" id="catTabs"></div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="a" onclick="newProduct()">＋ 新增</button>
+      <input id="q" placeholder="搜索型号/货号" oninput="renderProducts()">
+    </div>
+    <div style="overflow-x:auto"><table id="ptable"></table></div>
+  </div>
+</main>
+<div id="lightbox" onclick="this.style.display='none'"><img id="lbimg"></div>
+<script>
+const TOKEN = new URLSearchParams(location.search).get('t') || '';
+const H = {'X-Service-Token': TOKEN, 'Content-Type': 'application/json'};
+let cur = {cat: 'razor', tpl: null, prods: []};
+
+function show(v){
+  document.querySelectorAll('header button').forEach(b=>b.classList.remove('on'));
+  document.getElementById('v-'+v).classList.add('on');
+  document.getElementById('review').style.display = v==='review'?'':'none';
+  document.getElementById('products').style.display = v==='products'?'':'none';
+  if(v==='review') loadTickets();
+  if(v==='products') loadCats();
+}
+async function loadTickets(){
+  const d = await (await fetch('/tickets')).json();
+  const el = document.getElementById('tickets');
+  const pend = d.tickets.filter(t=>t.status==='pending');
+  el.innerHTML = pend.length ? '' : '<div class="card">没有待办工单 🎉</div>';
+  for(const t of pend){
+    const c = document.createElement('div'); c.className='card';
+    c.innerHTML = `<b>#${t.id} ${t.ticket_type==='import'?'整批导入':'AI 操作'}</b>
+      · 品类 ${t.category} · ${t.created_at}
+      <div class="row" style="margin-top:8px">
+        <button class="a" onclick='decide(${t.id},true,${JSON.stringify(t.token)})'>通过</button>
+        <button class="g" onclick='decide(${t.id},false,${JSON.stringify(t.token)})'>驳回</button>
+      </div>`;
+    el.appendChild(c);
+  }
+}
+async function decide(id, ok, token){
+  if(!confirm(ok?'确认通过该工单？':'确认驳回？')) return;
+  const r = await fetch(`/tickets/${id}/decision`, {method:'POST', headers:H,
+    body: JSON.stringify({token, approved: ok})});
+  if(r.ok){ loadTickets(); } else { alert(await r.text()); }
+}
+async function loadCats(){
+  const tabs = document.getElementById('catTabs');
+  tabs.innerHTML = '';
+  for(const [key, name] of [['razor','剃须刀'],['curler','卷发棒']]){
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.className = key===cur.cat?'on':'';
+    b.onclick = ()=>{cur.cat=key; loadCats()};
+    tabs.appendChild(b);
+  }
+  await loadProducts();
+}
+async function loadProducts(){
+  const d = await (await fetch(`/products/${cur.cat}`)).json();
+  cur.tpl = d.template; cur.prods = d.products; renderProducts();
+}
+function renderProducts(){
+  const q = document.getElementById('q').value.toLowerCase();
+  const rows = cur.prods.filter(p=>!q||JSON.stringify(p).toLowerCase().includes(q));
+  const labels = cur.tpl.fields.map(f=>f.label);
+  document.getElementById('ptable').innerHTML =
+    '<tr>'+labels.map(l=>`<th>${l}</th>`).join('')+'<th>内部货号</th><th>图</th><th>操作</th></tr>'+
+    rows.map(p=>'<tr>'+
+      labels.map(l=>`<td title="${p[l]??''}">${p[l]??''}</td>`).join('')+
+      `<td class="muted">${p['内部货号']??''}</td>`+
+      `<td>${p['主图']?`<img class="p" src="/img/${p['主图']}?t=${TOKEN}" onclick="lb('${p['主图']}')">`:''}</td>`+
+      `<td><button class="ghost" onclick="editP('${p['id']}')">改</button>
+          <button class="g" onclick="delP('${p['id']}')">删</button></td></tr>`).join('');
+}
+function lb(rel){
+  document.getElementById('lbimg').src = `/img/${rel}?t=${TOKEN}`;
+  document.getElementById('lightbox').style.display = 'flex';
+}
+function newProduct(){
+  const changes = {};
+  for(const f of cur.tpl.fields){
+    const v = prompt(f.label+'：');
+    if(v) changes[f.col] = v;
+  }
+  if(!Object.keys(changes).length) return;
+  fetch(`/products/${cur.cat}`, {method:'POST', headers:H,
+    body: JSON.stringify({changes})}).then(r=>r.json()).then(d=>{
+    alert('已建新增审批工单 #'+d.ticket_id); show('review');
+  });
+}
+function editP(id){
+  const p = cur.prods.find(x=>x['id']===id);
+  const changes = {};
+  for(const f of cur.tpl.fields){
+    const v = prompt('改 '+f.label+'：', p[f.label] ?? '');
+    if(v !== null && v !== undefined && v !== '' && v !== (p[f.label] ?? '')) changes[f.col] = v;
+  }
+  if(!Object.keys(changes).length) return;
+  fetch(`/products/${cur.cat}/${id}`, {method:'PATCH', headers:H,
+    body: JSON.stringify({changes})}).then(r=>r.json()).then(d=>{
+    alert('修改已建审批工单 #'+d.ticket_id); show('review');
+  });
+}
+function delP(id){
+  if(!confirm('确认下架该商品？（生成审批工单）')) return;
+  fetch(`/products/${cur.cat}/${id}`, {method:'DELETE', headers:H})
+    .then(r=>r.json()).then(d=>{
+    alert('下架工单 #'+d.ticket_id); show('review');
+  });
+}
+show('review');
+</script>
+</body>
+</html>
