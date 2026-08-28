@@ -14,10 +14,10 @@ TOKEN = os.environ.get('CATALOG_V2_SERVICE_TOKEN', '')
 DB = os.environ.get('CATALOG_V2_DB', os.path.join(
     os.path.dirname(__file__), '..', 'data', 'catalog.db'))
 FILES = {
-    'razor': '/tmp/matrix/input/f2_tixudao.xlsx',
-    'curler': os.path.expanduser(
+    'razor': os.environ.get('CATALOG_FILES_RAZOR', '/tmp/matrix/input/f2_tixudao.xlsx'),
+    'curler': os.environ.get('CATALOG_FILES_CURLER', os.path.expanduser(
         '~/Library/Containers/com.tencent.xinWeChat/Data/Documents/'
-        'xwechat_files/wxid_1qtn22qs4hnb22_b73a/msg/file/2026-08/华岳电器有限公司.xlsx'),
+        'xwechat_files/wxid_1qtn22qs4hnb22_b73a/msg/file/2026-08/华岳电器有限公司.xlsx')),
 }
 EXPECT = {'razor': (18, 45), 'curler': (40, 55)}  # 卷发棒源文件实测 63 行=43 个不同型号
 
