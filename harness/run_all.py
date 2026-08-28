@@ -137,7 +137,11 @@ def main():
     report += ['', f'**{len(results) - fails}/{len(results)} 通过**'
                + ('' if not fails else f'，{fails} 项待修')]
     out = os.path.expanduser('~/Desktop/dangkou-v2-验收报告.md')
-    open(out, 'w').write('\n'.join(report) + '\n')
+    try:
+        open(out, 'w').write('\n'.join(report) + '\n')
+    except FileNotFoundError:
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        open(out, 'w').write('\n'.join(report) + '\n')
     print('报告:', out)
     sys.exit(1 if fails else 0)
 
