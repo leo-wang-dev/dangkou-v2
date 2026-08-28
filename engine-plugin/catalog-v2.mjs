@@ -1,28 +1,32 @@
-// dsh-engine 商品插件 v2：微信入口 ⇄ 侧车 catalog-v2
+// dsh-engine 商品插件 v2：微信入口 ⇄ 侧车 catalog-v2（模板制：剃须刀/卷发棒）
 // env: CATALOG_V2_URL（默认 http://127.0.0.1:8890）、CATALOG_V2_SERVICE_TOKEN
 
 export const name = 'catalog-v2'
+export const inject = ['tools']
 
 const BASE = process.env.CATALOG_V2_URL || 'http://127.0.0.1:8890'
 const TOKEN = process.env.CATALOG_V2_SERVICE_TOKEN || ''
 
-async function api(path, method = 'GET', body = null) {
+async function call(path, method = 'GET', body = null) {
   const r = await fetch(`${BASE}${path}`, {
     method,
     headers: { 'X-Service-Token': TOKEN, 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!r.ok) throw new Error(`catalog-v2 ${path} -> ${r.status}: ${await r.text()}`)
-  return r.json()
+  const text = await r.text()
+  if (!r.ok) throw new Error(`catalog-v2 ${path} -> ${r.status}: ${text}`)
+  try { return JSON.parse(text) } catch { return text }
 }
 
-export async function apply(ctx) {
-  ctx.registerTool('catalog_import', {
-    description: '导入商品 Excel（内部由 Sub Agent 异步解析，需人工审批落库）。' +
-      '调用后立即返回 docId；你必须安排几分钟后用 catalog_check 查询，' +
-      'status=ticketed 时把审批页链接（{BASE}/?t=<token>，token 从 catalog_check 返回取）' +
-      '发给用户——这就是回调推送。调用前若不知道品类，先问用户：剃须刀还是卷发棒。',
-    input: {
+const OUT = { schema: { type: 'string' }, render: (_a, v) => [{ type: 'text', text: String(v) }] }
+
+export async function apply(ctx, _config = {}) {
+  ctx.tools.register({
+    name: 'catalog_import',
+    description: '导入商品 Excel（剃须刀/卷发棒品类模板，内部由 Sub Agent 异步解析，需人工审批落库）。'
+      + '返回 docId 后你必须安排几分钟后用 catalog_check 查询并告知用户进度（ticketed 时发审批链接）——这就是回调推送。'
+      + '不知道品类时先问用户：剃须刀还是卷发棒。',
+    parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: '服务器上的 xlsx 文件绝对路径' },
@@ -30,52 +34,56 @@ export async function apply(ctx) {
       },
       required: ['path', 'category'],
     },
-    output: { schema: { type: 'object' } },
-    handler: async (args) => {
-      const r = await api('/import', 'POST', args)
-      return { docId: r.doc_id, note: '异步解析已启动（Sub Agent），预计2-8分钟，稍后用 catalog_check 查询' }
+    output: OUT,
+    async execute({ path, category }) {
+      const r = await call('/import', 'POST', { path, category })
+      return JSON.stringify({ docId: r.doc_id, note: 'Sub Agent 异步解析已启动，预计2-8分钟，稍后 catalog_check 查询' })
     },
   })
 
-  ctx.registerTool('catalog_check', {
-    description: '查询导入进度。返回 status=ticketed 时解析完成并已生成审批工单，' +
-      '把审批链接发给用户；status=failed 时把 error 告知用户。',
-    input: { type: 'object', properties: { docId: { type: 'number' } }, required: ['docId'] },
-    output: { schema: { type: 'object' } },
-    handler: async (args) => {
-      const s = await api(`/import/${args.docId}`)
+  ctx.tools.register({
+    name: 'catalog_check',
+    description: '查询导入进度。status=ticketed=解析完成已生成审批工单（返回含 approveUrl，发给用户点开即审）；'
+      + 'status=failed=把 error 告知用户。',
+    parameters: { type: 'object', properties: { docId: { type: 'number' } }, required: ['docId'] },
+    output: OUT,
+    async execute({ docId }) {
+      const s = await call(`/import/${docId}`)
       if (s.status === 'ticketed') {
-        const tks = await api('/tickets')
+        const tks = await call('/tickets')
         const tk = tks.tickets.find(t => t.status === 'pending' && t.ticket_type === 'import')
-        if (tk) s.approveUrl = `${BASE}/?t=${tk.token}`
+        if (tk && tk.token) s.approveUrl = `${BASE}/?t=${tk.token}`
       }
-      return s
+      return JSON.stringify(s)
     },
   })
 
-  ctx.registerTool('catalog_search', {
-    description: '以图找货：传客户图片的服务器路径，返回 Top3-5 候选（含品类模板字段）。' +
-      '用户回复"换一批"时把已展示的 product_id 放进 excludeIds 重查；' +
-      '回复"没问题/发报价单"时调 catalog_quote 生成报价单并把文件发给用户。',
-    input: {
+  ctx.tools.register({
+    name: 'catalog_search',
+    description: '以图找货：客户图片路径 → Top3-5 候选（品类模板字段）。'
+      + '用户回复"换一批"→ 把已展示的 productId 放进 excludeIds 重查；'
+      + '回复"没问题/发报价单"→ 调 catalog_quote 生成报价单文件发给用户转发客户。',
+    parameters: {
       type: 'object',
       properties: {
         imagePath: { type: 'string' },
-        topK: { type: 'number', default: 5 },
-        excludeIds: { type: 'array', items: { type: 'string' }, default: [] },
+        topK: { type: 'number' },
+        excludeIds: { type: 'array', items: { type: 'string' } },
       },
       required: ['imagePath'],
     },
-    output: { schema: { type: 'object' } },
-    handler: async (args) =>
-      api('/search', 'POST', { image_path: args.imagePath,
-                               top_k: args.topK ?? 5,
-                               exclude_ids: args.excludeIds ?? [] }),
+    output: OUT,
+    async execute({ imagePath, topK, excludeIds }) {
+      const r = await call('/search', 'POST', {
+        image_path: imagePath, top_k: topK ?? 5, exclude_ids: excludeIds ?? [] })
+      return JSON.stringify(r)
+    },
   })
 
-  ctx.registerTool('catalog_quote', {
-    description: '按报价单模板生成 Excel，返回服务器文件路径（用于微信发文件给用户转发客户）。',
-    input: {
+  ctx.tools.register({
+    name: 'catalog_quote',
+    description: '按报价单模板（型号/图片/价格/规格/起订量）生成 Excel，返回服务器文件路径，用于微信发文件。',
+    parameters: {
       type: 'object',
       properties: {
         category: { type: 'string', enum: ['razor', 'curler'] },
@@ -83,31 +91,36 @@ export async function apply(ctx) {
       },
       required: ['category', 'productIds'],
     },
-    output: { schema: { type: 'object' } },
-    handler: async (args) => api('/quote', 'POST', args),
+    output: OUT,
+    async execute({ category, productIds }) {
+      const r = await call('/quote', 'POST', { category, product_ids: productIds })
+      return JSON.stringify(r)
+    },
   })
 
-  ctx.registerTool('catalog_mutate', {
-    description: 'AI 代操作商品（改字段/下架/新增）——只生成审批工单，不直接落库。' +
-      '返回工单 ticketId，把审批页链接（{BASE}/?t=<token>）发给用户。',
-    input: {
+  ctx.tools.register({
+    name: 'catalog_mutate',
+    description: 'AI 代操作商品（改字段/下架/新增）——只生成审批工单不落库，返回含 approveUrl 发给用户。',
+    parameters: {
       type: 'object',
       properties: {
         category: { type: 'string', enum: ['razor', 'curler'] },
         action: { type: 'string', enum: ['update', 'delete', 'create'] },
         productId: { type: 'string' },
-        changes: { type: 'object' },
+        changes: { type: 'object', description: '列名→新值' },
       },
       required: ['category', 'action'],
     },
-    output: { schema: { type: 'object' } },
-    handler: async (args) => {
-      const c = { ...(args.changes ?? {}) }
-      if (args.action === 'create')
-        return api(`/products/${args.category}`, 'POST', { changes: c })
-      if (args.action === 'update')
-        return api(`/products/${args.category}/${args.productId}`, 'PATCH', { changes: c })
-      return api(`/products/${args.category}/${args.productId}`, 'DELETE')
+    output: OUT,
+    async execute({ category, action, productId, changes }) {
+      let r
+      if (action === 'create') r = await call(`/products/${category}`, 'POST', { changes: changes ?? {} })
+      else if (action === 'update') r = await call(`/products/${category}/${productId}`, 'PATCH', { changes: changes ?? {} })
+      else r = await call(`/products/${category}/${productId}`, 'DELETE')
+      const tks = await call('/tickets')
+      const tk = tks.tickets.find(t => t.status === 'pending' && t.ticket_type === 'mutate')
+      r.approveUrl = tk && tk.token ? `${BASE}/?t=${tk.token}` : `${BASE}/`
+      return JSON.stringify(r)
     },
   })
 }
