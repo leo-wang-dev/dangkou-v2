@@ -4,3 +4,4 @@ openpyxl
 requests
 pytest
 python-multipart
+httpx
