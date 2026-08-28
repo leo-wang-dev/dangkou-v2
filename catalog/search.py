@@ -13,11 +13,13 @@ _MM_URL = (config.BAILIAN_BASE_URL.replace('/compatible-mode/v1', '')
            + '/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding')
 
 
-def embed_image(data: bytes) -> list[float]:
+def embed_image(data: bytes, filename: str = 'img.jpeg') -> list[float]:
     model = os.environ.get('BAILIAN_MM_MODEL', 'qwen3-vl-embedding')
     dim = int(os.environ.get('BAILIAN_MM_DIM', '1024'))
+    fmt = 'png' if filename.lower().endswith('.png') else 'jpeg'
+    b64 = base64.b64encode(data).decode()
     body = {'model': model,
-            'input': {'contents': [{'image': base64.b64encode(data).decode()}]},
+            'input': {'contents': [{'image': f'data:image/{fmt};base64,{b64}'}]},
             'parameters': {'dimension': dim}}
     r = requests.post(_MM_URL, json=body, timeout=60,
                       headers={'Authorization': f'Bearer {config.BAILIAN_API_KEY}',
