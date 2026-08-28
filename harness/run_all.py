@@ -19,7 +19,7 @@ FILES = {
         '~/Library/Containers/com.tencent.xinWeChat/Data/Documents/'
         'xwechat_files/wxid_1qtn22qs4hnb22_b73a/msg/file/2026-08/华岳电器有限公司.xlsx'),
 }
-EXPECT = {'razor': (18, 45), 'curler': (45, 70)}
+EXPECT = {'razor': (18, 45), 'curler': (40, 55)}  # 卷发棒源文件实测 63 行=43 个不同型号
 
 
 def api(path, method='GET', body=None):
