@@ -7,7 +7,7 @@ from catalog import db, tickets
 
 @pytest.fixture()
 def conn():
-    c = sqlite3.connect(':memory:')
+    c = sqlite3.connect(':memory:', check_same_thread=False)
     c.row_factory = sqlite3.Row
     db.init_db(c)
     return c

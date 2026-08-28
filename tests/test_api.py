@@ -10,7 +10,7 @@ from catalog.storage import LocalStorage
 
 @pytest.fixture()
 def client(tmp_path):
-    conn = sqlite3.connect(':memory:')
+    conn = sqlite3.connect(':memory:', check_same_thread=False)
     conn.row_factory = sqlite3.Row
     db.init_db(conn)
     app.state.conn = conn
