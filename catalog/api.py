@@ -80,7 +80,31 @@ def register_routes(app: FastAPI):
                                     body.approved, body.decisions)
         except tickets.TicketError as e:
             raise HTTPException(400, str(e))
+        if body.approved and result.get('created_rows'):
+            _persist_images_and_reindex(result)
         return result
+
+    def _persist_images_and_reindex(result):
+        """导入审批通过：Agent 工作目录里的图落位 storage → 更新主图 rel → 向量入池。"""
+        from . import search
+        wd = result.get('work_dir')
+        cats = set()
+        for row in result.get('created_rows', []):
+            fn = row.get('image_main')
+            if not wd or not fn:
+                continue
+            src = os.path.join(wd, fn)
+            if not os.path.exists(src):
+                continue
+            ext = os.path.splitext(fn)[1] or '.png'
+            rel = app.state.storage.save(row['_category'], row['id'],
+                                         'main' + ext, open(src, 'rb').read())
+            app.state.conn.execute(
+                f"UPDATE {row['_table']} SET image_main=? WHERE id=?", (rel, row['id']))
+            cats.add(row['_category'])
+        app.state.conn.commit()
+        for cat in cats:
+            search.reindex(app.state.conn, app.state.storage, cat)
 
     # ---- 商品（读直查；写=审批工单）----
     @app.get('/products/{category}')
@@ -124,3 +148,19 @@ def register_routes(app: FastAPI):
         r = app.state.conn.execute(
             f'SELECT * FROM {t.table} WHERE id=?', (pid,)).fetchone()
         return row_to_dict(t, r) if r else None
+
+    # ---- 检索 ----
+    class SearchIn(BaseModel):
+        image_path: str
+        top_k: int = 5
+        exclude_ids: list[str] = []
+
+    @app.post('/search')
+    def do_search(body: SearchIn, request: Request):
+        _auth(request, app.state.token)
+        from . import search
+        if not os.path.isfile(body.image_path):
+            raise HTTPException(404, '图片不存在')
+        vec = search.embed_image(open(body.image_path, 'rb').read())
+        return {'hits': search.query(app.state.conn, vec,
+                                     top_k=body.top_k, exclude=body.exclude_ids)}
