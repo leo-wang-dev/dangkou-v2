@@ -1,5 +1,6 @@
 """图向量检索：百炼多模态嵌入 + 余弦 + 换一批（exclude）。text_vec 为预留优化位。"""
 import base64
+import os
 import math
 import struct
 
@@ -13,8 +14,11 @@ _MM_URL = (config.BAILIAN_BASE_URL.replace('/compatible-mode/v1', '')
 
 
 def embed_image(data: bytes) -> list[float]:
-    body = {'model': 'multimodal-embedding-one-peace-v1',
-            'input': {'contents': [{'image': base64.b64encode(data).decode()}]}}
+    model = os.environ.get('BAILIAN_MM_MODEL', 'qwen3-vl-embedding')
+    dim = int(os.environ.get('BAILIAN_MM_DIM', '1024'))
+    body = {'model': model,
+            'input': {'contents': [{'image': base64.b64encode(data).decode()}]},
+            'parameters': {'dimension': dim}}
     r = requests.post(_MM_URL, json=body, timeout=60,
                       headers={'Authorization': f'Bearer {config.BAILIAN_API_KEY}',
                                'Content-Type': 'application/json'})
