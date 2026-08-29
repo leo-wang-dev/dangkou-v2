@@ -187,6 +187,7 @@ async function saveDraftEdit(tid, key){
   loadDetail(tid);  // 重展开以刷新
   const box = document.getElementById('detail-'+tid);
 }
+function toggleRej(tid, key, btn){
   const el = document.getElementById(`row-${tid}-${key}`);
   if(rej.has(`${tid}:${key}`)){ rej.delete(`${tid}:${key}`); el.classList.remove('rej'); btn.textContent='驳回此行'; }
   else{ rej.add(`${tid}:${key}`); el.classList.add('rej'); btn.textContent='已驳回↩恢复'; }
