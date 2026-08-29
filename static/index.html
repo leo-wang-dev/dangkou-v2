@@ -112,7 +112,7 @@ async function loadDetail(tid){
   const d = await api('/tickets/'+tid);
   const p = d.payload, drafts = p.drafts||{};
   let html = '';
-  const fields = tplFields(d.ticket.category);
+  const fields = await tplFields(d.ticket.category);
   const rowHtml = (tag, img, kv, key) => `
     <div class="draft" id="row-${tid}-${key}">
       ${img?`<img class="p" src="${img}" onclick="lb(this.src)">`:''}
