@@ -132,9 +132,10 @@ async function loadDetail(tid){
   const p = d.payload, drafts = p.drafts||{};
   let html = '';
   const fields = await tplFields(d.ticket.category);
-  const rowHtml = (tag, img, kv, key) => `
+  const rowHtml = (tag, img, kv, key, imgs) => `
     <div class="draft" id="row-${tid}-${key}">
-      ${img?`<img class="p" src="${img}" onclick="lb(this.src)">`:''}
+      ${img?`<div class="ibadge"><img class="p big" src="${img}" onclick="lbGallery(${(imgs&&imgs.length?imgs:[img]).map(u=>`'${u}'`).join(',')})">
+        ${(imgs&&imgs.length>1)?`<span class="n">${imgs.length}图</span>`:''}</div>`:''}
       <div class="f"><span class="tag ${tag.cls}">${tag.txt}</span>
         ${fields.map(f=>kv[f.col]?`<div class="kv"><b>${f.label}</b>：${esc(str(kv[f.col]))}</div>`:'').join('')}
       </div>
@@ -145,7 +146,7 @@ async function loadDetail(tid){
     </div>`;
   (drafts.new||[]).forEach((d2,i)=>{
     const key = d2._rid||('n'+i);
-    html += rowHtml({txt:'新增',cls:'new'}, d2._img, d2, key); });
+    html += rowHtml({txt:'新增',cls:'new'}, d2._img, d2, key, d2._imgs); });
   (drafts.update||[]).forEach((pair,i)=>{
     const [row,d2] = Array.isArray(pair)?pair:[pair,pair];
     const key = row.id||('u'+i);

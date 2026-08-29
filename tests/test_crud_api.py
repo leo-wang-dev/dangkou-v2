@@ -118,3 +118,27 @@ def test_decision_with_row_edits(client):
     e1 = [p for p in ps if p['产品型号'] == 'E1'][0]
     assert e1['报价'] == '99' and e1['颜色'] == '黑'   # 编辑生效
     assert not [p for p in ps if p['产品型号'] == 'E2']  # 驳回生效
+
+
+def test_import_returns_est_sec_floor(client, tmp_path):
+    """预估公式：max(120, MB×30)——小文件吃保底。"""
+    import tempfile
+    f = tempfile.mktemp(suffix='.xlsx')
+    open(f, 'wb').write(b'x' * (2 * 1048576))   # 2MB
+    r = client.post('/import', json={'path': f, 'category': 'razor'}).json()
+    assert r['est_sec'] == 120                    # 2×30=60 < 保底120
+
+
+def test_ticket_detail_lists_all_preview_images(client):
+    from catalog import tickets as tk
+    tk.create(client.app.state.conn, 'import', 'razor',
+              {'kind': 'import', 'work_dir': '/tmp',
+               'drafts': {'new': [{'model_no': 'P1', 'image_main': 'a.png',
+                                   'images': ['a.png', 'b.png'], '_rid': 'n0'}],
+                          'update': [], 'delist': []}})
+    tid = [t['id'] for t in client.get('/tickets').json()['tickets']
+           if t['ticket_type'] == 'import'][0]
+    d = client.get(f'/tickets/{tid}').json()
+    row = d['payload']['drafts']['new'][0]
+    assert len(row['_imgs']) == 2                  # 全部图都有预览地址
+    assert f'/ticketimg/{tid}/a.png' in row['_imgs'][0]

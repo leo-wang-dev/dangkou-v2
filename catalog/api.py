@@ -51,7 +51,7 @@ def register_routes(app: FastAPI):
         _auth(request, app.state.token)
         if not os.path.isfile(body.path):
             raise HTTPException(404, f'文件不存在: {body.path}')
-        est = min(1800, max(120, int(os.path.getsize(body.path) / 1048576 * 20)))
+        est = min(1800, max(120, int(os.path.getsize(body.path) / 1048576 * 30)))
         return {'doc_id': ingest.start(app.state.conn, app.state.storage,
                                        body.path, body.category,
                                        callback=app.state.callback),
@@ -87,8 +87,11 @@ def register_routes(app: FastAPI):
         wd = payload.get('work_dir')
         for d in payload.get('drafts', {}).get('new', []):
             d.setdefault('_rid', None)
-            if wd and d.get('image_main'):
-                d['_img'] = f"/ticketimg/{ticket_id}/{d['image_main']}?token={app.state.token}"
+            fns = [f for f in (d.get('images') or []) if f] or \
+                  ([d['image_main']] if d.get('image_main') else [])
+            if wd and fns:
+                d['_imgs'] = [f"/ticketimg/{ticket_id}/{fn}?token={app.state.token}" for fn in fns]
+                d['_img'] = d['_imgs'][0]
         return {'ticket': {'id': r['id'], 'ticket_type': r['ticket_type'],
                            'category': r['category'], 'status': r['status'],
                            'created_at': r['created_at']},
