@@ -20,7 +20,7 @@ def push(doc_id, ticket_id, token, stats):
         text = f'❌ 导入失败（doc{doc_id}）：{stats["error"][:120]}'
     else:
         cat = CAT_NAME.get(stats.get('category'), '')
-        link = f"{os.environ.get('CATALOG_V2_PUBLIC_URL', PUBLIC_FALLBACK)}/?t={config.SERVICE_TOKEN}'"
+        link = f"{os.environ.get('CATALOG_V2_PUBLIC_URL', PUBLIC_FALLBACK)}/?t={config.SERVICE_TOKEN}"
         text = (f'📦 导入完成：{cat} 新增{stats.get("new", 0)} / '
                 f'更新{stats.get("update", 0)} / 下架{stats.get("delist", 0)}'
                 f'{"（" + stats["vendor"] + "）" if stats.get("vendor") else ""}\n'

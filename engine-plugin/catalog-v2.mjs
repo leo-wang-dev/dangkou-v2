@@ -53,7 +53,7 @@ export async function apply(ctx, _config = {}) {
       if (s.status === 'ticketed') {
         const tks = await call('/tickets')
         const tk = tks.tickets.find(t => t.status === 'pending' && t.ticket_type === 'import')
-        if (tk && tk.token) s.approveUrl = `${PUBLIC}/?t=${tk.token}`
+        s.approveUrl = `${PUBLIC}/?t=${TOKEN}`
       }
       return JSON.stringify(s)
     },
@@ -120,7 +120,7 @@ export async function apply(ctx, _config = {}) {
       else r = await call(`/products/${category}/${productId}`, 'DELETE')
       const tks = await call('/tickets')
       const tk = tks.tickets.find(t => t.status === 'pending' && t.ticket_type === 'mutate')
-      r.approveUrl = tk && tk.token ? `${PUBLIC}/?t=${tk.token}` : `${PUBLIC}/`
+      r.approveUrl = `${PUBLIC}/?t=${TOKEN}`
       return JSON.stringify(r)
     },
   })
