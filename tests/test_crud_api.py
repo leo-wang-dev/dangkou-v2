@@ -74,3 +74,26 @@ def test_delete_creates_delist_ticket(client):
     client.post(f"/tickets/{dt['id']}/decision",
                 json={'token': dt['token'], 'approved': True})
     assert client.get('/products/razor').json()['products'][0]['状态'] == 'delisted'
+
+
+def test_ticket_detail_and_row_level_reject(client):
+    _import_and_approve(client)   # 先导一批（1个）
+    import tempfile, time
+    f = tempfile.mktemp(suffix='.xlsx'); open(f, 'wb').write(b'x')
+    import json as _j
+    # 手动建一张含两行新草稿的工单（带 _rid）
+    from catalog import tickets as tk
+    tk.create(client.app.state.conn, 'import', 'razor',
+              {'kind': 'import', 'work_dir': None,
+               'drafts': {'new': [{'model_no': 'R1', 'price': '1', '_rid': 'n0'},
+                                  {'model_no': 'R2', 'price': '2', '_rid': 'n1'}],
+                          'update': [], 'delist': []}})
+    d = client.get('/tickets/2').json()
+    assert d['payload']['drafts']['new'][0]['_rid'] == 'n0'
+    t = [x for x in client.get('/tickets').json()['tickets'] if x['id'] == 2][0]
+    # 驳回 n1 这一行，整单通过
+    r = client.post('/tickets/2/decision', json={
+        'token': t['token'], 'approved': True, 'decisions': {'reject': ['n1']}}).json()
+    assert r['created'] == 1
+    models = [p['产品型号'] for p in client.get('/products/razor').json()['products']]
+    assert 'R1' in models and 'R2' not in models

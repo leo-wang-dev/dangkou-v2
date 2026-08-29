@@ -27,6 +27,8 @@ def start(conn, storage, xlsx_path, category, callback=None) -> int:
             existing = conn.execute(
                 f'SELECT * FROM {t.table} WHERE status != "delisted"').fetchall()
             c = classify.classify(category, result['products'], existing)
+            for i, d in enumerate(c['new']):
+                d['_rid'] = f'n{i}'
             payload = {'kind': 'import', 'doc_id': doc_id, 'work_dir': work_dir,
                        'drafts': {'new': c['new'],
                                   'update': [[dict(r), d] for r, d in c['update']],

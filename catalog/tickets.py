@@ -49,8 +49,8 @@ def _apply(conn, payload, category, decisions) -> dict:
     rejected = set((decisions or {}).get('reject', []))
 
     def _keep(d):
-        pid = d.get('id') if isinstance(d, dict) else d
-        return pid not in rejected
+        rid = d.get('_rid') or d.get('id') if isinstance(d, dict) else d
+        return rid not in rejected
 
     created, created_rows = 0, []
     for d in drafts.get('new', []):
@@ -78,8 +78,10 @@ def _apply(conn, payload, category, decisions) -> dict:
                      (*[str(d.get(c, '') or '') for c, _ in t.fields], row['id']))
         updated += 1
     delisted = 0
-    for rid in drafts.get('delist', []):
-        rid = rid['id'] if isinstance(rid, dict) else rid
+    for r in drafts.get('delist', []):
+        if isinstance(r, dict) and (r.get('_rid') or r.get('id')) in rejected:
+            continue
+        rid = r['id'] if isinstance(r, dict) else r
         conn.execute(f"UPDATE {t.table} SET status='delisted', "
                      f"updated_at=datetime('now') WHERE id=?", (rid,))
         delisted += 1

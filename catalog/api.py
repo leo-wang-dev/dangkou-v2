@@ -73,6 +73,43 @@ def register_routes(app: FastAPI):
             {**dict(r), 'token': (r['token'] if r['status'] == 'pending' else None)}
             for r in rows]}
 
+    @app.get('/tickets/{ticket_id}')
+    def ticket_detail(ticket_id: int):
+        import json as _json
+        r = app.state.conn.execute(
+            'SELECT * FROM approval_ticket WHERE id=?', (ticket_id,)).fetchone()
+        if r is None:
+            raise HTTPException(404, 'no such ticket')
+        payload = _json.loads(r['payload'])
+        # 行级决策钥匙：new 行=_rid，update/delist 行=商品 id；顺带补图片预览地址
+        wd = payload.get('work_dir')
+        for d in payload.get('drafts', {}).get('new', []):
+            d.setdefault('_rid', None)
+            if wd and d.get('image_main'):
+                d['_img'] = f"/ticketimg/{ticket_id}/{d['image_main']}?token={app.state.token}"
+        return {'ticket': {'id': r['id'], 'ticket_type': r['ticket_type'],
+                           'category': r['category'], 'status': r['status'],
+                           'created_at': r['created_at']},
+                'payload': payload}
+
+    @app.get('/ticketimg/{ticket_id}/{fname}')
+    def ticket_img(ticket_id: int, fname: str, request: Request):
+        import json as _json
+        import os as _os
+        _auth(request, app.state.token)
+        r = app.state.conn.execute(
+            'SELECT payload FROM approval_ticket WHERE id=?', (ticket_id,)).fetchone()
+        if r is None:
+            raise HTTPException(404, 'no such ticket')
+        wd = (_json.loads(r['payload']) or {}).get('work_dir')
+        if not wd:
+            raise HTTPException(404, 'no preview')
+        safe = _os.path.basename(fname)  # 防目录穿越：只取文件名
+        p = _os.path.join(wd, safe)
+        if not _os.path.isfile(p):
+            raise HTTPException(404, 'no image')
+        return Response(content=open(p, 'rb').read(), media_type='image/png')
+
     @app.post('/tickets/{ticket_id}/decision')
     def decide_ticket(ticket_id: int, body: DecisionIn):
         try:
