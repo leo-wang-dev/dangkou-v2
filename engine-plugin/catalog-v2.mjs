@@ -63,8 +63,8 @@ export async function apply(ctx, _config = {}) {
   ctx.tools.register({
     name: 'catalog_search',
     description: '以图找货：客户图片路径 → Top3-5 候选（品类模板字段）。'
-      + '用户回复"换一批"→ 把已展示的 productId 放进 excludeIds 重查；'
-      + '回复"没问题/发报价单"→ 调 catalog_quote 生成报价单文件发给用户转发客户。',
+      + '用户想看其他候选（如"换一批/还有吗"）→ 把已展示的 productId 放进 excludeIds 重查；'
+      + '用户确认结果或想要报价单（如"没问题/可以/发我报价单"）→ 调 catalog_quote（异步，系统自动推送文件）。',
     parameters: {
       type: 'object',
       properties: {
