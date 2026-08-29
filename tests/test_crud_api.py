@@ -142,3 +142,65 @@ def test_ticket_detail_lists_all_preview_images(client):
     row = d['payload']['drafts']['new'][0]
     assert len(row['_imgs']) == 2                  # 全部图都有预览地址
     assert f'/ticketimg/{tid}/a.png' in row['_imgs'][0]
+
+
+def _png_bytes(color=(10, 100, 200)):
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new('RGB', (6, 6), color).save(buf, format='PNG')
+    return buf.getvalue()
+
+
+def test_upload_and_draft_image_edit(client, tmp_path):
+    """上传图 + 审批时换图：decisions.edits.__images 覆盖草稿图。"""
+    # 1) 上传端点
+    r = client.post('/upload', files={'file': ('u1.png', _png_bytes(), 'image/png')})
+    assert r.status_code == 200
+    up1 = r.json()['path']
+    assert up1.startswith('_upload/') and client.get(f'/img/{up1}').status_code == 200
+    # 2) 建含图的草稿工单
+    from catalog import tickets as tk
+    wd = tmp_path / 'wd'; wd.mkdir()
+    (wd / 'a.png').write_bytes(_png_bytes((1, 1, 1)))
+    tk.create(client.app.state.conn, 'import', 'razor',
+              {'kind': 'import', 'work_dir': str(wd),
+               'drafts': {'new': [{'model_no': 'IM1', 'image_main': 'a.png',
+                                   'images': ['a.png'], '_rid': 'n0'}],
+                          'update': [], 'delist': []}})
+    tid = [t['id'] for t in client.get('/tickets').json()['tickets']
+           if t['ticket_type'] == 'import'][0]
+    t = [x for x in client.get('/tickets').json()['tickets'] if x['id'] == tid][0]
+    # 3) 审批时换图
+    client.post(f'/tickets/{tid}/decision', json={
+        'token': t['token'], 'approved': True,
+        'decisions': {'edits': {'n0': {'__images': [up1]}}}})
+    p = client.get('/products/razor').json()['products'][0]
+    assert '_upload' not in (p['主图'] or '')      # 已落位成正式rel
+    assert client.get(f"/img/{p['主图']}").status_code == 200
+    r2 = client.get(f"/img/{p['主图']}").content
+    assert r2 == _png_bytes()                      # 内容是上传的新图
+
+
+def test_product_image_update_via_mutate(client):
+    """商品页换图：PATCH images → 审批 → 主图/图集更新且向量重嵌。"""
+    from catalog import tickets as tk
+    tk.create(client.app.state.conn, 'mutate', 'razor',
+              {'kind': 'mutate', 'action': 'create', 'product_id': None,
+               'changes': {'model_no': 'PM1'}})
+    t0 = [x for x in client.get('/tickets').json()['tickets']
+          if x['ticket_type'] == 'mutate'][0]
+    client.post(f"/tickets/{t0['id']}/decision",
+                json={'token': t0['token'], 'approved': True})
+    pid = client.get('/products/razor').json()['products'][0]['id']
+    up = client.post('/upload',
+                     files={'file': ('u2.png', _png_bytes((5, 5, 5)), 'image/png')}).json()['path']
+    r = client.patch(f'/products/razor/{pid}', json={'changes': {}, 'images': [up]})
+    assert r.json()['ticket_id']
+    t = [x for x in client.get('/tickets').json()['tickets']
+         if x['ticket_type'] == 'mutate' and x['status'] == 'pending'][0]
+    client.post(f"/tickets/{t['id']}/decision",
+                json={'token': t['token'], 'approved': True})
+    p = client.get('/products/razor').json()['products'][0]
+    assert client.get(f"/img/{p['主图']}").content == _png_bytes((5, 5, 5))
+    assert len(p['图集']) == 1

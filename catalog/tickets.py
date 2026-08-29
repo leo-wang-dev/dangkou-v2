@@ -56,7 +56,14 @@ def _apply(conn, payload, category, decisions) -> dict:
     def _edited(d):
         rid = d.get('_rid') or d.get('id') if isinstance(d, dict) else None
         e = edits.get(rid) or edits.get(str(rid)) if rid is not None else None
-        return {**d, **e} if isinstance(e, dict) else d
+        if not isinstance(e, dict):
+            return d
+        d = {**d, **e}
+        imgs = e.get('__images')          # 审批时人工换图（_upload/ 暂存rel清单）
+        if isinstance(imgs, list) and imgs:
+            d['images'] = imgs
+            d['image_main'] = imgs[0]
+        return d
 
     created, created_rows = 0, []
     for d in drafts.get('new', []):
@@ -101,6 +108,10 @@ def _apply(conn, payload, category, decisions) -> dict:
 
 def _apply_mutate(conn, t, payload) -> dict:
     action = payload['action']
+    if action == 'update' and payload.get('images'):
+        return {'mutated': 'update',
+                'images_applied': {'table': t.table, 'id': payload['product_id'],
+                                   'images': payload['images']}}
     if action == 'update':
         sets = ', '.join(f'{c}=?' for c in payload['changes'])
         conn.execute(f"UPDATE {t.table} SET {sets}, updated_at=datetime('now') WHERE id=?",

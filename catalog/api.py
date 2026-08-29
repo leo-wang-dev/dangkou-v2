@@ -29,6 +29,7 @@ class DecisionIn(BaseModel):
 class MutateIn(BaseModel):
     changes: dict
     product_id: str | None = None
+    images: list[str] | None = None
 
 
 def register_routes(app: FastAPI):
@@ -44,6 +45,23 @@ def register_routes(app: FastAPI):
         except FileNotFoundError:
             raise HTTPException(404, 'no image')
         return Response(content=data, media_type='image/png')
+
+    @app.post('/upload')
+    async def upload(request: Request):
+        """图片上传 → 暂存 data/images/_upload/（审批换图/商品换图用）。"""
+        _auth(request, app.state.token)
+        import uuid
+        from fastapi import UploadFile, File
+        form = await request.form()
+        up: UploadFile = form['file']
+        data = await up.read()
+        if not data:
+            raise HTTPException(400, 'empty file')
+        ext = os.path.splitext(up.filename or '')[1] or '.png'
+        if ext.lower() not in ('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff'):
+            raise HTTPException(400, f'不支持的格式: {ext}')
+        rel = app.state.storage.save('_upload', uuid.uuid4().hex[:12], ext.lstrip('.'), data)
+        return {'path': rel}
 
     # ---- 导入 ----
     @app.post('/import')
@@ -133,7 +151,40 @@ def register_routes(app: FastAPI):
             raise HTTPException(400, str(e))
         if body.approved and result.get('created_rows'):
             _persist_images_and_reindex(result)
+        if body.approved and result.get('images_applied'):
+            _apply_product_images(result['images_applied'])
         return result
+
+    def _apply_product_images(info):
+        """商品换图（mutate 审批通过）：暂存图落位产品目录 → 更新主图/图集 → 重嵌入。"""
+        from . import search
+        import io
+
+        def _webpify(data, fname):
+            if fname.lower().endswith(('.tif', '.tiff', '.bmp')):
+                from PIL import Image
+                img = Image.open(io.BytesIO(data)).convert('RGB')
+                buf = io.BytesIO(); img.save(buf, format='PNG')
+                return buf.getvalue(), '.png'
+            return data, os.path.splitext(fname)[1] or '.png'
+
+        pid, table = info['id'], info['table']
+        cat = next(k for k, v in TEMPLATES.items() if v.table == table)
+        rels = []
+        for i, fn in enumerate(info['images']):
+            src = os.path.join(app.state.storage.base, str(fn))
+            if not os.path.exists(src):
+                continue
+            data, ext = _webpify(open(src, 'rb').read(), fn)
+            rels.append(app.state.storage.save(cat, pid, f'img{i}{ext}', data))
+        if not rels:
+            return
+        app.state.conn.execute(
+            f"UPDATE {table} SET image_main=?, images=?, updated_at=datetime('now') WHERE id=?",
+            (rels[0], __import__('json').dumps(rels, ensure_ascii=False), pid))
+        app.state.conn.execute('DELETE FROM embedding WHERE product_id=?', (pid,))
+        app.state.conn.commit()
+        search.reindex(app.state.conn, app.state.storage, cat)
 
     def _persist_images_and_reindex(result):
         """导入审批通过：Agent 工作目录的全部图片落位 storage（tif/bmp转png）→ 更新主图/图集 → 向量入池。"""
@@ -157,7 +208,10 @@ def register_routes(app: FastAPI):
                 continue
             rels = []
             for i, fn in enumerate(fn_list):
-                src = os.path.join(wd, fn)
+                fn = str(fn)
+                src = (os.path.join(app.state.storage.base, fn)
+                       if fn.startswith('_upload/')
+                       else os.path.join(wd, fn))
                 if not os.path.exists(src):
                     continue
                 data, ext = _webpify(open(src, 'rb').read(), fn)
@@ -197,9 +251,13 @@ def register_routes(app: FastAPI):
     @app.patch('/products/{category}/{pid}')
     def update_product(category: str, pid: str, body: MutateIn, request: Request):
         _auth(request, app.state.token)
+        if not body.changes and not body.images:
+            raise HTTPException(400, 'changes 与 images 至少给一个')
         tk = tickets.create(app.state.conn, 'mutate', category,
                             {'kind': 'mutate', 'action': 'update', 'product_id': pid,
-                             'changes': body.changes, 'before': _current(category, pid)})
+                             'changes': body.changes or {},
+                             **({'images': body.images} if body.images else {}),
+                             'before': _current(category, pid)})
         return {'ticket_id': tk['id'], 'token': tk['token']}
 
     @app.delete('/products/{category}/{pid}')

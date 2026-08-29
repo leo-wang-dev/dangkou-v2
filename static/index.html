@@ -81,6 +81,7 @@ img.p.big{width:86px;height:86px;flex:none}
 </main>
 <div id="lightbox" onclick="if(event.target===this)this.style.display='none'"><button class="nav" id="lbPrev" onclick="event.stopPropagation();lbStep(-1)">‹</button><img id="lbimg" onclick="event.stopPropagation()"><button class="nav" id="lbNext" onclick="event.stopPropagation();lbStep(1)">›</button></div>
 <div id="modal"><div class="box" id="modalBox"></div></div>
+<input type="file" id="imgInput" accept="image/*" multiple style="display:none" onchange="onImgsPicked(this)">
 <script>
 const TOKEN = new URLSearchParams(location.search).get('t') || '';
 const H = {'X-Service-Token': TOKEN, 'Content-Type': 'application/json'};
@@ -141,6 +142,7 @@ async function loadDetail(tid){
       </div>
       <div class="rowbtns">
         <button class="btn o s" onclick="editDraft(${tid},'${key}')">编辑</button>
+        <button class="btn o s" onclick="pickDraftImgs(${tid},'${key}')">换图</button>
         <button class="btn d s" onclick="toggleRej(${tid},'${key}',this)">驳回</button>
       </div>
     </div>`;
@@ -254,6 +256,7 @@ function renderProducts(){
             <span class="muted">${p['内部货号']??''}</span></div>
           <div class="pbtns">
             <button class="btn o s" onclick="openForm('${p['id']}')">编辑</button>
+            <button class="btn o s" onclick="pickProductImgs('${p['id']}')">换图</button>
             <button class="btn d s" onclick="delP('${p['id']}')">下架</button>
           </div>
         </div>
@@ -290,7 +293,34 @@ async function submitForm(pid){
     : await api(`/products/${cur.cat}`, {method:'POST', body:JSON.stringify({changes})});
   closeForm();
   alert('已生成审批工单 #'+r.ticket_id+'，请到审核页批准');
-  show('review');
+  let pickTarget = null;
+function pickDraftImgs(tid, key){ pickTarget={type:'draft',tid,key}; document.getElementById('imgInput').click(); }
+function pickProductImgs(pid){ pickTarget={type:'product',pid}; document.getElementById('imgInput').click(); }
+async function onImgsPicked(input){
+  const files=[...input.files]; input.value='';
+  if(!files.length||!pickTarget) return;
+  const rels=[];
+  for(const f of files){
+    const fd=new FormData(); fd.append('file',f);
+    const r=await fetch('/upload',{method:'POST',headers:{'X-Service-Token':TOKEN},body:fd});
+    if(!r.ok){ alert('上传失败:'+await r.text()); return; }
+    rels.push((await r.json()).path);
+  }
+  if(pickTarget.type==='draft'){
+    const {tid,key}=pickTarget;
+    (edits[tid]=edits[tid]||{})[key]=(edits[tid][key]||{});
+    edits[tid][key]['__images']=rels;
+    const badge=document.querySelector(`#row-${tid}-${key} .tag`);
+    if(badge&&!badge.textContent.includes('🖼')) badge.textContent+=' 🖼换图';
+  }else{
+    const r=await api(`/products/${cur.cat}/${pickTarget.pid}`,{
+      method:'PATCH',body:JSON.stringify({changes:{},images:rels})});
+    alert('换图工单 #'+r.ticket_id+' 已生成，请到审核页批准');
+  }
+  pickTarget=null;
+}
+
+show('review');
 }
 async function delP(pid){
   if(!confirm('确认下架？（生成审批工单，批准后生效）')) return;
