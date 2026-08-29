@@ -84,7 +84,9 @@ export async function apply(ctx, _config = {}) {
 
   ctx.tools.register({
     name: 'catalog_quote',
-    description: '按报价单模板（型号/图片/价格/规格/起订量）生成 Excel，返回服务器文件路径，用于微信发文件。',
+    description: '生成报价单 Excel（异步：返回 jobId+预计秒数，完成后系统自动把文件推送给用户，你不要自己发文件、也不要声称已发送）。'
+      + '**productIds 默认只传一个**：检索场景=用户确认的第一名（或用户回复的序号对应那款）；'
+      + '只有用户明确说"都要/全部/这几款"才传多个。',
     parameters: {
       type: 'object',
       properties: {
@@ -96,7 +98,8 @@ export async function apply(ctx, _config = {}) {
     output: OUT,
     async execute({ category, productIds }) {
       const r = await call('/quote', 'POST', { category, product_ids: productIds })
-      return JSON.stringify(r)
+      return JSON.stringify({ jobId: r.job_id, estSec: r.est_sec,
+        note: `报价单生成中，预计${Math.max(1, Math.round(r.est_sec / 60))}分钟内自动推送给用户` })
     },
   })
 

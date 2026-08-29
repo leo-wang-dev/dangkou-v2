@@ -289,7 +289,7 @@ def register_routes(app: FastAPI):
         return {'hits': search.query(app.state.conn, vec,
                                      top_k=body.top_k, exclude=body.exclude_ids)}
 
-    # ---- 报价单 ----
+    # ---- 报价单（异步：对齐导入体验）----
     class QuoteIn(BaseModel):
         category: str
         product_ids: list[str]
@@ -297,10 +297,18 @@ def register_routes(app: FastAPI):
     @app.post('/quote')
     def do_quote(body: QuoteIn, request: Request):
         _auth(request, app.state.token)
-        import uuid
+        if not body.product_ids:
+            raise HTTPException(400, 'product_ids 不能为空（默认只传第一名）')
         from . import quote as quote_mod
         out_dir = os.path.join(app.state.storage.base, '_quotes')
-        os.makedirs(out_dir, exist_ok=True)
-        out = os.path.join(out_dir, f'quote-{uuid.uuid4().hex[:8]}.xlsx')
-        return {'path': quote_mod.generate(app.state.conn, app.state.storage,
-                                           body.category, body.product_ids, out)}
+        return quote_mod.start_job(app.state.conn, app.state.storage,
+                                   body.category, body.product_ids, out_dir)
+
+    @app.get('/quote/{job_id}')
+    def quote_status(job_id: str):
+        from . import quote as quote_mod
+        try:
+            return quote_mod.job_status(job_id)
+        except KeyError:
+            raise HTTPException(404, 'no such job')
+

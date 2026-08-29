@@ -31,3 +31,16 @@ def push(doc_id, ticket_id, token, stats):
         print(f'[notify] 直推 rc={r.status_code} {r.text[:80]}', flush=True)
     except Exception as e:  # noqa: BLE001
         print(f'[notify] 直推失败: {e}', flush=True)
+
+
+def push_file(text, file_path):
+    """报价单等产物：文件本体推微信（引擎 catalog-notify /notify-file → 微信发送器 media）。"""
+    if not NOTIFY_TOKEN:
+        return
+    try:
+        r = requests.post(NOTIFY_URL.replace('/notify', '/notify-file'),
+                          json={'text': text, 'file_path': file_path}, timeout=30,
+                          headers={'Authorization': f'Bearer {NOTIFY_TOKEN}'})
+        print(f'[notify] 文件直推 rc={r.status_code} {r.text[:80]}', flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f'[notify] 文件直推失败: {e}', flush=True)

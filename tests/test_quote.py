@@ -1,3 +1,4 @@
+import os
 import sqlite3
 
 import openpyxl
@@ -53,3 +54,41 @@ def test_quote_razor_moq_from_ctn_spec(seeded):
     ws = openpyxl.load_workbook(out).active
     assert ws['E2'].value == '40'                       # 剃须刀：从箱规文本取数量
     assert '120x60' in ws['D2'].value
+
+
+def test_quote_async_job_with_file_push(tmp_path, monkeypatch):
+    """报价单异步化：job+估时 → 后台生成 → 完成推文件（notify.push_file 被调）。"""
+    import sqlite3
+    from catalog import db
+    conn = sqlite3.connect(':memory:', check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    db.init_db(conn)
+    from catalog.storage import LocalStorage
+    st = LocalStorage(str(tmp_path))
+    import base64
+    png = base64.b64decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+    rel = st.save('curler', 'p1', 'main.png', png)
+    conn.execute("INSERT INTO product_curler(id,inner_code,item_no,ctn_qty,price,"
+                 "voltage,image_main) VALUES('p1','KS-AAAAAAAA','8226','40','21.5','110-240',?)",
+                 (rel,))
+    conn.commit()
+    pushed = []
+    import catalog.notify as notify_mod
+    monkeypatch.setattr(notify_mod, 'push_file',
+                        lambda text, fp: pushed.append((text, fp)))
+    from catalog import quote as quote_mod
+    import time
+    job = quote_mod.start_job(conn, st, 'curler', ['p1'], str(tmp_path))
+    assert job['est_sec'] >= 10
+    for _ in range(100):
+        time.sleep(0.05)
+        s = quote_mod.job_status(job['job_id'])
+        if s['status'] != 'building':
+            break
+    assert s['status'] == 'done', s
+    assert os.path.exists(s['path'])
+    assert pushed and pushed[0][1] == s['path']     # 完成即推文件
+    # 显示修复：行高≥图高（px→pt 换算后不叠行）
+    wb = openpyxl.load_workbook(s['path'])
+    assert wb.active.row_dimensions[2].height >= 40
