@@ -50,6 +50,12 @@ img.p.big{width:86px;height:86px;flex:none}
 .noimg{width:86px;height:86px;flex:none;border-radius:10px;background:#f3f3f3;color:#bbb;
   display:flex;align-items:center;justify-content:center;font-size:13px}
 .ptitle{font-weight:600;font-size:15px;margin-bottom:8px;word-break:break-all}
+.ibadge{position:relative;display:inline-block}
+.ibadge .n{position:absolute;right:-6px;bottom:-6px;background:rgba(0,0,0,.65);color:#fff;
+  font-size:11px;border-radius:8px;padding:1px 6px}
+#lightbox .nav{position:absolute;top:50%;transform:translateY(-50%);font-size:34px;color:#fff;
+  background:rgba(0,0,0,.4);border:0;border-radius:50%;width:46px;height:46px;cursor:pointer}
+#lbPrev{left:12px}#lbNext{right:12px}
 .pbtns{display:flex;gap:6px}
 .pfields{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
 .pf{display:flex;gap:8px;font-size:13px;padding:3px 0;align-items:baseline}
@@ -73,7 +79,7 @@ img.p.big{width:86px;height:86px;flex:none}
     <div id="plist" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px"></div>
   </div>
 </main>
-<div id="lightbox" onclick="this.style.display='none'"><img id="lbimg"></div>
+<div id="lightbox" onclick="if(event.target===this)this.style.display='none'"><button class="nav" id="lbPrev" onclick="event.stopPropagation();lbStep(-1)">‹</button><img id="lbimg" onclick="event.stopPropagation()"><button class="nav" id="lbNext" onclick="event.stopPropagation();lbStep(1)">›</button></div>
 <div id="modal"><div class="box" id="modalBox"></div></div>
 <script>
 const TOKEN = new URLSearchParams(location.search).get('t') || '';
@@ -239,7 +245,8 @@ function renderProducts(){
   el.innerHTML = rows.map(p=>`
     <div class="card pcard">
       <div class="prow">
-        ${p['主图']?`<img class="p big" src="/img/${p['主图']}?token=${TOKEN}" onclick="lb(this.src)">`
+        ${p['主图']?`<div class="ibadge"><img class="p big" src="/img/${p['主图']}?token=${TOKEN}" onclick="lbGallery(${(p['图集']&&p['图集'].length?p['图集']:[p['主图']]).map(x=>`'/img/${x}?token=${TOKEN}'`).join(',')})">
+          ${(p['图集']&&p['图集'].length>1)?`<span class="n">${p['图集'].length}图</span>`:''}</div>`
           :'<div class="noimg">无图</div>'}
         <div class="pbody">
           <div class="ptitle">${esc(str(p[cur.tpl.fields[0].label]))||'（无型号）'}
@@ -294,7 +301,11 @@ async function delP(pid){
 /* ---------- 通用 ---------- */
 const str = v => v===null||v===undefined?'':String(v);
 const esc = s => str(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-function lb(src){ document.getElementById('lbimg').src=src; document.getElementById('lightbox').style.display='flex'; }
+let lbList = [], lbIdx = 0;
+function lb(src){ lbList=[src]; lbIdx=0; showLb(); }
+function lbGallery(...urls){ lbList=urls; lbIdx=0; showLb(); }
+function lbStep(d){ if(!lbList.length) return; lbIdx=(lbIdx+d+lbList.length)%lbList.length; showLb(); }
+function showLb(){ document.getElementById('lbimg').src=lbList[lbIdx]; document.getElementById('lightbox').style.display='flex'; }
 show('review');
 </script>
 </body>

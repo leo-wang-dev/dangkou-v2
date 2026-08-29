@@ -27,6 +27,9 @@ TEMPLATES = {t.key: t for t in (RAZOR, CURLER)}
 def row_to_dict(t: Template, row) -> dict:
     keys = row.keys() if hasattr(row, 'keys') else ()
     d = {label: row[col] for col, label in t.fields if col in keys}
+    import json as _json
+    imgs = row['images'] if 'images' in keys else '[]'
     d.update({'内部货号': row['inner_code'], '状态': row['status'],
-              '主图': row['image_main'], 'id': row['id']})
+              '主图': row['image_main'], 'id': row['id'],
+              '图集': _json.loads(imgs or '[]')})
     return d

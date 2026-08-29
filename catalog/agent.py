@@ -20,11 +20,11 @@ PROMPT = '''解析这份 Excel 厂家报价单，按品类模板产出商品库�
 同产品型号绝不能出现两条——同型号多行合并为一条，颜色/规格变体差异值用 / 连接；
 纵向合并单元格的从属行必须继承组首行值归入同一商品。
 内嵌图片在 xlsx（zip）的 xl/media/、锚点在 xl/drawings/：解到工作目录（r行号_c列号.扩展名），
-每条商品 image_main 填对应文件名、image_count 填数量，一货一图。
+每条商品 image_main 填主图文件名、images 填该商品全部图片文件名清单（主图排第一）、image_count 填数量。
 定稿前自检：无重复型号、商品数合理（通常约等于数据行数），并抽 5-10 行核对归属。
 
 # 输出
-{"vendor":"厂家名或null","products":[{...模板字段...,"image_main":"...","image_count":N}]}
+{"vendor":"厂家名或null","products":[{...模板字段...,"image_main":"主图文件名","images":["该商品全部图片文件名按主图在前排列"],"image_count":N}]}
 用 python 的 json.dump(..., ensure_ascii=False, indent=1) 写入输出文件。
 完成后只回一行：DONE N（N=商品数）'''
 

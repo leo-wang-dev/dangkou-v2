@@ -73,6 +73,8 @@ def _apply(conn, payload, category, decisions) -> dict:
              json.dumps(d.get('images') or [], ensure_ascii=False),
              payload.get('doc_id')))
         created_rows.append({'id': pid, 'image_main': d.get('image_main') or '',
+                             'images': d.get('images') or
+                                       ([d['image_main']] if d.get('image_main') else []),
                              '_category': category, '_table': t.table})
         created += 1
     updated = 0

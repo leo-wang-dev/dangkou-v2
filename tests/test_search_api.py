@@ -65,3 +65,38 @@ def test_search_endpoint(client, tmp_path):
     hits = r.json()['hits']
     assert hits and hits[0]['fields']['产品型号'] == '8225'
     assert hits[0]['inner_code'].startswith('KS-')
+
+
+def test_persist_multi_images_and_tif_conversion(client, tmp_path):
+    """多图全落盘 + TIFF转PNG（KS-5390 案：浏览器不渲染tif）。"""
+    def parse_with_imgs(cat, p, wd):
+        import struct
+        # 造两张图：一张 png、一张 tif（最小TIFF头+数据）
+        open(wd + '/a.png', 'wb').write(b'\x89PNG\r\n\x1a\n' + b'\x00' * 32)
+        import io
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', (4, 4), (200, 30, 30)).save(buf, format='TIFF')
+        open(wd + '/b.tif', 'wb').write(buf.getvalue())
+        return {'vendor': '厂', 'products': [
+            {'model_no': 'M1', 'image_main': 'a.png',
+             'images': ['a.png', 'b.tif']}]}
+    import importlib
+    from catalog import ingest as ing
+    ing.agent.parse = parse_with_imgs
+    import tempfile, time
+    f = tempfile.mktemp(suffix='.xlsx'); open(f, 'wb').write(b'x')
+    doc = client.post('/import', json={'path': f, 'category': 'razor'}).json()['doc_id']
+    for _ in range(100):
+        time.sleep(0.05)
+        if client.get(f'/import/{doc}').json()['status'] != 'parsing':
+            break
+    tk = client.get('/tickets').json()['tickets'][0]
+    client.post(f"/tickets/{tk['id']}/decision",
+                json={'token': tk['token'], 'approved': True})
+    p = client.get('/products/razor').json()['products'][0]
+    rels = p.get('图集') or []
+    assert len(rels) == 2, rels                       # 两张都落位
+    assert all(r.endswith(('.png', '.jpg', '.jpeg')) for r in rels)  # tif已转png
+    for r in rels:
+        assert client.get(f'/img/{r}').status_code == 200

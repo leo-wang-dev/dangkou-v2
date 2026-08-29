@@ -38,7 +38,8 @@ export async function apply(ctx, _config = {}) {
     output: OUT,
     async execute({ path, category }) {
       const r = await call('/import', 'POST', { path, category })
-      return JSON.stringify({ docId: r.doc_id, note: 'Sub Agent 异步解析已启动，预计2-8分钟，稍后 catalog_check 查询' })
+      const mins = Math.max(2, Math.round((r.est_sec || 480) / 60))
+      return JSON.stringify({ docId: r.doc_id, note: `解析已启动，预计约${mins}分钟，完成后会自动推送` })
     },
   })
 

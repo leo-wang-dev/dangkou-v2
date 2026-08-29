@@ -51,9 +51,11 @@ def register_routes(app: FastAPI):
         _auth(request, app.state.token)
         if not os.path.isfile(body.path):
             raise HTTPException(404, f'文件不存在: {body.path}')
+        est = min(1800, max(120, int(os.path.getsize(body.path) / 1048576 * 20)))
         return {'doc_id': ingest.start(app.state.conn, app.state.storage,
                                        body.path, body.category,
-                                       callback=app.state.callback)}
+                                       callback=app.state.callback),
+                'est_sec': est}
 
     @app.get('/import/{doc_id}')
     def import_status(doc_id: int):
@@ -108,7 +110,16 @@ def register_routes(app: FastAPI):
         p = _os.path.join(wd, safe)
         if not _os.path.isfile(p):
             raise HTTPException(404, 'no image')
-        return Response(content=open(p, 'rb').read(), media_type='image/png')
+        data = open(p, 'rb').read()
+        media = 'image/png'
+        if safe.lower().endswith(('.tif', '.tiff', '.bmp')):
+            import io
+            from PIL import Image
+            img = Image.open(io.BytesIO(data)).convert('RGB')
+            buf = io.BytesIO(); img.save(buf, format='PNG'); data = buf.getvalue()
+        elif safe.lower().endswith(('.jpg', '.jpeg')):
+            media = 'image/jpeg'
+        return Response(content=data, media_type=media)
 
     @app.post('/tickets/{ticket_id}/decision')
     def decide_ticket(ticket_id: int, body: DecisionIn):
@@ -122,22 +133,37 @@ def register_routes(app: FastAPI):
         return result
 
     def _persist_images_and_reindex(result):
-        """导入审批通过：Agent 工作目录里的图落位 storage → 更新主图 rel → 向量入池。"""
+        """导入审批通过：Agent 工作目录的全部图片落位 storage（tif/bmp转png）→ 更新主图/图集 → 向量入池。"""
         from . import search
+        import io
+
+        def _webpify(data: bytes, fname: str) -> tuple[bytes, str]:
+            if fname.lower().endswith(('.tif', '.tiff', '.bmp')):
+                from PIL import Image
+                img = Image.open(io.BytesIO(data)).convert('RGB')
+                buf = io.BytesIO()
+                img.save(buf, format='PNG')
+                return buf.getvalue(), '.png'
+            return data, os.path.splitext(fname)[1] or '.png'
+
         wd = result.get('work_dir')
         cats = set()
         for row in result.get('created_rows', []):
-            fn = row.get('image_main')
-            if not wd or not fn:
+            fn_list = row.get('images') or ([row['image_main']] if row.get('image_main') else [])
+            if not wd or not fn_list:
                 continue
-            src = os.path.join(wd, fn)
-            if not os.path.exists(src):
-                continue
-            ext = os.path.splitext(fn)[1] or '.png'
-            rel = app.state.storage.save(row['_category'], row['id'],
-                                         'main' + ext, open(src, 'rb').read())
-            app.state.conn.execute(
-                f"UPDATE {row['_table']} SET image_main=? WHERE id=?", (rel, row['id']))
+            rels = []
+            for i, fn in enumerate(fn_list):
+                src = os.path.join(wd, fn)
+                if not os.path.exists(src):
+                    continue
+                data, ext = _webpify(open(src, 'rb').read(), fn)
+                rels.append(app.state.storage.save(row['_category'], row['id'],
+                                                   f'img{i}{ext}', data))
+            if rels:
+                app.state.conn.execute(
+                    f"UPDATE {row['_table']} SET image_main=?, images=? WHERE id=?",
+                    (rels[0], __import__('json').dumps(rels, ensure_ascii=False), row['id']))
             cats.add(row['_category'])
         app.state.conn.commit()
         for cat in cats:
