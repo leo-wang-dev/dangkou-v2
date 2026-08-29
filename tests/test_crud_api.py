@@ -97,3 +97,24 @@ def test_ticket_detail_and_row_level_reject(client):
     assert r['created'] == 1
     models = [p['产品型号'] for p in client.get('/products/razor').json()['products']]
     assert 'R1' in models and 'R2' not in models
+
+
+def test_decision_with_row_edits(client):
+    """审核时可编辑：decisions.edits 按 _rid 改草稿字段后再落库。"""
+    from catalog import tickets as tk
+    tk.create(client.app.state.conn, 'import', 'razor',
+              {'kind': 'import', 'work_dir': None,
+               'drafts': {'new': [{'model_no': 'E1', 'price': '1', '_rid': 'n0'},
+                                  {'model_no': 'E2', 'price': '2', '_rid': 'n1'}],
+                          'update': [], 'delist': []}})
+    t = [x for x in client.get('/tickets').json()['tickets']
+         if x['ticket_type'] == 'import' and x['status'] == 'pending'][-1]
+    r = client.post(f"/tickets/{t['id']}/decision", json={
+        'token': t['token'], 'approved': True,
+        'decisions': {'reject': ['n1'],
+                      'edits': {'n0': {'price': '99', 'color': '黑'}}}}).json()
+    assert r['created'] == 1
+    ps = client.get('/products/razor').json()['products']
+    e1 = [p for p in ps if p['产品型号'] == 'E1'][0]
+    assert e1['报价'] == '99' and e1['颜色'] == '黑'   # 编辑生效
+    assert not [p for p in ps if p['产品型号'] == 'E2']  # 驳回生效

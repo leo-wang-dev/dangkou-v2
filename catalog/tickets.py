@@ -47,15 +47,22 @@ def _apply(conn, payload, category, decisions) -> dict:
         return _apply_mutate(conn, t, payload)
     drafts = payload['drafts']
     rejected = set((decisions or {}).get('reject', []))
+    edits = (decisions or {}).get('edits') or {}   # {行钥匙: {col: 新值}} 审核时人工修正
 
     def _keep(d):
         rid = d.get('_rid') or d.get('id') if isinstance(d, dict) else d
         return rid not in rejected
 
+    def _edited(d):
+        rid = d.get('_rid') or d.get('id') if isinstance(d, dict) else None
+        e = edits.get(rid) or edits.get(str(rid)) if rid is not None else None
+        return {**d, **e} if isinstance(e, dict) else d
+
     created, created_rows = 0, []
     for d in drafts.get('new', []):
         if not _keep(d):
             continue
+        d = _edited(d)
         pid = secrets.token_hex(8)
         cols_vals = [(c, str(d.get(c, '') or '')) for c, _ in t.fields]
         conn.execute(
@@ -73,6 +80,7 @@ def _apply(conn, payload, category, decisions) -> dict:
         row, d = pair if isinstance(pair, list) else (pair, pair)
         if not _keep(d):
             continue
+        d = _edited(d)
         sets = ', '.join(f'{c}=?' for c, _ in t.fields)
         conn.execute(f"UPDATE {t.table} SET {sets}, updated_at=datetime('now') WHERE id=?",
                      (*[str(d.get(c, '') or '') for c, _ in t.fields], row['id']))

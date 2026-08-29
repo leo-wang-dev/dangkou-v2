@@ -81,6 +81,8 @@ const H = {'X-Service-Token': TOKEN, 'Content-Type': 'application/json'};
 const CAT_NAMES = {razor:'剃须刀', curler:'卷发棒'};
 let cur = {cat:'razor', tpl:null, prods:[]};
 const rej = new Set();   // 本单被驳回的行钥匙
+const edits = {};        // 本单的人工编辑 {tid:{key:{col:val}}}
+let draftRows = {};      // 当前展开工单的行数据缓存 {key: draft}
 
 function show(v){
   document.querySelectorAll('header button').forEach(b=>b.classList.remove('on'));
@@ -130,7 +132,10 @@ async function loadDetail(tid){
       <div class="f"><span class="tag ${tag.cls}">${tag.txt}</span>
         ${fields.map(f=>kv[f.col]?`<div class="kv"><b>${f.label}</b>：${esc(str(kv[f.col]))}</div>`:'').join('')}
       </div>
-      <button class="btn d s" onclick="toggleRej(${tid},'${key}',this)">驳回此行</button>
+      <div class="rowbtns">
+        <button class="btn o s" onclick="editDraft(${tid},'${key}')">编辑</button>
+        <button class="btn d s" onclick="toggleRej(${tid},'${key}',this)">驳回</button>
+      </div>
     </div>`;
   (drafts.new||[]).forEach((d2,i)=>{
     const key = d2._rid||('n'+i);
@@ -148,24 +153,57 @@ async function loadDetail(tid){
     html = `<div class="card"><b>AI 操作</b><pre style="white-space:pre-wrap;font-size:13px">${esc(JSON.stringify(p,null,1))}</pre></div>`+html;
   }
   box.innerHTML = html || '<div class="muted">（无明细行）</div>';
+  draftRows = {};
+  (drafts.new||[]).forEach((d2,i)=>{ draftRows[d2._rid||('n'+i)] = d2; });
+  (drafts.update||[]).forEach((pair,i)=>{ const [row,d2]=Array.isArray(pair)?pair:[pair,pair];
+    draftRows[row.id||('u'+i)] = d2; });
   document.getElementById('hint-'+tid).textContent =
-    '逐行点"驳回此行"后，再点整单通过——被驳回的行不会落库';
+    '可逐行"编辑"修正、"驳回"剔除，然后整单通过——编辑值与剔除都生效';
 }
-function toggleRej(tid, key, btn){
+async function editDraft(tid, key){
+  await ensureTpl(cur.cat);
+  const d = draftRows[key] || {};
+  const box = document.getElementById('modalBox');
+  box.innerHTML = `<h3>编辑草稿（审核修正）</h3>` +
+    cur.tplFieldsCache.map(f=>`<div class="fg"><label>${f.label}</label>
+      <input id="dg-${f.col}" value="${esc(str(d[f.col]))}"></div>`).join('') +
+    `<div class="row" style="justify-content:flex-end;margin-top:6px">
+      <button class="btn o" onclick="closeForm()">取消</button>
+      <button class="btn p" onclick="saveDraftEdit(${tid},'${key}')">保存修改</button></div>`;
+  document.getElementById('modal').style.display = 'flex';
+}
+async function saveDraftEdit(tid, key){
+  const cat = document.querySelector('#detail-'+tid).closest('div[id^=detail]') ? cur.cat : cur.cat;
+  if(!cur.tpl){ await loadCats(); }
+  (edits[tid] = edits[tid] || {})[key] = {};
+  for(const f of cur.tpl.fields){
+    const v = document.getElementById('dg-'+f.col).value.trim();
+    if(v && v !== str(draftRows[key][f.col])) edits[tid][key][f.col] = v;
+  }
+  if(!Object.keys(edits[tid][key]).length){ delete edits[tid][key]; }
+  closeForm();
+  const badge = document.querySelector(`#row-${tid}-${key} .tag`);
+  if(badge && !badge.textContent.includes('✎')) badge.textContent += ' ✎已编辑';
+  loadDetail(tid);  // 重展开以刷新
+  const box = document.getElementById('detail-'+tid);
+}
   const el = document.getElementById(`row-${tid}-${key}`);
   if(rej.has(`${tid}:${key}`)){ rej.delete(`${tid}:${key}`); el.classList.remove('rej'); btn.textContent='驳回此行'; }
   else{ rej.add(`${tid}:${key}`); el.classList.add('rej'); btn.textContent='已驳回↩恢复'; }
 }
 async function submitDecision(tid, wholeReject){
   const reject = [...rej].filter(k=>k.startsWith(tid+':')).map(k=>k.split(':')[1]);
-  if(wholeReject && !confirm('确认整单驳回？（全部行不生效）')) return;
-  if(!wholeReject && reject.length && !confirm(`通过本单，其中 ${reject.length} 行将被驳回不落库，确认？`)) return;
+  const rowEdits = edits[tid] || {};
+  const nEdit = Object.keys(rowEdits).length;
+  if(wholeReject && !confirm('确认整单驳回？（全部行不生效，含已做的编辑）')) return;
+  if(!wholeReject && !confirm(`通过本单：${reject.length} 行驳回、${nEdit} 行带人工修改，确认？`)) return;
   const t = (await api('/tickets')).tickets.find(x=>x.id===tid);
   try{
     const r = await api(`/tickets/${tid}/decision`, {method:'POST', body:JSON.stringify(
-      {token:t.token, approved:!wholeReject, decisions:{reject}})});
+      {token:t.token, approved:!wholeReject, decisions:{reject, edits: rowEdits}})});
     alert(wholeReject?'已整单驳回':`已通过：新增${r.created||0} / 更新${r.updated||0} / 下架${r.delisted||0}`);
     [...rej].filter(k=>k.startsWith(tid+':')).forEach(k=>rej.delete(k));
+    delete edits[tid];
     loadTickets();
   }catch(e){ alert('决策失败：'+e.message); }
 }
@@ -178,6 +216,7 @@ async function tplFields(cat){
   _tplCache[cat] = d.template.fields;
   return d.template.fields;
 }
+async function ensureTpl(cat){ cur.tplFieldsCache = await tplFields(cat); }
 async function loadCats(){
   const tabs = document.getElementById('catTabs');
   tabs.innerHTML = '';
