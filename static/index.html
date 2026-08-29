@@ -44,6 +44,17 @@ input,textarea,select{padding:9px;border:1px solid #ddd;border-radius:9px;font-s
 #modal .fg{margin-bottom:12px}
 #modal .fg label{display:block;font-size:13px;color:#666;margin-bottom:4px}
 .empty{text-align:center;color:#aaa;padding:40px 0}
+.pcard{padding:14px}
+.prow{display:flex;gap:12px;align-items:flex-start}
+img.p.big{width:86px;height:86px;flex:none}
+.noimg{width:86px;height:86px;flex:none;border-radius:10px;background:#f3f3f3;color:#bbb;
+  display:flex;align-items:center;justify-content:center;font-size:13px}
+.ptitle{font-weight:600;font-size:15px;margin-bottom:8px;word-break:break-all}
+.pbtns{display:flex;gap:6px}
+.pfields{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
+.pf{display:flex;gap:8px;font-size:13px;padding:3px 0;align-items:baseline}
+.pl{color:#999;flex:none;width:110px}
+.pv{color:#333;word-break:break-all;white-space:pre-wrap}
 </style>
 </head>
 <body>
@@ -59,7 +70,7 @@ input,textarea,select{padding:9px;border:1px solid #ddd;border-radius:9px;font-s
       <button class="btn p" onclick="openForm()">＋ 新增商品</button>
       <input id="q" placeholder="搜索型号 / 内部货号 / 字段…" oninput="renderProducts()" style="max-width:320px">
     </div>
-    <div style="overflow:auto;max-height:72vh;border-radius:12px"><table id="ptable"></table></div>
+    <div id="plist" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px"></div>
   </div>
 </main>
 <div id="lightbox" onclick="this.style.display='none'"><img id="lbimg"></div>
@@ -183,17 +194,29 @@ async function loadCats(){
 function renderProducts(){
   const q = document.getElementById('q').value.toLowerCase();
   const rows = cur.prods.filter(p=>!q||JSON.stringify(p).toLowerCase().includes(q));
-  const labels = cur.tpl.fields.map(f=>f.label);
-  document.getElementById('ptable').innerHTML =
-    '<tr>'+labels.map(l=>`<th>${l}</th>`).join('')+'<th>内部货号</th><th>图</th><th>操作</th></tr>'+
-    (rows.length?'':'<tr><td colspan="99" class="empty">暂无商品</td></tr>')+
-    rows.map(p=>'<tr>'+
-      labels.map(l=>`<td title="${esc(str(p[l]))}">${esc(str(p[l]))}</td>`).join('')+
-      `<td class="muted">${p['内部货号']??''}</td>`+
-      `<td>${p['主图']?`<img class="p" src="/img/${p['主图']}?token=${TOKEN}" onclick="lb(this.src)">`:''}</td>`+
-      `<td><div class="rowbtns"><button class="btn o s" onclick="openForm('${p['id']}')">编辑</button>
-        <button class="btn d s" onclick="delP('${p['id']}')">下架</button></div></td></tr>`).join('');
+  const el = document.getElementById('plist');
+  if(!rows.length){ el.innerHTML = '<div class="card empty" style="grid-column:1/-1">暂无商品</div>'; return; }
+  el.innerHTML = rows.map(p=>`
+    <div class="card pcard">
+      <div class="prow">
+        ${p['主图']?`<img class="p big" src="/img/${p['主图']}?token=${TOKEN}" onclick="lb(this.src)">`
+          :'<div class="noimg">无图</div>'}
+        <div class="pbody">
+          <div class="ptitle">${esc(str(p[cur.tpl.fields[0].label]))||'（无型号）'}
+            <span class="muted">${p['内部货号']??''}</span></div>
+          <div class="pbtns">
+            <button class="btn o s" onclick="openForm('${p['id']}')">编辑</button>
+            <button class="btn d s" onclick="delP('${p['id']}')">下架</button>
+          </div>
+        </div>
+      </div>
+      <div class="pfields">
+        ${cur.tpl.fields.slice(1).map(f=>`
+          <div class="pf"><span class="pl">${f.label}</span><span class="pv">${esc(str(p[f.label]))||'—'}</span></div>`).join('')}
+      </div>
+    </div>`).join('');
 }
+
 function openForm(pid){
   const p = pid ? cur.prods.find(x=>x['id']===pid) : null;
   const box = document.getElementById('modalBox');

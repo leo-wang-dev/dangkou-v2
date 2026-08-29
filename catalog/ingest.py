@@ -9,9 +9,25 @@ from . import agent, classify, tickets
 from .templates import TEMPLATES
 
 
+def _ensure_xlsx(path: str) -> str:
+    """.xls 老格式先 soffice 转 .xlsx（保内嵌图；微信常发 .xls，openpyxl 读不了）。"""
+    if not path.lower().endswith('.xls'):
+        return path
+    conv = path.rsplit('.', 1)[0] + '.xlsx'
+    if not os.path.exists(conv):
+        import subprocess
+        subprocess.run(['soffice', '--headless', '--convert-to', 'xlsx', '--outdir',
+                        os.path.dirname(path) or '.', path],
+                       capture_output=True, timeout=600)
+    if not os.path.exists(conv):
+        raise RuntimeError('老 .xls 转换失败（服务器 soffice）')
+    return conv
+
+
 def start(conn, storage, xlsx_path, category, callback=None) -> int:
     if category not in TEMPLATES:
         raise ValueError(f'未知品类: {category}')
+    xlsx_path = _ensure_xlsx(xlsx_path)
     cur = conn.execute(
         'INSERT INTO import_doc(filename, category, status) VALUES(?,?,?)',
         (os.path.basename(xlsx_path), category, 'parsing'))
