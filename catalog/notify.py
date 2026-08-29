@@ -7,7 +7,7 @@ from . import config
 
 NOTIFY_URL = os.environ.get('CATALOG_NOTIFY_URL', 'http://127.0.0.1:17606/notify')
 NOTIFY_TOKEN = os.environ.get('CATALOG_NOTIFY_TOKEN', '')
-PUBLIC_URL = os.environ.get('CATALOG_V2_PUBLIC_URL', 'http://127.0.0.1:8890')
+PUBLIC_FALLBACK = 'http://134.175.135.102:8890'  # 教训：默认绝不能是本地地址
 
 CAT_NAME = {'razor': '剃须刀', 'curler': '卷发棒'}
 
@@ -20,7 +20,7 @@ def push(doc_id, ticket_id, token, stats):
         text = f'❌ 导入失败（doc{doc_id}）：{stats["error"][:120]}'
     else:
         cat = CAT_NAME.get(stats.get('category'), '')
-        link = f'{PUBLIC_URL}/?t={config.SERVICE_TOKEN}'
+        link = f"{os.environ.get('CATALOG_V2_PUBLIC_URL', PUBLIC_FALLBACK)}/?t={config.SERVICE_TOKEN}'"
         text = (f'📦 导入完成：{cat} 新增{stats.get("new", 0)} / '
                 f'更新{stats.get("update", 0)} / 下架{stats.get("delist", 0)}'
                 f'{"（" + stats["vendor"] + "）" if stats.get("vendor") else ""}\n'

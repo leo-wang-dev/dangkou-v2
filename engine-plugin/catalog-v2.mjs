@@ -5,6 +5,7 @@ export const name = 'catalog-v2'
 export const inject = ['tools']
 
 const BASE = process.env.CATALOG_V2_URL || 'http://127.0.0.1:8890'
+const PUBLIC = process.env.CATALOG_V2_PUBLIC_URL || 'http://134.175.135.102:8890'
 const TOKEN = process.env.CATALOG_V2_SERVICE_TOKEN || ''
 
 async function call(path, method = 'GET', body = null) {
@@ -52,7 +53,7 @@ export async function apply(ctx, _config = {}) {
       if (s.status === 'ticketed') {
         const tks = await call('/tickets')
         const tk = tks.tickets.find(t => t.status === 'pending' && t.ticket_type === 'import')
-        if (tk && tk.token) s.approveUrl = `${BASE}/?t=${tk.token}`
+        if (tk && tk.token) s.approveUrl = `${PUBLIC}/?t=${tk.token}`
       }
       return JSON.stringify(s)
     },
@@ -119,7 +120,7 @@ export async function apply(ctx, _config = {}) {
       else r = await call(`/products/${category}/${productId}`, 'DELETE')
       const tks = await call('/tickets')
       const tk = tks.tickets.find(t => t.status === 'pending' && t.ticket_type === 'mutate')
-      r.approveUrl = tk && tk.token ? `${BASE}/?t=${tk.token}` : `${BASE}/`
+      r.approveUrl = tk && tk.token ? `${PUBLIC}/?t=${tk.token}` : `${PUBLIC}/`
       return JSON.stringify(r)
     },
   })
