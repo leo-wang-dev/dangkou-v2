@@ -1,5 +1,4 @@
-"""完成即回流：解析完成/失败 → POST 引擎 catalog-notify → followup 微信会话主动推送。"""
-import json
+"""完成即推送：解析完成/失败 → 引擎 catalog-notify 直连微信发送器（不过模型）。"""
 import os
 
 import requests
@@ -10,25 +9,25 @@ NOTIFY_URL = os.environ.get('CATALOG_NOTIFY_URL', 'http://127.0.0.1:17606/notify
 NOTIFY_TOKEN = os.environ.get('CATALOG_NOTIFY_TOKEN', '')
 PUBLIC_URL = os.environ.get('CATALOG_V2_PUBLIC_URL', 'http://127.0.0.1:8890')
 
+CAT_NAME = {'razor': '剃须刀', 'curler': '卷发棒'}
+
 
 def push(doc_id, ticket_id, token, stats):
-    """ingest 回调：stats 有 error=失败通知，否则成功通知（带审批链接）。"""
+    """ingest 回调：直推用户可读的完成/失败通知（带审批入口）。"""
     if not NOTIFY_TOKEN:
-        return  # 未配置则静默跳过（本地测试环境）
+        return
     if stats.get('error'):
-        text = (f'[系统通知·导入失败] 文档doc{doc_id} 解析失败：{stats["error"]}。'
-                f'请立即用 im_send 工具把失败原因告知用户，语气抱歉，别让用户干等。')
+        text = f'❌ 导入失败（doc{doc_id}）：{stats["error"][:120]}'
     else:
+        cat = CAT_NAME.get(stats.get('category'), '')
         link = f'{PUBLIC_URL}/?t={config.SERVICE_TOKEN}'
-        text = (f'[系统通知·导入完成] 文档doc{doc_id} 解析完成：'
-                f'新增{stats.get("new", 0)}/更新{stats.get("update", 0)}/'
-                f'下架{stats.get("delist", 0)}'
-                f'{"（厂家：" + stats["vendor"] + "）" if stats.get("vendor") else ""}。\n'
-                f'请立即用 im_send 工具发消息给用户：简短告知完成统计，'
-                f'并附审批链接 {link} ，提醒用户点开审批。不要调用其他工具。')
+        text = (f'📦 导入完成：{cat} 新增{stats.get("new", 0)} / '
+                f'更新{stats.get("update", 0)} / 下架{stats.get("delist", 0)}'
+                f'{"（" + stats["vendor"] + "）" if stats.get("vendor") else ""}\n'
+                f'审批入口：{link}\n（点开即可逐行审批）')
     try:
         r = requests.post(NOTIFY_URL, json={'text': text}, timeout=15,
                           headers={'Authorization': f'Bearer {NOTIFY_TOKEN}'})
-        print(f'[notify] 回流推送 rc={r.status_code} {r.text[:80]}', flush=True)
+        print(f'[notify] 直推 rc={r.status_code} {r.text[:80]}', flush=True)
     except Exception as e:  # noqa: BLE001
-        print(f'[notify] 回流推送失败: {e}', flush=True)
+        print(f'[notify] 直推失败: {e}', flush=True)

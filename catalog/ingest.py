@@ -32,7 +32,7 @@ def start(conn, storage, xlsx_path, category, callback=None) -> int:
                                   'update': [[dict(r), d] for r, d in c['update']],
                                   'delist': [dict(r) for r in c['delist']]}}
             tk = tickets.create(conn, 'import', category, payload)
-            stats = {'new': len(c['new']), 'update': len(c['update']),
+            stats = {'new': len(c['new']), 'update': len(c['update']), 'category': category,
                      'delist': len(c['delist']), 'vendor': result.get('vendor')}
             conn.execute("UPDATE import_doc SET status='ticketed', stats_json=? WHERE id=?",
                          (json.dumps(stats, ensure_ascii=False), doc_id))
