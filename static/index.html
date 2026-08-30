@@ -161,6 +161,12 @@ async function tplFields(cat){
 async function loadDetail(tid){
   const box = document.getElementById('detail-'+tid);
   if(box.innerHTML){ box.innerHTML=''; return; }
+  await refreshDetail(tid);
+}
+
+async function refreshDetail(tid){
+  const box = document.getElementById('detail-'+tid);
+  box.innerHTML = '<div class="muted">刷新中…</div>';
   const d = await api('/tickets/'+tid);
   cur.detailCat = d.ticket.category;
   const p = d.payload, drafts = p.drafts||{};
