@@ -10,32 +10,11 @@ import subprocess
 from . import config
 from .templates import TEMPLATES
 
-PROMPT = '''解析这份 Excel 厂家报价单，按品类模板产出商品库。
-
-输入：__FILE__（你的工作目录）
-输出：__OUT__
-品类：__CAT_NAME__，模板字段（键名=列名，逐字段填，原文有就填没有留空）：__FIELDS__
-
-# 硬性验收标准
-每一行数据 = 一个独立商品，不做任何合并；
-纵向合并单元格只是格式：空单元格继承上方有值单元格的值（如品名只在组首行写，下面行继承），但每一行仍然是一个独立商品。
-内嵌图片在 xlsx（zip）的 xl/media/、锚点在 xl/drawings/：解到工作目录（r行号_c列号.扩展名），
-每条商品 image_main 填主图文件名、images 填该商品全部图片文件名清单（主图排第一）、image_count 填数量。
-定稿前自检：无重复型号、商品数合理（通常约等于数据行数），并抽 5-10 行核对归属。
-
-# 输出
-{"vendor":"厂家名或null","products":[{...模板字段...,"image_main":"主图文件名","images":["该商品全部图片文件名按主图在前排列"],"image_count":N}]}
-用 python 的 json.dump(..., ensure_ascii=False, indent=1) 写入输出文件。
-完成后只回一行：DONE N（N=商品数）'''
-
-
 def build_prompt(template_key, xlsx_path, out_json) -> str:
     t = TEMPLATES[template_key]
-    fields = ', '.join(f'{label}({col})' for col, label in t.fields)
-    return (PROMPT.replace('__FILE__', xlsx_path)
-            .replace('__OUT__', out_json)
-            .replace('__CAT_NAME__', t.name)
-            .replace('__FIELDS__', fields))
+    return (t.prompt
+            .replace('__FILE__', xlsx_path)
+            .replace('__OUT__', out_json))
 
 
 def parse(template_key, xlsx_path, work_dir) -> dict:

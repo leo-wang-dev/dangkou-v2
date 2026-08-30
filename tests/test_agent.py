@@ -22,7 +22,7 @@ def _make_fake(tmp_path, out_json, products):
 
 def test_build_prompt_contains_template_fields_and_rules():
     p = agent.build_prompt('razor', '/tmp/in.xlsx', '/tmp/out.json')
-    for label in ('产品型号', '彩盒尺寸(mm)', '报价'):
+    for label in ('产品型号', '彩盒尺寸mm', '报价'):
         assert label in p
     assert '每一行数据' in p and '不做任何合并' in p
 
