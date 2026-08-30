@@ -1,5 +1,5 @@
 """品类模板常量——本系统字段体系的唯一事实源（PRD §3 人工确认后固化）。"""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -9,6 +9,7 @@ class Template:
     table: str
     dedup_field: str
     fields: tuple  # ((col, label), ...) 有序=列序
+    notes: str = ''  # 品类专属提示词补充（用户按实际微调）
 
 
 RAZOR = Template('razor', '剃须刀', 'product_razor', 'model_no', (

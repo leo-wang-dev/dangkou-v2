@@ -24,7 +24,7 @@ def test_build_prompt_contains_template_fields_and_rules():
     p = agent.build_prompt('razor', '/tmp/in.xlsx', '/tmp/out.json')
     for label in ('产品型号', '彩盒尺寸(mm)', '报价'):
         assert label in p
-    assert '同型号' in p and '绝不能出现两条' in p
+    assert '每一行数据' in p and '不做任何合并' in p
 
 
 def test_parse_returns_products_via_fake_agent(tmp_path, monkeypatch):
@@ -37,12 +37,3 @@ def test_parse_returns_products_via_fake_agent(tmp_path, monkeypatch):
     assert r['products'][0]['model_no'] == '8225'
 
 
-def test_parse_dedups_same_model(tmp_path, monkeypatch):
-    out = str(tmp_path / 'products.json')
-    monkeypatch.setattr(agent.shutil, 'which', lambda _: _make_fake(
-        tmp_path, out,
-        [{'model_no': '8225', 'price': '21.5'},
-         {'model_no': '8225', 'price': '21.5', 'color': '黑'}]))
-    r = agent.parse('curler' if False else 'razor', str(tmp_path / 'in.xlsx'), str(tmp_path))
-    assert len(r['products']) == 1
-    assert r['products'][0].get('color') == '黑'  # 保留字段更全的

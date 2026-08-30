@@ -26,6 +26,7 @@ input,textarea,select{padding:9px;border:1px solid #ddd;border-radius:9px;font-s
 /* 审核明细行 */
 .draft{display:flex;gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;margin-bottom:10px;align-items:flex-start}
 .draft.rej{opacity:.45;background:#fff7f7}
+.draft.dup{border-color:#f0a030;background:#fffbf0}
 .draft .f{flex:1;min-width:0}
 .tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;margin-right:6px}
 .tag.new{background:#e8f5e9;color:#1b7e34}.tag.upd{background:#e8f0fe;color:var(--blue)}
@@ -170,16 +171,20 @@ async function loadDetail(tid){
       <div class="f"><span class="tag ${tag.cls}">${tag.txt}</span>
         ${fields.map(f=>kv[f.col]?`<div class="kv"><b>${f.label}</b>：${esc(str(kv[f.col]))}</div>`:'').join('')}
       </div>
-      <div style="display:flex;flex-direction:column;gap:6px">
+      <div style="display:flex;flex-direction:column;gap:6px;flex:none">
         <button class="btn o s" onclick="editDraft('${key}')">编辑</button>
         <button class="btn d s" onclick="toggleRej(${tid},'${key}',this)">驳回</button>
       </div>
     </div>`;
   draftRows = {};
+  const modelCount = {};
+  (drafts.new||[]).forEach(d2=>{ const m=str(d2.model_no||d2.item_no); modelCount[m]=(modelCount[m]||0)+1; });
   (drafts.new||[]).forEach((d2,i)=>{
     const key = d2._rid||('n'+i);
     draftRows[key] = d2;
-    html += rowHtml({txt:'新增',cls:'new'}, d2._imgs||[], d2, key); });
+    const m = str(d2.model_no||d2.item_no);
+    const dup = modelCount[m] > 1 ? ' ⚠️重复' : '';
+    html += rowHtml({txt:'新增'+dup,cls:'new'}, d2._imgs||[], d2, key); });
   (drafts.update||[]).forEach((pair,i)=>{
     const [row,d2] = Array.isArray(pair)?pair:[pair,pair];
     const key = row.id||('u'+i);

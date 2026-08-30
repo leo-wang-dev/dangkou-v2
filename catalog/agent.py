@@ -17,7 +17,7 @@ PROMPT = '''解析这份 Excel 厂家报价单，按品类模板产出商品库�
 品类：__CAT_NAME__，模板字段（键名=列名，逐字段填，原文有就填没有留空）：__FIELDS__
 
 # 硬性验收标准
-同产品型号绝不能出现两条——同型号多行合并为一条，颜色/规格变体差异值用 / 连接；
+每一行数据 = 一个独立商品，不做任何合并；
 纵向合并单元格的从属行必须继承组首行值归入同一商品。
 内嵌图片在 xlsx（zip）的 xl/media/、锚点在 xl/drawings/：解到工作目录（r行号_c列号.扩展名），
 每条商品 image_main 填主图文件名、images 填该商品全部图片文件名清单（主图排第一）、image_count 填数量。
@@ -63,15 +63,4 @@ def parse(template_key, xlsx_path, work_dir) -> dict:
     if timed_out:
         print('[agent] 超时拯救：收用已写出的结果文件', flush=True)
     data = json.load(open(out_json))
-    # 防御性去重（同型号保留字段更全的）
-    t = TEMPLATES[template_key]
-    best = {}
-    for p in data.get('products', []):
-        k = str(p.get(t.dedup_field, '')).strip()
-        if not k:
-            continue
-        cur = json.dumps(p, ensure_ascii=False)
-        if k not in best or len(cur) > len(json.dumps(best[k], ensure_ascii=False)):
-            best[k] = p
-    data['products'] = list(best.values())
     return data
