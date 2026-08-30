@@ -107,8 +107,11 @@ def register_routes(app: FastAPI):
             d.setdefault('_rid', None)
             fns = [f for f in (d.get('images') or []) if f] or \
                   ([d['image_main']] if d.get('image_main') else [])
-            if wd and fns:
-                d['_imgs'] = [f"/ticketimg/{ticket_id}/{fn}?token={app.state.token}" for fn in fns]
+            if fns:
+                d['_imgs'] = [
+                    f"/img/{fn}?token={app.state.token}" if fn.startswith('_upload/')
+                    else f"/ticketimg/{ticket_id}/{fn}?token={app.state.token}"
+                    for fn in fns]
                 d['_img'] = d['_imgs'][0]
         return {'ticket': {'id': r['id'], 'ticket_type': r['ticket_type'],
                            'category': r['category'], 'status': r['status'],
