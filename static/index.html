@@ -16,51 +16,62 @@ main{padding:16px;max-width:1180px;margin:0 auto}
 .tabs button{border:1px solid #ddd;background:#fff;border-radius:10px;padding:6px 16px;cursor:pointer}
 .tabs button.on{background:#222;color:#fff;border-color:#222}
 .card{background:#fff;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-.rowbtns{display:flex;gap:6px}
 .btn{border:0;border-radius:9px;padding:7px 14px;cursor:pointer;font-size:14px}
 .btn.p{background:var(--blue);color:#fff}.btn.d{background:var(--red);color:#fff}
 .btn.o{background:#fff;border:1px solid #ddd;color:#333}
 .btn.s{padding:4px 10px;font-size:13px}
-.btn:disabled{opacity:.4;cursor:default}
-table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;font-size:14px}
-th,td{padding:9px 10px;border-bottom:1px solid #f2f2f2;text-align:left;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
-th{background:#fafafa;font-weight:600;position:sticky;top:0}
-img.p{width:56px;height:56px;object-fit:cover;border-radius:8px;cursor:zoom-in;background:#f0f0f0}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .muted{color:#999;font-size:13px}
 input,textarea,select{padding:9px;border:1px solid #ddd;border-radius:9px;font-size:14px;width:100%}
+/* 审核明细行 */
 .draft{display:flex;gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;margin-bottom:10px;align-items:flex-start}
 .draft.rej{opacity:.45;background:#fff7f7}
 .draft .f{flex:1;min-width:0}
 .tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;margin-right:6px}
 .tag.new{background:#e8f5e9;color:#1b7e34}.tag.upd{background:#e8f0fe;color:var(--blue)}
-.tag.del{background:#fdecea;color:var(--red)}.tag.ok{background:#e8f5e9;color:#1b7e34}
-.kv{font-size:13px;color:#555;margin-top:2px}
+.tag.del{background:#fdecea;color:var(--red)}
+.kv{font-size:13px;color:#555;margin-top:3px}
+/* 图片 */
+img.p{width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in;background:#f0f0f0;flex:none}
+.badge{position:absolute;right:-6px;bottom:-6px;background:rgba(0,0,0,.65);color:#fff;
+  font-size:11px;border-radius:8px;padding:1px 6px}
+.imgwrap{position:relative;flex:none}
+/* 商品卡片 */
+#plist{display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:12px}
+.pcard{padding:14px}
+.phead{display:flex;gap:12px;align-items:flex-start}
+img.big{width:86px;height:86px}
+.noimg{width:86px;height:86px;border-radius:10px;background:#f3f3f3;color:#bbb;
+  display:flex;align-items:center;justify-content:center;font-size:13px;flex:none}
+.pinfo{flex:1;min-width:0}
+.ptitle{font-weight:600;font-size:15px;word-break:break-all;line-height:1.4}
+.psub{margin-top:2px}
+.pbtns{display:flex;gap:6px;margin-top:10px}
+.pfields{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
+.pf{display:flex;gap:8px;font-size:13px;padding:4px 0;align-items:baseline}
+.pl{color:#999;flex:none;width:112px}
+.pv{color:#333;word-break:break-all;white-space:pre-wrap}
+/* 灯箱 */
 #lightbox{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;align-items:center;justify-content:center;z-index:99;cursor:zoom-out}
 #lightbox img{max-width:96vw;max-height:96vh}
-#modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:60;padding:16px}
-#modal .box{background:#fff;border-radius:16px;padding:20px;max-width:560px;width:100%;max-height:88vh;overflow:auto}
-#modal .box h3{margin:0 0 14px}
-#modal .fg{margin-bottom:12px}
-#modal .fg label{display:block;font-size:13px;color:#666;margin-bottom:4px}
-.empty{text-align:center;color:#aaa;padding:40px 0}
-.pcard{padding:14px}
-.prow{display:flex;gap:12px;align-items:flex-start}
-img.p.big{width:86px;height:86px;flex:none}
-.noimg{width:86px;height:86px;flex:none;border-radius:10px;background:#f3f3f3;color:#bbb;
-  display:flex;align-items:center;justify-content:center;font-size:13px}
-.ptitle{font-weight:600;font-size:15px;margin-bottom:8px;word-break:break-all}
-.ibadge{position:relative;display:inline-block}
-.ibadge .n{position:absolute;right:-6px;bottom:-6px;background:rgba(0,0,0,.65);color:#fff;
-  font-size:11px;border-radius:8px;padding:1px 6px}
 #lightbox .nav{position:absolute;top:50%;transform:translateY(-50%);font-size:34px;color:#fff;
   background:rgba(0,0,0,.4);border:0;border-radius:50%;width:46px;height:46px;cursor:pointer}
 #lbPrev{left:12px}#lbNext{right:12px}
-.pbtns{display:flex;gap:6px}
-.pfields{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
-.pf{display:flex;gap:8px;font-size:13px;padding:3px 0;align-items:baseline}
-.pl{color:#999;flex:none;width:110px}
-.pv{color:#333;word-break:break-all;white-space:pre-wrap}
+/* 表单弹窗 */
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:60;padding:16px}
+#modal .box{background:#fff;border-radius:16px;padding:20px;max-width:580px;width:100%;max-height:88vh;overflow:auto}
+#modal .box h3{margin:0 0 14px}
+.fg{margin-bottom:12px}
+.fg label{display:block;font-size:13px;color:#666;margin-bottom:4px}
+/* 图片管理区（编辑框内） */
+.imgman{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.imgman .cell{position:relative;width:72px;height:72px}
+.imgman .cell img{width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:zoom-in}
+.imgman .cell button{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;
+  border:0;background:var(--red);color:#fff;font-size:13px;cursor:pointer;line-height:1}
+.imgman .add{width:72px;height:72px;border:1.5px dashed #bbb;border-radius:8px;background:none;
+  font-size:22px;color:#999;cursor:pointer}
+.empty{text-align:center;color:#aaa;padding:40px 0}
 </style>
 </head>
 <body>
@@ -76,21 +87,31 @@ img.p.big{width:86px;height:86px;flex:none}
       <button class="btn p" onclick="openForm()">＋ 新增商品</button>
       <input id="q" placeholder="搜索型号 / 内部货号 / 字段…" oninput="renderProducts()" style="max-width:320px">
     </div>
-    <div id="plist" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px"></div>
+    <div id="plist"></div>
   </div>
 </main>
-<div id="lightbox" onclick="if(event.target===this)this.style.display='none'"><button class="nav" id="lbPrev" onclick="event.stopPropagation();lbStep(-1)">‹</button><img id="lbimg" onclick="event.stopPropagation()"><button class="nav" id="lbNext" onclick="event.stopPropagation();lbStep(1)">›</button></div>
+<div id="lightbox" onclick="if(event.target===this)this.style.display='none'">
+  <button class="nav" id="lbPrev" onclick="event.stopPropagation();lbStep(-1)">‹</button>
+  <img id="lbimg" onclick="event.stopPropagation()">
+  <button class="nav" id="lbNext" onclick="event.stopPropagation();lbStep(1)">›</button>
+</div>
 <div id="modal"><div class="box" id="modalBox"></div></div>
-<input type="file" id="imgInput" accept="image/*" multiple style="display:none" onchange="onImgsPicked(this)">
 <script>
 const TOKEN = new URLSearchParams(location.search).get('t') || '';
 const H = {'X-Service-Token': TOKEN, 'Content-Type': 'application/json'};
 const CAT_NAMES = {razor:'剃须刀', curler:'卷发棒'};
-let cur = {cat:'razor', tpl:null, prods:[]};
-const rej = new Set();   // 本单被驳回的行钥匙
-const edits = {};        // 本单的人工编辑 {tid:{key:{col:val}}}
-let draftRows = {};      // 当前展开工单的行数据缓存 {key: draft}
+let cur = {cat:'razor', tpl:null, prods:[], detailCat:null};
+const rej = new Set();
+const edits = {};
+let draftRows = {};
 
+const str = v => v===null||v===undefined?'':String(v);
+const esc = s => str(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const api = async (p, opt={}) => {
+  const r = await fetch(p, {...opt, headers:H});
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+};
 function show(v){
   document.querySelectorAll('header button').forEach(b=>b.classList.remove('on'));
   document.getElementById('v-'+v).classList.add('on');
@@ -99,11 +120,12 @@ function show(v){
   if(v==='review') loadTickets();
   if(v==='products') loadCats();
 }
-const api = async (p, opt={}) => {
-  const r = await fetch(p, {...opt, headers:H});
-  if(!r.ok) throw new Error(await r.text());
-  return r.json();
-};
+
+/* ---------- 灯箱 ---------- */
+let lbList = [], lbIdx = 0;
+function lbGallery(urls){ lbList=urls; lbIdx=0; showLb(); }
+function lbStep(d){ if(!lbList.length) return; lbIdx=(lbIdx+d+lbList.length)%lbList.length; showLb(); }
+function showLb(){ document.getElementById('lbimg').src=lbList[lbIdx]; document.getElementById('lightbox').style.display='flex'; }
 
 /* ---------- 审核页 ---------- */
 async function loadTickets(){
@@ -119,94 +141,70 @@ async function loadTickets(){
         <span class="muted">· ${CAT_NAMES[t.category]||t.category} · ${t.created_at}</span></div>
       <button class="btn o" onclick="loadDetail(${t.id})">展开明细 ▾</button></div>
       <div class="row" style="margin-top:10px">
-        <button class="btn p" onclick="submitDecision(${t.id},false,[])">整单通过</button>
-        <button class="btn d" onclick="submitDecision(${t.id},true,[])">整单驳回</button>
-        <span class="muted" id="hint-${t.id}">先展开明细可逐行驳回，未驳回的行随整单通过</span>
+        <button class="btn p" onclick="submitDecision(${t.id},false)">整单通过</button>
+        <button class="btn d" onclick="submitDecision(${t.id},true)">整单驳回</button>
+        <span class="muted">可展开明细逐行编辑（含图片）/驳回</span>
       </div><div id="detail-${t.id}" style="margin-top:12px"></div>`;
     el.appendChild(c);
   }
+}
+const _tplCache = {};
+async function tplFields(cat){
+  if(_tplCache[cat]) return _tplCache[cat];
+  const d = await api('/products/'+cat);
+  _tplCache[cat] = d.template.fields;
+  return d.template.fields;
 }
 async function loadDetail(tid){
   const box = document.getElementById('detail-'+tid);
   if(box.innerHTML){ box.innerHTML=''; return; }
   const d = await api('/tickets/'+tid);
+  cur.detailCat = d.ticket.category;
   const p = d.payload, drafts = p.drafts||{};
+  const fields = await tplFields(cur.detailCat);
   let html = '';
-  const fields = await tplFields(d.ticket.category);
-  const rowHtml = (tag, img, kv, key, imgs) => `
+  const rowHtml = (tag, imgs, kv, key) => `
     <div class="draft" id="row-${tid}-${key}">
-      ${img?`<div class="ibadge"><img class="p big" src="${img}" onclick="lbGallery(${(imgs&&imgs.length?imgs:[img]).map(u=>`'${u}'`).join(',')})">
-        ${(imgs&&imgs.length>1)?`<span class="n">${imgs.length}图</span>`:''}</div>`:''}
+      ${imgs.length?`<div class="imgwrap"><img class="p" src="${imgs[0]}" onclick="lbGallery(${JSON.stringify(imgs).replace(/"/g,'&quot;')})">
+        ${imgs.length>1?`<span class="badge">${imgs.length}图</span>`:''}</div>`:''}
       <div class="f"><span class="tag ${tag.cls}">${tag.txt}</span>
         ${fields.map(f=>kv[f.col]?`<div class="kv"><b>${f.label}</b>：${esc(str(kv[f.col]))}</div>`:'').join('')}
       </div>
-      <div class="rowbtns">
-        <button class="btn o s" onclick="editDraft(${tid},'${key}')">编辑</button>
-        <button class="btn o s" onclick="pickDraftImgs(${tid},'${key}')">换图</button>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="btn o s" onclick="editDraft('${key}')">编辑</button>
         <button class="btn d s" onclick="toggleRej(${tid},'${key}',this)">驳回</button>
       </div>
     </div>`;
+  draftRows = {};
   (drafts.new||[]).forEach((d2,i)=>{
     const key = d2._rid||('n'+i);
-    html += rowHtml({txt:'新增',cls:'new'}, d2._img, d2, key, d2._imgs); });
+    draftRows[key] = d2;
+    html += rowHtml({txt:'新增',cls:'new'}, d2._imgs||[], d2, key); });
   (drafts.update||[]).forEach((pair,i)=>{
     const [row,d2] = Array.isArray(pair)?pair:[pair,pair];
     const key = row.id||('u'+i);
-    const img = row.image_main?`/img/${row.image_main}?token=${TOKEN}`:'';
-    html += rowHtml({txt:'更新',cls:'upd'}, img, d2, key); });
+    draftRows[key] = {...d2, _imgs:d2._imgs||['/img/'+row.image_main+'?token='+TOKEN].filter(u=>!u.includes('null'))};
+    const imgs = draftRows[key]._imgs;
+    html += rowHtml({txt:'更新',cls:'upd'}, imgs, d2, key); });
   (drafts.delist||[]).forEach((r,i)=>{
     const key = (r&&r.id)||('d'+i);
-    const img = (r&&r.image_main)?`/img/${r.image_main}?token=${TOKEN}`:'';
-    html += rowHtml({txt:'下架',cls:'del'}, img, r||{}, key); });
+    const imgs = (r&&r.image_main)?['/img/'+r.image_main+'?token='+TOKEN]:[];
+    html += rowHtml({txt:'下架',cls:'del'}, imgs, r||{}, key); });
   if(d.ticket.ticket_type==='mutate'){
     html = `<div class="card"><b>AI 操作</b><pre style="white-space:pre-wrap;font-size:13px">${esc(JSON.stringify(p,null,1))}</pre></div>`+html;
   }
   box.innerHTML = html || '<div class="muted">（无明细行）</div>';
-  draftRows = {};
-  (drafts.new||[]).forEach((d2,i)=>{ draftRows[d2._rid||('n'+i)] = d2; });
-  (drafts.update||[]).forEach((pair,i)=>{ const [row,d2]=Array.isArray(pair)?pair:[pair,pair];
-    draftRows[row.id||('u'+i)] = d2; });
-  document.getElementById('hint-'+tid).textContent =
-    '可逐行"编辑"修正、"驳回"剔除，然后整单通过——编辑值与剔除都生效';
-}
-async function editDraft(tid, key){
-  await ensureTpl(cur.cat);
-  const d = draftRows[key] || {};
-  const box = document.getElementById('modalBox');
-  box.innerHTML = `<h3>编辑草稿（审核修正）</h3>` +
-    cur.tplFieldsCache.map(f=>`<div class="fg"><label>${f.label}</label>
-      <input id="dg-${f.col}" value="${esc(str(d[f.col]))}"></div>`).join('') +
-    `<div class="row" style="justify-content:flex-end;margin-top:6px">
-      <button class="btn o" onclick="closeForm()">取消</button>
-      <button class="btn p" onclick="saveDraftEdit(${tid},'${key}')">保存修改</button></div>`;
-  document.getElementById('modal').style.display = 'flex';
-}
-async function saveDraftEdit(tid, key){
-  const cat = document.querySelector('#detail-'+tid).closest('div[id^=detail]') ? cur.cat : cur.cat;
-  if(!cur.tpl){ await loadCats(); }
-  (edits[tid] = edits[tid] || {})[key] = {};
-  for(const f of cur.tpl.fields){
-    const v = document.getElementById('dg-'+f.col).value.trim();
-    if(v && v !== str(draftRows[key][f.col])) edits[tid][key][f.col] = v;
-  }
-  if(!Object.keys(edits[tid][key]).length){ delete edits[tid][key]; }
-  closeForm();
-  const badge = document.querySelector(`#row-${tid}-${key} .tag`);
-  if(badge && !badge.textContent.includes('✎')) badge.textContent += ' ✎已编辑';
-  loadDetail(tid);  // 重展开以刷新
-  const box = document.getElementById('detail-'+tid);
 }
 function toggleRej(tid, key, btn){
   const el = document.getElementById(`row-${tid}-${key}`);
-  if(rej.has(`${tid}:${key}`)){ rej.delete(`${tid}:${key}`); el.classList.remove('rej'); btn.textContent='驳回此行'; }
-  else{ rej.add(`${tid}:${key}`); el.classList.add('rej'); btn.textContent='已驳回↩恢复'; }
+  if(rej.has(`${tid}:${key}`)){ rej.delete(`${tid}:${key}`); el.classList.remove('rej'); btn.textContent='驳回'; }
+  else{ rej.add(`${tid}:${key}`); el.classList.add('rej'); btn.textContent='已驳回↩'; }
 }
 async function submitDecision(tid, wholeReject){
   const reject = [...rej].filter(k=>k.startsWith(tid+':')).map(k=>k.split(':')[1]);
   const rowEdits = edits[tid] || {};
-  const nEdit = Object.keys(rowEdits).length;
   if(wholeReject && !confirm('确认整单驳回？（全部行不生效，含已做的编辑）')) return;
-  if(!wholeReject && !confirm(`通过本单：${reject.length} 行驳回、${nEdit} 行带人工修改，确认？`)) return;
+  if(!wholeReject && !confirm(`通过本单：${reject.length} 行驳回、${Object.keys(rowEdits).length} 行带修改，确认？`)) return;
   const t = (await api('/tickets')).tickets.find(x=>x.id===tid);
   try{
     const r = await api(`/tickets/${tid}/decision`, {method:'POST', body:JSON.stringify(
@@ -218,15 +216,100 @@ async function submitDecision(tid, wholeReject){
   }catch(e){ alert('决策失败：'+e.message); }
 }
 
-/* ---------- 商品页 ---------- */
-const _tplCache = {};
-async function tplFields(cat){
-  if(_tplCache[cat]) return _tplCache[cat];
-  const d = await api('/products/'+cat);
-  _tplCache[cat] = d.template.fields;
-  return d.template.fields;
+/* ---------- 编辑弹窗（字段 + 图片管理合一） ---------- */
+let formCtx = null;   // {mode:'draft'|'product'|'create', tid?, key?, pid?, images:[{rel,url}]}
+function imgManHtml(){
+  const cells = (formCtx.images||[]).map((im,i)=>`
+    <div class="cell"><img src="${im.url}" onclick="lbGallery(['${im.url}'])">
+      <button type="button" onclick="delImg(${i})">×</button></div>`).join('');
+  return `<div class="imgman">${cells}<button type="button" class="add" onclick="document.getElementById('formFile').click()">＋</button></div>
+  <input type="file" id="formFile" accept="image/*" multiple style="display:none" onchange="addImgs(this)">`;
 }
-async function ensureTpl(cat){ cur.tplFieldsCache = await tplFields(cat); }
+function delImg(i){ formCtx.images.splice(i,1); renderImgMan(); }
+async function addImgs(input){
+  const files=[...input.files]; input.value='';
+  for(const f of files){
+    const fd=new FormData(); fd.append('file',f);
+    const r=await fetch('/upload',{method:'POST',headers:{'X-Service-Token':TOKEN},body:fd});
+    if(!r.ok){ alert('上传失败:'+await r.text()); return; }
+    const rel=(await r.json()).path;
+    formCtx.images.push({rel, url:`/img/${rel}?token=${TOKEN}`});
+  }
+  renderImgMan();
+}
+function renderImgMan(){
+  const el=document.getElementById('imgManArea');
+  if(el) el.innerHTML=imgManHtml();
+}
+function formHtml(title, kv, fields){
+  return `<h3>${title}</h3>` +
+    fields.map(f=>`<div class="fg"><label>${f.label}</label>
+      <input id="fg-${f.col}" value="${esc(str(kv[f.col]))}"></div>`).join('') +
+    `<div class="fg"><label>图片（点 × 删除，点 ＋ 上传新图）</label><div id="imgManArea">${imgManHtml()}</div></div>` +
+    `<div class="row" style="justify-content:flex-end;margin-top:6px">
+      <button class="btn o" onclick="closeForm()">取消</button>
+      <button class="btn p" onclick="submitForm()">提交</button></div>
+    <p class="muted" style="margin:10px 0 0">提交后生成审批工单，审核页通过才生效。</p>`;
+}
+function closeForm(){ document.getElementById('modal').style.display='none'; formCtx=null; }
+
+async function editDraft(key){
+  const cat = cur.detailCat || cur.cat;
+  const fields = await tplFields(cat);
+  const d = draftRows[key] || {};
+  const srcImgs = d._imgs||[];
+  const srcRels = d.images||(d.image_main?[d.image_main]:[]);
+  formCtx = {mode:'draft', tid:_curTid, key, cat,
+    images: srcImgs.map((u,i)=>({rel:srcRels[i]||null, url:u}))};
+  document.getElementById('modalBox').innerHTML =
+    formHtml('编辑草稿（审核修正）', d, fields);
+  document.getElementById('modal').style.display='flex';
+}
+let _curTid = null;
+const _origLoadDetail = loadDetail;
+loadDetail = async function(tid){ _curTid = tid; return _origLoadDetail(tid); };
+
+async function openForm(pid){
+  const fields = await tplFields(cur.cat);
+  const p = pid ? cur.prods.find(x=>x['id']===pid) : null;
+  formCtx = {mode: p?'product':'create', pid,
+    images: (p?(p['图集']||[p['主图']].filter(Boolean)):[]).map(rel=>({rel, url:`/img/${rel}?token=${TOKEN}`}))};
+  document.getElementById('modalBox').innerHTML =
+    formHtml(`${p?'编辑':'新增'}商品（${CAT_NAMES[cur.cat]}）`, p||{}, fields);
+  document.getElementById('modal').style.display='flex';
+}
+async function submitForm(){
+  const fields = await tplFields(formCtx.mode==='draft'?formCtx.cat:cur.cat);
+  const changes = {};
+  for(const f of fields){
+    const el=document.getElementById('fg-'+f.col);
+    if(el){ const v=el.value.trim(); if(v) changes[f.col]=v; }
+  }
+  try{
+    if(formCtx.mode==='draft'){
+      const {tid,key}=formCtx;
+      (edits[tid]=edits[tid]||{})[key]={};
+      if(Object.keys(changes).length) Object.assign(edits[tid][key],changes);
+      const rels=formCtx.images.map(x=>x.rel).filter(Boolean);
+      if(rels.length) edits[tid][key]['__images']=rels;
+      if(!Object.keys(edits[tid][key]).length) delete edits[tid][key];
+      closeForm();
+      const box=document.getElementById('detail-'+tid);
+      if(box){ box.innerHTML=''; loadDetail(tid); }
+      const badge=document.querySelector(`#row-${tid}-${key} .tag`);
+      if(badge&&!badge.textContent.includes('✎')) badge.textContent+=' ✎';
+    }else if(formCtx.mode==='product'){
+      const body={changes, images:formCtx.images.map(x=>x.rel).filter(Boolean)};
+      const r = await api(`/products/${cur.cat}/${formCtx.pid}`, {method:'PATCH', body:JSON.stringify(body)});
+      closeForm(); alert('修改工单 #'+r.ticket_id+' 已生成，请到审核页批准'); show('review');
+    }else{
+      const r = await api(`/products/${cur.cat}`, {method:'POST', body:JSON.stringify({changes})});
+      closeForm(); alert('新增工单 #'+r.ticket_id+' 已生成，请到审核页批准'); show('review');
+    }
+  }catch(e){ alert('提交失败：'+e.message); }
+}
+
+/* ---------- 商品页 ---------- */
 async function loadCats(){
   const tabs = document.getElementById('catTabs');
   tabs.innerHTML = '';
@@ -245,18 +328,20 @@ function renderProducts(){
   const rows = cur.prods.filter(p=>!q||JSON.stringify(p).toLowerCase().includes(q));
   const el = document.getElementById('plist');
   if(!rows.length){ el.innerHTML = '<div class="card empty" style="grid-column:1/-1">暂无商品</div>'; return; }
-  el.innerHTML = rows.map(p=>`
-    <div class="card pcard">
-      <div class="prow">
-        ${p['主图']?`<div class="ibadge"><img class="p big" src="/img/${p['主图']}?token=${TOKEN}" onclick="lbGallery(${(p['图集']&&p['图集'].length?p['图集']:[p['主图']]).map(x=>`'/img/${x}?token=${TOKEN}'`).join(',')})">
-          ${(p['图集']&&p['图集'].length>1)?`<span class="n">${p['图集'].length}图</span>`:''}</div>`
+  const first = cur.tpl.fields[0];
+  el.innerHTML = rows.map(p=>{
+    const imgs=(p['图集']&&p['图集'].length?p['图集']:[p['主图']].filter(Boolean))
+      .map(r=>`/img/${r}?token=${TOKEN}`);
+    return `<div class="card pcard">
+      <div class="phead">
+        ${imgs.length?`<div class="imgwrap"><img class="p big" src="${imgs[0]}" onclick='lbGallery(${JSON.stringify(imgs)})'>
+          ${imgs.length>1?`<span class="badge">${imgs.length}图</span>`:''}</div>`
           :'<div class="noimg">无图</div>'}
-        <div class="pbody">
-          <div class="ptitle">${esc(str(p[cur.tpl.fields[0].label]))||'（无型号）'}
-            <span class="muted">${p['内部货号']??''}</span></div>
+        <div class="pinfo">
+          <div class="ptitle">${esc(str(p[first.label]))||'（无型号）'}</div>
+          <div class="psub muted">${p['内部货号']??''} · ${p['状态']??''}</div>
           <div class="pbtns">
             <button class="btn o s" onclick="openForm('${p['id']}')">编辑</button>
-            <button class="btn o s" onclick="pickProductImgs('${p['id']}')">换图</button>
             <button class="btn d s" onclick="delP('${p['id']}')">下架</button>
           </div>
         </div>
@@ -265,62 +350,7 @@ function renderProducts(){
         ${cur.tpl.fields.slice(1).map(f=>`
           <div class="pf"><span class="pl">${f.label}</span><span class="pv">${esc(str(p[f.label]))||'—'}</span></div>`).join('')}
       </div>
-    </div>`).join('');
-}
-
-function openForm(pid){
-  const p = pid ? cur.prods.find(x=>x['id']===pid) : null;
-  const box = document.getElementById('modalBox');
-  box.innerHTML = `<h3>${p?'编辑商品':'新增商品'}（${CAT_NAMES[cur.cat]}）</h3>` +
-    cur.tpl.fields.map(f=>`<div class="fg"><label>${f.label}</label>
-      <input id="fg-${f.col}" value="${esc(str(p?p[f.label]:''))}"></div>`).join('') +
-    `<div class="row" style="justify-content:flex-end;margin-top:6px">
-      <button class="btn o" onclick="closeForm()">取消</button>
-      <button class="btn p" onclick="submitForm('${pid||''}')">提交（生成审批工单）</button></div>
-    <p class="muted" style="margin:10px 0 0">提交后生成审批工单，审核页通过才生效。</p>`;
-  document.getElementById('modal').style.display = 'flex';
-}
-function closeForm(){ document.getElementById('modal').style.display = 'none'; }
-async function submitForm(pid){
-  const changes = {};
-  for(const f of cur.tpl.fields){
-    const v = document.getElementById('fg-'+f.col).value.trim();
-    if(v) changes[f.col] = v;
-  }
-  if(!Object.keys(changes).length){ alert('至少填一个字段'); return; }
-  const r = pid
-    ? await api(`/products/${cur.cat}/${pid}`, {method:'PATCH', body:JSON.stringify({changes})})
-    : await api(`/products/${cur.cat}`, {method:'POST', body:JSON.stringify({changes})});
-  closeForm();
-  alert('已生成审批工单 #'+r.ticket_id+'，请到审核页批准');
-  let pickTarget = null;
-function pickDraftImgs(tid, key){ pickTarget={type:'draft',tid,key}; document.getElementById('imgInput').click(); }
-function pickProductImgs(pid){ pickTarget={type:'product',pid}; document.getElementById('imgInput').click(); }
-async function onImgsPicked(input){
-  const files=[...input.files]; input.value='';
-  if(!files.length||!pickTarget) return;
-  const rels=[];
-  for(const f of files){
-    const fd=new FormData(); fd.append('file',f);
-    const r=await fetch('/upload',{method:'POST',headers:{'X-Service-Token':TOKEN},body:fd});
-    if(!r.ok){ alert('上传失败:'+await r.text()); return; }
-    rels.push((await r.json()).path);
-  }
-  if(pickTarget.type==='draft'){
-    const {tid,key}=pickTarget;
-    (edits[tid]=edits[tid]||{})[key]=(edits[tid][key]||{});
-    edits[tid][key]['__images']=rels;
-    const badge=document.querySelector(`#row-${tid}-${key} .tag`);
-    if(badge&&!badge.textContent.includes('🖼')) badge.textContent+=' 🖼换图';
-  }else{
-    const r=await api(`/products/${cur.cat}/${pickTarget.pid}`,{
-      method:'PATCH',body:JSON.stringify({changes:{},images:rels})});
-    alert('换图工单 #'+r.ticket_id+' 已生成，请到审核页批准');
-  }
-  pickTarget=null;
-}
-
-show('review');
+    </div>`;}).join('');
 }
 async function delP(pid){
   if(!confirm('确认下架？（生成审批工单，批准后生效）')) return;
@@ -328,15 +358,6 @@ async function delP(pid){
   alert('下架工单 #'+r.ticket_id+' 已生成，请到审核页批准');
   show('review');
 }
-
-/* ---------- 通用 ---------- */
-const str = v => v===null||v===undefined?'':String(v);
-const esc = s => str(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-let lbList = [], lbIdx = 0;
-function lb(src){ lbList=[src]; lbIdx=0; showLb(); }
-function lbGallery(...urls){ lbList=urls; lbIdx=0; showLb(); }
-function lbStep(d){ if(!lbList.length) return; lbIdx=(lbIdx+d+lbList.length)%lbList.length; showLb(); }
-function showLb(){ document.getElementById('lbimg').src=lbList[lbIdx]; document.getElementById('lightbox').style.display='flex'; }
 show('review');
 </script>
 </body>
