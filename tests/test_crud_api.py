@@ -204,3 +204,41 @@ def test_product_image_update_via_mutate(client):
     p = client.get('/products/razor').json()['products'][0]
     assert client.get(f"/img/{p['主图']}").content == _png_bytes((5, 5, 5))
     assert len(p['图集']) == 1
+
+
+def test_row_level_approve(client):
+    """单行通过：只落库指定行，工单保持存活。"""
+    from catalog import tickets as tk
+    tk.create(client.app.state.conn, 'import', 'razor',
+              {'kind': 'import', 'work_dir': None,
+               'drafts': {'new': [{'model_no': 'SA1', '_rid': 'n0'},
+                                  {'model_no': 'SA2', '_rid': 'n1'},
+                                  {'model_no': 'SA3', '_rid': 'n2'}],
+                          'update': [], 'delist': []}})
+    tid = [t['id'] for t in client.get('/tickets').json()['tickets']
+           if t['ticket_type'] == 'import'][0]
+    t = [x for x in client.get('/tickets').json()['tickets'] if x['id'] == tid][0]
+    # 单行通过 SA1
+    r = client.post(f'/tickets/{tid}/row', json={
+        'token': t['token'], 'row_key': 'n0', 'approved': True})
+    assert r.status_code == 200
+    models = [p['产品型号'] for p in client.get('/products/razor').json()['products']]
+    assert 'SA1' in models and 'SA2' not in models and 'SA3' not in models
+    # 工单还活着（SA2/SA3 待处理）
+    t2 = [x for x in client.get('/tickets').json()['tickets'] if x['id'] == tid][0]
+    assert t2['status'] == 'pending'
+    # 再单行通过 SA2
+    r2 = client.post(f'/tickets/{tid}/row', json={
+        'token': t['token'], 'row_key': 'n1', 'approved': True})
+    assert r2.status_code == 200
+    models = [p['产品型号'] for p in client.get('/products/razor').json()['products']]
+    assert 'SA2' in models
+    # 单行驳回 SA3
+    r3 = client.post(f'/tickets/{tid}/row', json={
+        'token': t['token'], 'row_key': 'n2', 'approved': False})
+    assert r3.status_code == 200
+    # 全部处理完，工单应自动关闭
+    t3 = [x for x in client.get('/tickets').json()['tickets'] if x['id'] == tid][0]
+    assert t3['status'] == 'approved'
+    models = [p['产品型号'] for p in client.get('/products/razor').json()['products']]
+    assert 'SA3' not in models

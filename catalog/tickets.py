@@ -125,3 +125,84 @@ def _apply_mutate(conn, t, payload) -> dict:
                      f"VALUES(?,?,{','.join('?' for _ in cols)})",
                      (secrets.token_hex(8), inner_code.gen(), *payload['changes'].values()))
     return {'mutated': action, 'created_rows': [], 'work_dir': None}
+
+
+def decide_row(conn, ticket_id, token, row_key, approved):
+    """单行决策：只处理指定行，工单保持存活直到全部行处理完。"""
+    row = conn.execute('SELECT * FROM approval_ticket WHERE id=?', (ticket_id,)).fetchone()
+    if row is None:
+        raise TicketError('工单不存在')
+    if row['token'] != token or row['status'] != 'pending':
+        raise TicketError('token 无效或工单已决')
+    payload = json.loads(row['payload'])
+    if payload.get('kind') != 'import':
+        raise TicketError('仅支持导入工单的行级操作')
+
+    # 记录已处理的行
+    done = payload.setdefault('done_rows', {})
+    done[row_key] = 'approved' if approved else 'rejected'
+
+    t = TEMPLATES[row['category']]
+    result = {'row': row_key, 'action': 'approved' if approved else 'rejected'}
+
+    if approved:
+        # 找到该行并单独落库
+        for section in ('new', 'update', 'delist'):
+            items = payload['drafts'].get(section, [])
+            for i, item in enumerate(items):
+                key = item.get('_rid') if isinstance(item, dict) else None
+                if not key and section == 'update' and isinstance(item, list):
+                    key = item[0].get('id')
+                if not key and isinstance(item, dict):
+                    key = item.get('id')
+                if key == row_key:
+                    _apply_single(conn, t, payload, section, i)
+                    break
+
+    # 检查是否全部处理完
+    all_keys = set()
+    for i, d in enumerate(payload['drafts'].get('new', [])):
+        all_keys.add(d.get('_rid') or f'n{i}')
+    for pair in payload['drafts'].get('update', []):
+        r0 = pair[0] if isinstance(pair, list) else pair
+        all_keys.add(r0.get('id') or f'u{payload["drafts"]["update"].index(pair)}')
+    for r in payload['drafts'].get('delist', []):
+        all_keys.add(r.get('id') if isinstance(r, dict) else r)
+    if all_keys.issubset(set(done.keys())):
+        # 全部处理完，关闭工单
+        conn.execute("UPDATE approval_ticket SET status='approved', "
+                     "decided_at=datetime('now'), token_used_at=datetime('now') WHERE id=?",
+                     (ticket_id,))
+    else:
+        conn.execute('UPDATE approval_ticket SET payload=? WHERE id=?',
+                     (json.dumps(payload, ensure_ascii=False), ticket_id))
+    conn.commit()
+    return result
+
+
+def _apply_single(conn, t, payload, section, idx):
+    """落库工单中指定位置的单行。"""
+    import secrets as _sec
+    from . import inner_code as _ic
+    if section == 'new':
+        d = payload['drafts']['new'][idx]
+        pid = _sec.token_hex(8)
+        cols_vals = [(c, str(d.get(c, '') or '')) for c, _ in t.fields]
+        conn.execute(
+            f"INSERT INTO {t.table}(id, inner_code, {', '.join(c for c, _ in cols_vals)}, "
+            f"image_main, images, source_doc) VALUES({','.join('?' for _ in range(3 + len(cols_vals) + 2))})",
+            (pid, _ic.gen(), *[v for _, v in cols_vals],
+             d.get('image_main') or '',
+             json.dumps(d.get('images') or [], ensure_ascii=False),
+             payload.get('doc_id')))
+    elif section == 'update':
+        pair = payload['drafts']['update'][idx]
+        row_d, d = pair if isinstance(pair, list) else (pair, pair)
+        sets = ', '.join(f'{c}=?' for c, _ in t.fields)
+        conn.execute(f"UPDATE {t.table} SET {sets}, updated_at=datetime('now') WHERE id=?",
+                     (*[str(d.get(c, '') or '') for c, _ in t.fields], row_d['id']))
+    elif section == 'delist':
+        r = payload['drafts']['delist'][idx]
+        rid = r['id'] if isinstance(r, dict) else r
+        conn.execute(f"UPDATE {t.table} SET status='delisted', "
+                     f"updated_at=datetime('now') WHERE id=?", (rid,))

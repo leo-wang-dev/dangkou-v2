@@ -142,6 +142,19 @@ def register_routes(app: FastAPI):
             media = 'image/jpeg'
         return Response(content=data, media_type=media)
 
+    class RowDecisionIn(BaseModel):
+        token: str
+        row_key: str
+        approved: bool
+
+    @app.post('/tickets/{ticket_id}/row')
+    def decide_row(ticket_id: int, body: RowDecisionIn):
+        try:
+            return tickets.decide_row(app.state.conn, ticket_id,
+                                      body.token, body.row_key, body.approved)
+        except tickets.TicketError as e:
+            raise HTTPException(400, str(e))
+
     @app.post('/tickets/{ticket_id}/decision')
     def decide_ticket(ticket_id: int, body: DecisionIn):
         try:
