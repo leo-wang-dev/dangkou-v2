@@ -311,16 +311,16 @@ async function submitForm(){
   try{
     if(formCtx.mode==='draft'){
       const {tid,key}=formCtx;
-      (edits[tid]=edits[tid]||{})[key]={};
-      if(Object.keys(changes).length) Object.assign(edits[tid][key],changes);
+      const allEdits={...changes};
       const rels=formCtx.images.map(x=>x.rel).filter(Boolean);
-      if(rels.length) edits[tid][key]['__images']=rels;
-      if(!Object.keys(edits[tid][key]).length) delete edits[tid][key];
+      if(rels.length) allEdits['__images']=rels;
+      if(Object.keys(allEdits).length){
+        const t=(await api('/tickets')).tickets.find(x=>x.id===tid);
+        await api(`/tickets/${tid}/draft`, {method:'PATCH', body:JSON.stringify(
+          {token:t.token, row_key:key, edits:allEdits})});
+      }
       closeForm();
-      const box=document.getElementById('detail-'+tid);
-      if(box){ box.innerHTML=''; loadDetail(tid); }
-      const badge=document.querySelector(`#row-${tid}-${key} .tag`);
-      if(badge&&!badge.textContent.includes('✎')) badge.textContent+=' ✎';
+      refreshDetail(tid);
     }else if(formCtx.mode==='product'){
       const body={changes, images:formCtx.images.map(x=>x.rel).filter(Boolean)};
       const r = await api(`/products/${cur.cat}/${formCtx.pid}`, {method:'PATCH', body:JSON.stringify(body)});
