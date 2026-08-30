@@ -127,7 +127,7 @@ def _apply_mutate(conn, t, payload) -> dict:
     return {'mutated': action, 'created_rows': [], 'work_dir': None}
 
 
-def decide_row(conn, ticket_id, token, row_key, approved):
+def decide_row(conn, ticket_id, token, row_key, approved, edits=None):
     """单行决策：只处理指定行，工单保持存活直到全部行处理完。"""
     row = conn.execute('SELECT * FROM approval_ticket WHERE id=?', (ticket_id,)).fetchone()
     if row is None:
@@ -156,7 +156,10 @@ def decide_row(conn, ticket_id, token, row_key, approved):
                 if not key and isinstance(item, dict):
                     key = item.get('id')
                 if key == row_key:
-                    _apply_single(conn, t, payload, section, i)
+                    single = _apply_single(conn, t, payload, section, i, edits)
+                    if single:
+                        result['created_rows'] = [single]
+                        result['work_dir'] = payload.get('work_dir')
                     break
 
     # 检查是否全部处理完
@@ -180,12 +183,18 @@ def decide_row(conn, ticket_id, token, row_key, approved):
     return result
 
 
-def _apply_single(conn, t, payload, section, idx):
+def _apply_single(conn, t, payload, section, idx, edits=None):
     """落库工单中指定位置的单行。"""
     import secrets as _sec
     from . import inner_code as _ic
     if section == 'new':
         d = payload['drafts']['new'][idx]
+        if edits:
+            d = {**d, **edits}
+            imgs = edits.get('__images')
+            if isinstance(imgs, list) and imgs:
+                d['images'] = imgs
+                d['image_main'] = imgs[0]
         pid = _sec.token_hex(8)
         cols_vals = [(c, str(d.get(c, '') or '')) for c, _ in t.fields]
         conn.execute(
@@ -195,6 +204,9 @@ def _apply_single(conn, t, payload, section, idx):
              d.get('image_main') or '',
              json.dumps(d.get('images') or [], ensure_ascii=False),
              payload.get('doc_id')))
+        return {'id': pid, 'image_main': d.get('image_main') or '',
+                'images': d.get('images') or [],
+                '_category': t.key, '_table': t.table}
     elif section == 'update':
         pair = payload['drafts']['update'][idx]
         row_d, d = pair if isinstance(pair, list) else (pair, pair)

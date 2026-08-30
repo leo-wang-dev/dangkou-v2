@@ -208,11 +208,13 @@ async function loadDetail(tid){
   box.innerHTML = html || '<div class="muted">（无明细行）</div>';
 }
 async function rowApprove(tid, key){
-  if(!confirm('确认通过此行？将立即落库。')) return;
+  if(!confirm('确认通过此行？将立即落库（含已做的编辑和图片）。')) return;
   const t = (await api('/tickets')).tickets.find(x=>x.id===tid);
+  const rowEdits = (edits[tid]||{})[key] || {};
   try{
     await api(`/tickets/${tid}/row`, {method:'POST', body:JSON.stringify(
-      {token:t.token, row_key:key, approved:true})});
+      {token:t.token, row_key:key, approved:true, edits:rowEdits})});
+    if(edits[tid]) delete edits[tid][key];
     loadDetail(tid); loadDetail(tid); // 刷新
   }catch(e){ alert('单行通过失败：'+e.message); }
 }

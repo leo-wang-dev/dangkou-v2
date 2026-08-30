@@ -146,14 +146,19 @@ def register_routes(app: FastAPI):
         token: str
         row_key: str
         approved: bool
+        edits: dict | None = None
 
     @app.post('/tickets/{ticket_id}/row')
     def decide_row(ticket_id: int, body: RowDecisionIn):
         try:
-            return tickets.decide_row(app.state.conn, ticket_id,
-                                      body.token, body.row_key, body.approved)
+            result = tickets.decide_row(app.state.conn, ticket_id,
+                                        body.token, body.row_key,
+                                        body.approved, body.edits)
         except tickets.TicketError as e:
             raise HTTPException(400, str(e))
+        if body.approved and result.get('created_rows'):
+            _persist_images_and_reindex(result)
+        return result
 
     @app.post('/tickets/{ticket_id}/decision')
     def decide_ticket(ticket_id: int, body: DecisionIn):

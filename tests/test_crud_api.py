@@ -242,3 +242,32 @@ def test_row_level_approve(client):
     assert t3['status'] == 'approved'
     models = [p['产品型号'] for p in client.get('/products/razor').json()['products']]
     assert 'SA3' not in models
+
+
+def test_row_approve_with_edits_and_images(client, tmp_path):
+    """单行通过：编辑值生效 + 图片从work_dir落位到storage。"""
+    import os
+    from catalog import tickets as tk
+    from catalog.storage import LocalStorage
+    st = client.app.state.storage
+    wd = os.path.join(st.base, '_work', 'test-wd')
+    os.makedirs(wd, exist_ok=True)
+    open(os.path.join(wd, 'img1.png'), 'wb').write(
+        b'\x89PNG\r\n\x1a\n' + b'\x00' * 32)
+    tk.create(client.app.state.conn, 'import', 'razor',
+              {'kind': 'import', 'work_dir': wd,
+               'drafts': {'new': [{'model_no': 'EA1', 'price': '10',
+                                   'image_main': 'img1.png', '_rid': 'n0'}],
+                          'update': [], 'delist': []}})
+    tid = [t['id'] for t in client.get('/tickets').json()['tickets']
+           if t['ticket_type'] == 'import'][0]
+    t = [x for x in client.get('/tickets').json()['tickets'] if x['id'] == tid][0]
+    # 单行通过，带编辑
+    r = client.post(f'/tickets/{tid}/row', json={
+        'token': t['token'], 'row_key': 'n0', 'approved': True,
+        'edits': {'price': '99'}})
+    assert r.status_code == 200, r.text
+    p = client.get('/products/razor').json()['products'][0]
+    assert p['报价'] == '99', f'编辑未生效: {p["报价"]}'
+    assert p['主图'] and p['主图'].startswith('razor/'), f'图未落位: {p["主图"]}'
+    assert client.get(f"/img/{p['主图']}").status_code == 200
