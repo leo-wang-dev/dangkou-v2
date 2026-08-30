@@ -140,7 +140,7 @@ async function loadTickets(){
   for(const t of pend){
     const c = document.createElement('div'); c.className='card';
     c.innerHTML = `<div class="row" style="justify-content:space-between">
-      <div><b>#${t.id}</b> ${t.ticket_type==='import'?'整批导入':'AI 操作'}
+      <div><b>#${t.id}</b> ${t.ticket_type==='import'?'整批导入':(t.category==='razor'?'剃须刀':'卷发棒')+'操作'}
         <span class="muted">· ${CAT_NAMES[t.category]||t.category} · ${t.created_at}</span></div>
       <button class="btn o" onclick="loadDetail(${t.id})">展开明细 ▾</button></div>
       <div class="row" style="margin-top:10px">
@@ -209,7 +209,53 @@ async function refreshDetail(tid){
     const imgs = (r&&r.image_main)?['/img/'+r.image_main+'?token='+TOKEN]:[];
     html += rowHtml({txt:'下架',cls:'del'}, imgs, r||{}, key); });
   if(d.ticket.ticket_type==='mutate'){
-    html = `<div class="card"><b>AI 操作</b><pre style="white-space:pre-wrap;font-size:13px">${esc(JSON.stringify(p,null,1))}</pre></div>`+html;
+    const act = p.action || 'update';
+    const actName = act==='update' ? '📋 修改商品' : act==='create' ? '➕ 新增商品' : '🗑️ 下架商品';
+    if(act === 'update' && p.before){
+      const img = p.before['主图'] ? `/img/${p.before['主图']}?token=${TOKEN}` : '';
+      html = `
+      <div class="draft">
+        ${img?`<img class="p" src="${img}" onclick="lbGallery(['${img}'])">`:''}
+        <div class="f">
+          <span class="tag upd">${actName}</span>
+          <div class="kv"><b>${esc(str(p.before[cur.tpl?.fields?.[0]?.label] || p.before['产品型号'] || p.before['ITEM.NO 型号'] || p.product_id))}</b></div>
+          ${Object.keys(p.changes||{}).map(k=>{
+            const oldV = str(p.before[k] ?? '(空)');
+            const newV = str(p.changes[k]);
+            return `<div class="kv"><b>${esc(k)}</b>：<span style="color:#999;text-decoration:line-through">${esc(oldV)}</span> → <b style="color:var(--blue)">${esc(newV)}</b></div>`;
+          }).join('')}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex:none">
+          <button class="btn p s" onclick="submitDecision(${tid},false)">✓通过</button>
+          <button class="btn d s" onclick="submitDecision(${tid},true)">驳回</button>
+        </div>
+      </div>` + html;
+    } else if(act === 'create'){
+      html = `
+      <div class="draft">
+        <div class="f">
+          <span class="tag new">${actName}</span>
+          ${Object.keys(p.changes||{}).map(k=>
+            `<div class="kv"><b>${esc(k)}</b>：${esc(str(p.changes[k]))}</div>`).join('')}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex:none">
+          <button class="btn p s" onclick="submitDecision(${tid},false)">✓通过</button>
+          <button class="btn d s" onclick="submitDecision(${tid},true)">驳回</button>
+        </div>
+      </div>` + html;
+    } else if(act === 'delete'){
+      html = `
+      <div class="draft">
+        <div class="f">
+          <span class="tag del">${actName}</span>
+          <div class="kv">商品ID：${esc(str(p.product_id))}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex:none">
+          <button class="btn p s" onclick="submitDecision(${tid},false)">✓通过</button>
+          <button class="btn d s" onclick="submitDecision(${tid},true)">驳回</button>
+        </div>
+      </div>` + html;
+    }
   }
   box.innerHTML = html || '<div class="muted">（无明细行）</div>';
 }
