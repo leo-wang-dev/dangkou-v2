@@ -215,7 +215,7 @@ async function rowApprove(tid, key){
     await api(`/tickets/${tid}/row`, {method:'POST', body:JSON.stringify(
       {token:t.token, row_key:key, approved:true, edits:rowEdits})});
     if(edits[tid]) delete edits[tid][key];
-    loadDetail(tid); loadDetail(tid); // 刷新
+    refreshDetail(tid);
   }catch(e){ alert('单行通过失败：'+e.message); }
 }
 function toggleRej(tid, key, btn){
