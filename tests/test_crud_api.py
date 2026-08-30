@@ -291,3 +291,29 @@ def test_save_draft_edit_persists(client):
     d = client.get(f'/tickets/{tid}').json()
     row = d['payload']['drafts']['new'][0]
     assert row['price'] == '99', f'编辑未持久化: {row["price"]}'
+
+
+def test_direct_create_and_update(client):
+    """H5 商品页直接写入（不经审批）——用户本人操作即审批。"""
+    # 直接新增
+    r = client.post('/products/razor/direct',
+                    json={'changes': {'model_no': 'DIR1', 'price': '10'}})
+    assert r.status_code == 200
+    assert r.json()['inner_code'].startswith('KS-')
+    pid = r.json()['id']
+    ps = client.get('/products/razor').json()['products']
+    assert any(p['产品型号'] == 'DIR1' for p in ps)
+    # 直接改
+    r2 = client.patch(f'/products/razor/{pid}/direct',
+                      json={'changes': {'price': '99'}})
+    assert r2.status_code == 200
+    p = [x for x in client.get('/products/razor').json()['products'] if x['id'] == pid][0]
+    assert p['报价'] == '99'
+    # 直接下架
+    r3 = client.delete(f'/products/razor/{pid}/direct')
+    assert r3.status_code == 200
+    p = [x for x in client.get('/products/razor').json()['products'] if x['id'] == pid][0]
+    assert p['状态'] == 'delisted'
+    # 不应产生工单
+    tks = client.get('/tickets').json()['tickets']
+    assert not any(t['ticket_type'] == 'mutate' for t in tks)

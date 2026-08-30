@@ -1,3 +1,4 @@
+import json
 import os
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -322,6 +323,75 @@ def register_routes(app: FastAPI):
         vec = search.embed_image(open(body.image_path, 'rb').read())
         return {'hits': search.query(app.state.conn, vec,
                                      top_k=body.top_k, exclude=body.exclude_ids)}
+
+    # ---- 商品直写（H5用户本人操作=即审批，不走工单）----
+    @app.post('/products/{category}/direct')
+    def direct_create(category: str, body: MutateIn, request: Request):
+        _auth(request, app.state.token)
+        if category not in TEMPLATES:
+            raise HTTPException(404, '未知品类')
+        import secrets as _sec
+        from . import inner_code as _ic
+        t = TEMPLATES[category]
+        pid = _sec.token_hex(8)
+        cols = list(body.changes.keys())
+        if not cols:
+            raise HTTPException(400, 'changes 不能为空')
+        conn_cols = [c for c in cols if c in dict(t.fields)]
+        img_rels = []
+        for fn in (body.images or []):
+            src = os.path.join(app.state.storage.base, str(fn))
+            if os.path.exists(src):
+                ext = os.path.splitext(fn)[1] or '.png'
+                img_rels.append(app.state.storage.save(category, pid, f'img{len(img_rels)}{ext}',
+                                                     open(src, 'rb').read()))
+        app.state.conn.execute(
+            f"INSERT INTO {t.table}(id, inner_code, {', '.join(conn_cols)}, image_main, images) "
+            f"VALUES({','.join('?' for _ in range(2 + len(conn_cols) + 2))})",
+            (pid, _ic.gen(), *[str(body.changes[c]) for c in conn_cols],
+             img_rels[0] if img_rels else '',
+             json.dumps(img_rels, ensure_ascii=False) if img_rels else '[]'))
+        app.state.conn.commit()
+        from . import search
+        if img_rels:
+            search.reindex(app.state.conn, app.state.storage, category)
+        return {'id': pid, 'inner_code': app.state.conn.execute(
+            f'SELECT inner_code FROM {t.table} WHERE id=?', (pid,)).fetchone()['inner_code']}
+
+    @app.patch('/products/{category}/{pid}/direct')
+    def direct_update(category: str, pid: str, body: MutateIn, request: Request):
+        _auth(request, app.state.token)
+        t = TEMPLATES[category]
+        if body.changes:
+            conn_cols = [c for c in body.changes if c in dict(t.fields)]
+            sets = ', '.join(f'{c}=?' for c in conn_cols)
+            if sets:
+                app.state.conn.execute(f"UPDATE {t.table} SET {sets}, updated_at=datetime('now') WHERE id=?",
+                             (*[str(body.changes[c]) for c in conn_cols], pid))
+        if body.images:
+            img_rels = []
+            for fn in body.images:
+                src = os.path.join(app.state.storage.base, str(fn))
+                if os.path.exists(src):
+                    ext = os.path.splitext(fn)[1] or '.png'
+                    img_rels.append(app.state.storage.save(category, pid, f'img{len(img_rels)}{ext}',
+                                                         open(src, 'rb').read()))
+            if img_rels:
+                app.state.conn.execute(f"UPDATE {t.table} SET image_main=?, images=?, updated_at=datetime('now') WHERE id=?",
+                             (img_rels[0], json.dumps(img_rels, ensure_ascii=False), pid))
+        app.state.conn.commit()
+        from . import search
+        search.reindex(app.state.conn, app.state.storage, category)
+        return {'updated': True}
+
+    @app.delete('/products/{category}/{pid}/direct')
+    def direct_delete(category: str, pid: str, request: Request):
+        _auth(request, app.state.token)
+        t = TEMPLATES[category]
+        app.state.conn.execute(f"UPDATE {t.table} SET status='delisted', "
+                     f"updated_at=datetime('now') WHERE id=?", (pid,))
+        app.state.conn.commit()
+        return {'delisted': True}
 
     # ---- 报价单（异步：对齐导入体验）----
     class QuoteIn(BaseModel):

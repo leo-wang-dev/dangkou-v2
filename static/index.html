@@ -324,7 +324,7 @@ function formHtml(title, kv, fields){
     `<div class="row" style="justify-content:flex-end;margin-top:6px">
       <button class="btn o" onclick="closeForm()">取消</button>
       <button class="btn p" onclick="submitForm()">提交</button></div>
-    <p class="muted" style="margin:10px 0 0">提交后生成审批工单，审核页通过才生效。</p>`;
+    <p class="muted" style="margin:10px 0 0">{{FORM_NOTE}}</p>`;
 }
 function closeForm(){ document.getElementById('modal').style.display='none'; formCtx=null; }
 
@@ -337,7 +337,7 @@ async function editDraft(key){
   formCtx = {mode:'draft', tid:_curTid, key, cat,
     images: srcImgs.map((u,i)=>({rel:srcRels[i]||null, url:u}))};
   document.getElementById('modalBox').innerHTML =
-    formHtml('编辑草稿（审核修正）', d, fields);
+    formHtml('编辑草稿（审核修正）', d, fields).replace('{{FORM_NOTE}}','提交后需整单通过或单行✓通过才生效。');
   document.getElementById('modal').style.display='flex';
 }
 let _curTid = null;
@@ -350,7 +350,7 @@ async function openForm(pid){
   formCtx = {mode: p?'product':'create', pid,
     images: (p?(p['图集']||[p['主图']].filter(Boolean)):[]).map(rel=>({rel, url:`/img/${rel}?token=${TOKEN}`}))};
   document.getElementById('modalBox').innerHTML =
-    formHtml(`${p?'编辑':'新增'}商品（${CAT_NAMES[cur.cat]}）`, p||{}, fields);
+    formHtml(`${p?'编辑':'新增'}商品（${CAT_NAMES[cur.cat]}）`, p||{}, fields).replace('{{FORM_NOTE}}','保存后立即生效。');
   document.getElementById('modal').style.display='flex';
 }
 async function submitForm(){
@@ -375,11 +375,12 @@ async function submitForm(){
       refreshDetail(tid);
     }else if(formCtx.mode==='product'){
       const body={changes, images:formCtx.images.map(x=>x.rel).filter(Boolean)};
-      const r = await api(`/products/${cur.cat}/${formCtx.pid}`, {method:'PATCH', body:JSON.stringify(body)});
-      closeForm(); alert('修改工单 #'+r.ticket_id+' 已生成，请到审核页批准'); show('review');
+      await api(`/products/${cur.cat}/${formCtx.pid}/direct`, {method:'PATCH', body:JSON.stringify(body)});
+      closeForm(); loadCats();
     }else{
-      const r = await api(`/products/${cur.cat}`, {method:'POST', body:JSON.stringify({changes})});
-      closeForm(); alert('新增工单 #'+r.ticket_id+' 已生成，请到审核页批准'); show('review');
+      const body={changes, images:formCtx.images.map(x=>x.rel).filter(Boolean)};
+      await api(`/products/${cur.cat}/direct`, {method:'POST', body:JSON.stringify(body)});
+      closeForm(); loadCats();
     }
   }catch(e){ alert('提交失败：'+e.message); }
 }
@@ -428,10 +429,9 @@ function renderProducts(){
     </div>`;}).join('');
 }
 async function delP(pid){
-  if(!confirm('确认下架？（生成审批工单，批准后生效）')) return;
-  const r = await api(`/products/${cur.cat}/${pid}`, {method:'DELETE'});
-  alert('下架工单 #'+r.ticket_id+' 已生成，请到审核页批准');
-  show('review');
+  if(!confirm('确认下架？')) return;
+  await api(`/products/${cur.cat}/${pid}/direct`, {method:'DELETE'});
+  loadCats();
 }
 show('review');
 </script>
