@@ -108,6 +108,11 @@ def _apply(conn, payload, category, decisions) -> dict:
 
 def _apply_mutate(conn, t, payload) -> dict:
     action = payload['action']
+    # AI 可能发中文标签而非列名（如"报价"而非"price"）——统一翻译
+    label_to_col = {label: col for col, label in t.fields}
+    if isinstance(payload.get('changes'), dict):
+        payload['changes'] = {label_to_col.get(k, k): v
+                              for k, v in payload['changes'].items()}
     if action == 'update' and payload.get('images'):
         return {'mutated': 'update',
                 'images_applied': {'table': t.table, 'id': payload['product_id'],
