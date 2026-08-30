@@ -271,3 +271,23 @@ def test_row_approve_with_edits_and_images(client, tmp_path):
     assert p['报价'] == '99', f'编辑未生效: {p["报价"]}'
     assert p['主图'] and p['主图'].startswith('razor/'), f'图未落位: {p["主图"]}'
     assert client.get(f"/img/{p['主图']}").status_code == 200
+
+
+def test_save_draft_edit_persists(client):
+    """编辑草稿立即持久化到工单payload，明细API返回新值。"""
+    from catalog import tickets as tk
+    tk.create(client.app.state.conn, 'import', 'razor',
+              {'kind': 'import', 'work_dir': None,
+               'drafts': {'new': [{'model_no': 'ED1', 'price': '10', '_rid': 'n0'}],
+                          'update': [], 'delist': []}})
+    tid = [t['id'] for t in client.get('/tickets').json()['tickets']
+           if t['ticket_type'] == 'import'][0]
+    t = [x for x in client.get('/tickets').json()['tickets'] if x['id'] == tid][0]
+    # 保存编辑（不决策，只更新payload）
+    r = client.patch(f'/tickets/{tid}/draft', json={
+        'token': t['token'], 'row_key': 'n0', 'edits': {'price': '99'}})
+    assert r.status_code == 200
+    # 明细应返回新值
+    d = client.get(f'/tickets/{tid}').json()
+    row = d['payload']['drafts']['new'][0]
+    assert row['price'] == '99', f'编辑未持久化: {row["price"]}'

@@ -218,3 +218,35 @@ def _apply_single(conn, t, payload, section, idx, edits=None):
         rid = r['id'] if isinstance(r, dict) else r
         conn.execute(f"UPDATE {t.table} SET status='delisted', "
                      f"updated_at=datetime('now') WHERE id=?", (rid,))
+
+
+def save_draft_edit(conn, ticket_id, token, row_key, edits):
+    """编辑草稿立即持久化到工单payload（不决策，用户可见改后效果）。"""
+    row = conn.execute('SELECT * FROM approval_ticket WHERE id=?', (ticket_id,)).fetchone()
+    if row is None:
+        raise TicketError('工单不存在')
+    if row['token'] != token or row['status'] != 'pending':
+        raise TicketError('token 无效或工单已决')
+    payload = json.loads(row['payload'])
+    if payload.get('kind') != 'import':
+        raise TicketError('仅支持导入工单')
+
+    for section in ('new', 'update', 'delist'):
+        items = payload['drafts'].get(section, [])
+        for i, item in enumerate(items):
+            if not isinstance(item, dict) and not isinstance(item, list):
+                continue
+            d = item if isinstance(item, dict) else item[1]
+            key = d.get('_rid') or (item[0].get('id') if isinstance(item, list) else d.get('id'))
+            if key == row_key:
+                imgs = edits.pop('__images', None)
+                if imgs:
+                    d['images'] = imgs
+                    d['image_main'] = imgs[0]
+                d.update(edits)
+                break
+
+    conn.execute('UPDATE approval_ticket SET payload=? WHERE id=?',
+                 (json.dumps(payload, ensure_ascii=False), ticket_id))
+    conn.commit()
+    return {'saved': True, 'row': row_key}

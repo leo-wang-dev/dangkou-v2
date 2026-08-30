@@ -160,6 +160,19 @@ def register_routes(app: FastAPI):
             _persist_images_and_reindex(result)
         return result
 
+    class DraftEditIn(BaseModel):
+        token: str
+        row_key: str
+        edits: dict
+
+    @app.patch('/tickets/{ticket_id}/draft')
+    def save_draft(ticket_id: int, body: DraftEditIn):
+        try:
+            return tickets.save_draft_edit(app.state.conn, ticket_id,
+                                           body.token, body.row_key, body.edits)
+        except tickets.TicketError as e:
+            raise HTTPException(400, str(e))
+
     @app.post('/tickets/{ticket_id}/decision')
     def decide_ticket(ticket_id: int, body: DecisionIn):
         try:
