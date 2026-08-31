@@ -106,7 +106,7 @@ export async function apply(ctx, _config = {}) {
   ctx.tools.register({
     name: 'catalog_mutate',
     description: 'AI 代操作商品（改字段/下架/新增）——只生成审批工单不落库，返回含 approveUrl 发给用户。'
-      + '用户随消息发了图片时，把图片路径放进 imagePaths，图片会关联到商品。',
+      + `用户随消息发了图片时，必须把 [MEDIA:image] 后面的路径放进 imagePaths，图片会关联到商品。不传图片就丢了。`,
     parameters: {
       type: 'object',
       properties: {
@@ -127,14 +127,22 @@ export async function apply(ctx, _config = {}) {
         try {
           const fs = await import('node:fs')
           const buf = fs.readFileSync(p)
+          // 微信图片存为 .bin——从文件头检测真实格式
+          let ext = '.jpg'
+          if (buf[0] === 0x89 && buf[1] === 0x50) ext = '.png'
+          else if (buf[0] === 0xFF && buf[1] === 0xD8) ext = '.jpg'
+          else if (buf[0] === 0x49 && buf[1] === 0x49) ext = '.tif'
+          else if (buf[0] === 0x42 && buf[1] === 0x4D) ext = '.bmp'
+          const fname = (p.split('/').pop() || 'img').replace(/\.bin$/, '') + ext
           const fd = new FormData()
-          fd.append('file', new Blob([buf]), p.split('/').pop() || 'img.png')
+          fd.append('file', new Blob([buf]), fname)
           const up = await fetch(`${BASE}/upload`, {
             method: 'POST',
             headers: { 'X-Service-Token': TOKEN },
             body: fd,
           })
           if (up.ok) imageRels.push((await up.json()).path)
+          else console.error(`[catalog-v2] upload ${p}: ${up.status} ${await up.text()}`)
         } catch (e) {
           console.error(`[catalog-v2] 图片上传失败 ${p}: ${e.message}`)
         }
