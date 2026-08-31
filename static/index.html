@@ -319,7 +319,7 @@ function renderImgMan(){
 function formHtml(title, kv, fields){
   return `<h3>${title}</h3>` +
     fields.map(f=>`<div class="fg"><label>${f.label}</label>
-      <input id="fg-${f.col}" value="${esc(str(kv[f.col]))}"></div>`).join('') +
+      <input id="fg-${f.col}" value="${esc(str(kv[f.col] ?? kv[f.label] ?? ''))}"></div>`).join('') +
     `<div class="fg"><label>图片（点 × 删除，点 ＋ 上传新图）</label><div id="imgManArea">${imgManHtml()}</div></div>` +
     `<div class="row" style="justify-content:flex-end;margin-top:6px">
       <button class="btn o" onclick="closeForm()">取消</button>
