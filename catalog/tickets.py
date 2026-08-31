@@ -125,10 +125,18 @@ def _apply_mutate(conn, t, payload) -> dict:
         conn.execute(f"UPDATE {t.table} SET status='delisted', "
                      f"updated_at=datetime('now') WHERE id=?", (payload['product_id'],))
     elif action == 'create':
+        import secrets as _sec
+        from . import inner_code as _ic
         cols = list(payload['changes'])
+        pid = _sec.token_hex(8)
         conn.execute(f"INSERT INTO {t.table}(id, inner_code, {', '.join(cols)}) "
                      f"VALUES(?,?,{','.join('?' for _ in cols)})",
-                     (secrets.token_hex(8), inner_code.gen(), *payload['changes'].values()))
+                     (pid, _ic.gen(), *payload['changes'].values()))
+        result = {'mutated': action, 'created_rows': [], 'work_dir': None}
+        if payload.get('images'):
+            result['images_applied'] = {'table': t.table, 'id': pid,
+                                        'images': payload['images']}
+        return result
     return {'mutated': action, 'created_rows': [], 'work_dir': None}
 
 

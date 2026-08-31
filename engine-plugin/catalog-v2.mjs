@@ -105,7 +105,8 @@ export async function apply(ctx, _config = {}) {
 
   ctx.tools.register({
     name: 'catalog_mutate',
-    description: 'AI 代操作商品（改字段/下架/新增）——只生成审批工单不落库，返回含 approveUrl 发给用户。',
+    description: 'AI 代操作商品（改字段/下架/新增）——只生成审批工单不落库，返回含 approveUrl 发给用户。'
+      + '用户随消息发了图片时，把图片路径放进 imagePaths，图片会关联到商品。',
     parameters: {
       type: 'object',
       properties: {
@@ -113,17 +114,37 @@ export async function apply(ctx, _config = {}) {
         action: { type: 'string', enum: ['update', 'delete', 'create'] },
         productId: { type: 'string' },
         changes: { type: 'object', description: '列名→新值' },
+        imagePaths: { type: 'array', items: { type: 'string' },
+          description: '用户发的图片的服务器绝对路径（[MEDIA:image] 后面的路径），新增/换图时传入' },
       },
       required: ['category', 'action'],
     },
     output: OUT,
-    async execute({ category, action, productId, changes }) {
+    async execute({ category, action, productId, changes, imagePaths }) {
+      // 先把图片上传到侧车暂存区，拿到 staging 路径
+      const imageRels = []
+      for (const p of (imagePaths || [])) {
+        try {
+          const fs = await import('node:fs')
+          const buf = fs.readFileSync(p)
+          const fd = new FormData()
+          fd.append('file', new Blob([buf]), p.split('/').pop() || 'img.png')
+          const up = await fetch(`${BASE}/upload`, {
+            method: 'POST',
+            headers: { 'X-Service-Token': TOKEN },
+            body: fd,
+          })
+          if (up.ok) imageRels.push((await up.json()).path)
+        } catch (e) {
+          console.error(`[catalog-v2] 图片上传失败 ${p}: ${e.message}`)
+        }
+      }
+      const body = { changes: changes ?? {} }
+      if (imageRels.length) body.images = imageRels
       let r
-      if (action === 'create') r = await call(`/products/${category}`, 'POST', { changes: changes ?? {} })
-      else if (action === 'update') r = await call(`/products/${category}/${productId}`, 'PATCH', { changes: changes ?? {} })
+      if (action === 'create') r = await call(`/products/${category}`, 'POST', body)
+      else if (action === 'update') r = await call(`/products/${category}/${productId}`, 'PATCH', body)
       else r = await call(`/products/${category}/${productId}`, 'DELETE')
-      const tks = await call('/tickets')
-      const tk = tks.tickets.find(t => t.status === 'pending' && t.ticket_type === 'mutate')
       r.approveUrl = `${PUBLIC}/?t=${TOKEN}`
       return JSON.stringify(r)
     },

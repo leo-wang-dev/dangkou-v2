@@ -280,7 +280,8 @@ def register_routes(app: FastAPI):
             raise HTTPException(404, '未知品类')
         tk = tickets.create(app.state.conn, 'mutate', category,
                             {'kind': 'mutate', 'action': 'create',
-                             'product_id': None, 'changes': body.changes})
+                             'product_id': None, 'changes': body.changes,
+                             **({'images': body.images} if body.images else {})})
         return {'ticket_id': tk['id'], 'token': tk['token']}
 
     @app.patch('/products/{category}/{pid}')
