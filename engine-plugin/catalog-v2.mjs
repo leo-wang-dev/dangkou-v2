@@ -82,24 +82,53 @@ export async function apply(ctx, _config = {}) {
     },
   })
 
+
+  ctx.tools.register({
+    name: 'catalog_stats',
+    description: '查询商品统计数据：总数、按品类数量、示例商品。'
+      + '用户问"有多少款产品""卷发棒有几个""剃须刀有几个"时调这个工具。',
+    parameters: { type: 'object', properties: {} },
+    output: OUT,
+    async execute() {
+      return JSON.stringify(await call('/stats'))
+    },
+  })
+
   ctx.tools.register({
     name: 'catalog_quote',
-    description: '生成报价单 Excel（异步：返回 jobId+预计秒数，完成后系统自动把文件推送给用户，你不要自己发文件、也不要声称已发送）。'
-      + '**productIds 默认只传一个**：检索场景=用户确认的第一名（或用户回复的序号对应那款）；'
-      + '只有用户明确说"都要/全部/这几款"才传多个。',
+    description: '生成报价单 Excel（多商品+数量+百分比调整，完成后系统自动推送文件）。'
+      + 'items 每项含 product_id 和 quantity；price_adjustment_pct 正=上浮负=下浮（如 3=+3%, -5=下浮5%）。'
+      + '用户说"出厂价加3个点"→ pct=3；"销售价下浮5%"→ pct=-5；"加3%佣金"→ pct=3。',
     parameters: {
       type: 'object',
       properties: {
-        category: { type: 'string', enum: ['razor', 'curler'] },
-        productIds: { type: 'array', items: { type: 'string' } },
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              category: { type: 'string', enum: ['razor', 'curler'] },
+              product_id: { type: 'string' },
+              quantity: { type: 'number', description: '数量（台/个）' },
+            },
+            required: ['category', 'product_id'],
+          },
+        },
+        price_adjustment_pct: { type: 'number', description: '价格调整百分比，正=上浮负=下浮' },
       },
-      required: ['category', 'productIds'],
+      required: ['items'],
     },
     output: OUT,
-    async execute({ category, productIds }) {
-      const r = await call('/quote', 'POST', { category, product_ids: productIds })
-      return JSON.stringify({ jobId: r.job_id, estSec: r.est_sec,
-        note: `报价单生成中，预计${Math.max(1, Math.round(r.est_sec / 60))}分钟内自动推送给用户` })
+    async execute({ items, price_adjustment_pct }) {
+      const r = await call('/quote', 'POST', {
+        items: (items || []).map(i => ({
+          category: i.category, product_id: i.product_id,
+          quantity: i.quantity ?? 1,
+        })),
+        price_adjustment_pct: price_adjustment_pct ?? 0,
+      })
+      return JSON.stringify({ path: r.path,
+        note: `报价单已生成（${items?.length || 0} 款，调整 ${price_adjustment_pct ?? 0}+%），系统自动推送` })
     },
   })
 

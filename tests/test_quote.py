@@ -92,3 +92,32 @@ def test_quote_async_job_with_file_push(tmp_path, monkeypatch):
     # 显示修复：行高≥图高（px→pt 换算后不叠行）
     wb = openpyxl.load_workbook(s['path'])
     assert wb.active.row_dimensions[2].height >= 40
+
+
+def test_multi_item_quote_with_adjustment(seeded):
+    """多商品报价：各自数量 + 百分比调整 + 小计。"""
+    import openpyxl as _oxl
+    conn, st, base = seeded
+    conn.execute("INSERT INTO product_curler(id,inner_code,item_no,ctn_qty,ctn_size,"
+                 "price,voltage,image_main) VALUES('p2','KS-BBBBBBBB','8227','50',"
+                 "'60*40*40','30','220v',NULL)")
+    conn.commit()
+    from catalog import quote as q
+    out = base + '/multi.xlsx'
+    q.generate_v2(conn, st, [
+        {'category': 'curler', 'product_id': 'p1', 'quantity': 100},
+        {'category': 'curler', 'product_id': 'p2', 'quantity': 500},
+    ], price_adjustment_pct=3, out_path=out)
+    ws = _oxl.load_workbook(out).active
+    # 表头
+    hdrs = [ws.cell(1, c).value for c in range(1, 9)]
+    assert 'Qty' in hdrs and 'Amount' in hdrs
+    # 数据
+    assert ws.cell(2, 2).value == '8226'          # ITEM.NO
+    assert ws.cell(2, 6).value == 22              # 21.5*1.03=22.145 round=22
+    assert ws.cell(2, 7).value == 100             # Qty
+    assert ws.cell(2, 8).value == 2200            # 22*100
+    assert ws.cell(3, 2).value == '8227'
+    assert ws.cell(3, 6).value == 31              # 30*1.03=30.9 round=31
+    assert ws.cell(3, 7).value == 500
+    assert ws.cell(3, 8).value == 15500           # 31*500

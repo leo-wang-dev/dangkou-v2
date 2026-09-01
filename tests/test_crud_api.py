@@ -317,3 +317,24 @@ def test_direct_create_and_update(client):
     # 不应产生工单
     tks = client.get('/tickets').json()['tickets']
     assert not any(t['ticket_type'] == 'mutate' for t in tks)
+
+
+def test_catalog_stats(client):
+    """统计查询：总数/按品类/按型号。"""
+    from catalog import tickets as tk
+    for i, m in enumerate(['S1', 'S2', 'S3']):
+        tk.create(client.app.state.conn, 'mutate', 'razor',
+                  {'kind': 'mutate', 'action': 'create', 'product_id': None,
+                   'changes': {'model_no': m}})
+    for t0 in range(3):
+        t = [x for x in client.get('/tickets').json()['tickets']
+             if x['ticket_type'] == 'mutate' and x['status'] == 'pending'][0]
+        client.post(f"/tickets/{t['id']}/decision",
+                    json={'token': t['token'], 'approved': True})
+    # 总数
+    r = client.get('/stats')
+    assert r.status_code == 200
+    d = r.json()
+    assert d['total'] >= 3
+    assert '剃须刀' in d['by_category']
+    assert d['by_category']['剃须刀'] >= 3

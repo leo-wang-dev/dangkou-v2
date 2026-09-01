@@ -309,6 +309,24 @@ def register_routes(app: FastAPI):
             f'SELECT * FROM {t.table} WHERE id=?', (pid,)).fetchone()
         return row_to_dict(t, r) if r else None
 
+    # ---- 统计查询 ----
+    @app.get('/stats')
+    def stats():
+        total = 0
+        by_cat = {}
+        samples = {}
+        for key, t in TEMPLATES.items():
+            n = app.state.conn.execute(
+                f"SELECT COUNT(*) c FROM {t.table} WHERE status != 'delisted'").fetchone()['c']
+            by_cat[t.name] = n
+            total += n
+            row = app.state.conn.execute(
+                f"SELECT * FROM {t.table} WHERE status != 'delisted' LIMIT 3").fetchall()
+            samples[key] = [row_to_dict(t, r) for r in row]
+        return {'total': total, 'by_category': by_cat,
+                'category_keys': {t.name: k for k, t in TEMPLATES.items()},
+                'samples': samples}
+
     # ---- 检索 ----
     class SearchIn(BaseModel):
         image_path: str
@@ -394,20 +412,33 @@ def register_routes(app: FastAPI):
         app.state.conn.commit()
         return {'delisted': True}
 
-    # ---- 报价单（异步：对齐导入体验）----
-    class QuoteIn(BaseModel):
+    # ---- 报价单（v2：多商品+数量+百分比调整）----
+    class QuoteItem(BaseModel):
         category: str
-        product_ids: list[str]
+        product_id: str
+        quantity: int = 1
+
+    class QuoteIn(BaseModel):
+        items: list[QuoteItem]
+        price_adjustment_pct: float = 0
 
     @app.post('/quote')
     def do_quote(body: QuoteIn, request: Request):
         _auth(request, app.state.token)
-        if not body.product_ids:
-            raise HTTPException(400, 'product_ids 不能为空（默认只传第一名）')
+        if not body.items:
+            raise HTTPException(400, 'items 不能为空')
+        import uuid
         from . import quote as quote_mod
         out_dir = os.path.join(app.state.storage.base, '_quotes')
-        return quote_mod.start_job(app.state.conn, app.state.storage,
-                                   body.category, body.product_ids, out_dir)
+        os.makedirs(out_dir, exist_ok=True)
+        out = os.path.join(out_dir, f'quote-{uuid.uuid4().hex[:8]}.xlsx')
+        items = [{'category': i.category, 'product_id': i.product_id, 'quantity': i.quantity}
+                 for i in body.items]
+        quote_mod.generate_v2(app.state.conn, app.state.storage, items,
+                              body.price_adjustment_pct, out)
+        from . import notify
+        notify.push_file(f'📄 报价单已生成并发送（{len(items)} 款，调整 {body.price_adjustment_pct:+.0f}%）', out)
+        return {'path': out}
 
     @app.get('/quote/{job_id}')
     def quote_status(job_id: str):

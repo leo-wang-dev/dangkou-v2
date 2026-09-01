@@ -91,3 +91,71 @@ def job_status(job_id) -> dict:
     if not j:
         raise KeyError(job_id)
     return {'job_id': job_id, **j}
+
+
+def _rv(row, key):
+    """sqlite3.Row 安全取值（缺列返回空）。"""
+    try:
+        return row[key]
+    except (IndexError, KeyError):
+        return ''
+
+
+def generate_v2(conn, storage, items, price_adjustment_pct, out_path):
+    """通用模板 v2：多商品 + 各自数量 + 百分比调整 + Qty/Amount。
+
+    items: [{category, product_id, quantity}, ...]
+    price_adjustment_pct: 正=上浮, 负=下浮 (如 3 = +3%, -5 = -5%)
+    """
+    from .templates import TEMPLATES
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Quotation'
+    headers = ['NO.', 'ITEM.NO', 'PIC', 'MEAS', 'PCS/CTN', 'PRICE', 'Qty', 'Amount']
+    ws.append(headers)
+    for c, w in [(1, 5), (2, 16), (3, 14), (4, 16), (5, 9), (6, 10), (7, 8), (8, 12)]:
+        ws.column_dimensions[openpyxl.utils.get_column_letter(c)].width = w
+    ws.row_dimensions[1].font = Font(bold=True)
+
+    r = 2
+    total = 0
+    for i, item in enumerate(items, 1):
+        t = TEMPLATES.get(item.get('category', ''))
+        if not t:
+            continue
+        p = conn.execute(f'SELECT * FROM {t.table} WHERE id=?',
+                         (item['product_id'],)).fetchone()
+        if p is None:
+            continue
+        qty = int(item.get('quantity', 1))
+        base_price = float(str(p['price'] or '0').replace('¥', '').replace(',', '')) if p['price'] else 0
+        unit = round(base_price * (1 + price_adjustment_pct / 100))
+        amount = unit * qty
+        total += amount
+
+        ws.cell(r, 1, i)
+        ws.cell(r, 2, p[t.dedup_field])
+        if p['image_main']:
+            try:
+                from openpyxl.drawing.image import Image as XLImg
+                xi = XLImg(storage.abs_path(p['image_main']))
+                xi.width, xi.height = 52, 52
+                ws.add_image(xi, f'C{r}')
+            except Exception:
+                pass
+        ws.cell(r, 4, _rv(p, 'ctn_size') or _rv(p, 'size_mm') or '')
+        ws.cell(r, 5, _rv(p, 'ctn_qty') or _rv(p, 'ctn_spec') or '')
+        ws.cell(r, 6, unit)
+        ws.cell(r, 7, qty)
+        ws.cell(r, 8, amount)
+        ws.row_dimensions[r].height = 42
+        r += 1
+
+    # 合计行
+    ws.cell(r, 7, 'Total:')
+    ws.cell(r, 8, total)
+    ws.cell(r, 7).font = Font(bold=True)
+    ws.cell(r, 8).font = Font(bold=True)
+
+    wb.save(out_path)
+    return out_path
