@@ -284,7 +284,11 @@ async function submitDecision(tid, wholeReject){
   try{
     const r = await api(`/tickets/${tid}/decision`, {method:'POST', body:JSON.stringify(
       {token:t.token, approved:!wholeReject, decisions:{reject, edits: rowEdits}})});
-    alert(wholeReject?'已整单驳回':`已通过：新增${r.created||0} / 更新${r.updated||0} / 下架${r.delisted||0}`);
+    if(r.mutated){
+      alert(r.mutated === 'delete' ? '✅ 已下架' : r.mutated === 'create' ? '✅ 已新增' : '✅ 已修改');
+    } else {
+      alert(wholeReject?'已整单驳回':`已通过：新增${r.created||0} / 更新${r.updated||0} / 下架${r.delisted||0}`);
+    }
     [...rej].filter(k=>k.startsWith(tid+':')).forEach(k=>rej.delete(k));
     delete edits[tid];
     loadTickets();
