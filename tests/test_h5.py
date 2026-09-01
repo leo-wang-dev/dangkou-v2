@@ -18,7 +18,9 @@ def test_script_syntax():
     import shutil
     import subprocess
     import tempfile
-    s = open('static/index.html', encoding='utf-8').read()
+    import os as _os
+    _dir = _os.path.dirname(_os.path.abspath(__file__))
+    s = open(_os.path.join(_dir, '..', 'static', 'index.html'), encoding='utf-8').read()
     js = re.search(r'<script>(.*)</script>', s, re.S).group(1)
     node = shutil.which('node')
     if not node:

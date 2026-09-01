@@ -101,23 +101,61 @@ def _rv(row, key):
         return ''
 
 
+TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'quote_template.xlsx')
+
+
+def _rv(row, key):
+    try:
+        return row[key]
+    except (IndexError, KeyError):
+        return ''
+
+
 def generate_v2(conn, storage, items, price_adjustment_pct, out_path):
-    """通用模板 v2：多商品 + 各自数量 + 百分比调整 + Qty/Amount。
-
-    items: [{category, product_id, quantity}, ...]
-    price_adjustment_pct: 正=上浮, 负=下浮 (如 3 = +3%, -5 = -5%)
-    """
+    """纯模板填充：复制源模板 → 清数据行 → 填商品 → 加Qty/Amount列。前14行一字不动。"""
+    from openpyxl.drawing.image import Image as XLImg
+    from openpyxl.styles import Border, Side
     from .templates import TEMPLATES
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = 'Quotation'
-    headers = ['NO.', 'ITEM.NO', 'PIC', 'MEAS', 'PCS/CTN', 'PRICE', 'Qty', 'Amount']
-    ws.append(headers)
-    for c, w in [(1, 5), (2, 16), (3, 14), (4, 16), (5, 9), (6, 10), (7, 8), (8, 12)]:
-        ws.column_dimensions[openpyxl.utils.get_column_letter(c)].width = w
-    ws.row_dimensions[1].font = Font(bold=True)
 
-    r = 2
+    # 1. 加载模板（不copy文件，直接load+save避免权限问题）
+    wb = openpyxl.load_workbook(TEMPLATE_PATH)
+    if 'IN STOCK ITEMS' in wb.sheetnames:
+        ws = wb['IN STOCK ITEMS']
+        wb.active = wb.index(ws)
+        # 删其他Sheet（只留 IN STOCK ITEMS，避免打开时显示错误页）
+        for name in list(wb.sheetnames):
+            if name != 'IN STOCK ITEMS':
+                del wb[name]
+    else:
+        ws = wb.active
+
+    # 2. 删掉数据行（15行起全删）
+    DATA_START = 15
+    if ws.max_row >= DATA_START:
+        ws.delete_rows(DATA_START, ws.max_row - DATA_START + 1)
+
+    # 3. 删掉数据区的图片（只保留抬头区的）
+    ws._images = [img for img in ws._images
+                  if img.anchor and img.anchor._from and img.anchor._from.row < DATA_START - 1]
+
+    # 4. 在表头行(14)末尾加 Qty 和 Amount
+    HEADER_ROW = 14
+    LAST_COL = 6  # 原模板 F 列是 PRICE
+    thin = Side(style='thin', color='999999')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    ref = ws.cell(HEADER_ROW, LAST_COL)  # PRICE 列头位置
+    for j, h in enumerate(['Qty', 'Amount']):
+        c = LAST_COL + 1 + j
+        cell = ws.cell(HEADER_ROW, c, h)
+        from openpyxl.styles import Alignment, Font
+        cell.font = Font(bold=True, size=10)
+        cell.border = border
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    ws.column_dimensions['G'].width = 8
+    ws.column_dimensions['H'].width = 12
+
+    # 5. 填数据
+    r = DATA_START
     total = 0
     for i, item in enumerate(items, 1):
         t = TEMPLATES.get(item.get('category', ''))
@@ -128,34 +166,40 @@ def generate_v2(conn, storage, items, price_adjustment_pct, out_path):
         if p is None:
             continue
         qty = int(item.get('quantity', 1))
-        base_price = float(str(p['price'] or '0').replace('¥', '').replace(',', '')) if p['price'] else 0
-        unit = round(base_price * (1 + price_adjustment_pct / 100))
+        base = float(str(p['price'] or '0').replace('¥','').replace(',','')) if p['price'] else 0
+        unit = round(base * (1 + price_adjustment_pct / 100))
         amount = unit * qty
         total += amount
 
-        ws.cell(r, 1, i)
-        ws.cell(r, 2, p[t.dedup_field])
-        if p['image_main']:
+        ws.cell(r, 1, i)                                             # NO.
+        ws.cell(r, 2, p[t.dedup_field])                              # ITEM.NO
+        if p['image_main']:                                          # PIC
             try:
-                from openpyxl.drawing.image import Image as XLImg
                 xi = XLImg(storage.abs_path(p['image_main']))
-                xi.width, xi.height = 52, 52
+                xi.width, xi.height = 50, 50
                 ws.add_image(xi, f'C{r}')
             except Exception:
                 pass
-        ws.cell(r, 4, _rv(p, 'ctn_size') or _rv(p, 'size_mm') or '')
-        ws.cell(r, 5, _rv(p, 'ctn_qty') or _rv(p, 'ctn_spec') or '')
-        ws.cell(r, 6, unit)
-        ws.cell(r, 7, qty)
-        ws.cell(r, 8, amount)
-        ws.row_dimensions[r].height = 42
+        ws.cell(r, 4, _rv(p, 'ctn_size') or _rv(p, 'size_mm') or '') # MEAS
+        ws.cell(r, 5, _rv(p, 'ctn_qty') or _rv(p, 'ctn_spec') or '') # PCS/CTN
+        ws.cell(r, 6, unit)                                            # PRICE
+        ws.cell(r, 7, qty)                                             # Qty
+        ws.cell(r, 8, amount)                                          # Amount
+        ws.cell(r, 8).number_format = '#,##0'
+        for c in range(1, 9):
+            ws.cell(r, c).border = border
+        ws.row_dimensions[r].height = 56
         r += 1
 
-    # 合计行
-    ws.cell(r, 7, 'Total:')
+    # 6. 合计行
+    from openpyxl.styles import Alignment, Font
+    ws.cell(r, 5, 'TOTAL:').alignment = Alignment(horizontal='right')
+    ws.cell(r, 5).font = Font(bold=True, size=10)
     ws.cell(r, 8, total)
-    ws.cell(r, 7).font = Font(bold=True)
-    ws.cell(r, 8).font = Font(bold=True)
+    ws.cell(r, 8).font = Font(bold=True, size=10)
+    ws.cell(r, 8).number_format = '#,##0'
+    for c in range(1, 9):
+        ws.cell(r, c).border = border
 
     wb.save(out_path)
     return out_path

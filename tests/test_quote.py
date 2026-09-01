@@ -110,14 +110,14 @@ def test_multi_item_quote_with_adjustment(seeded):
     ], price_adjustment_pct=3, out_path=out)
     ws = _oxl.load_workbook(out).active
     # 表头
-    hdrs = [ws.cell(1, c).value for c in range(1, 9)]
+    hdrs = [ws.cell(14, c).value for c in range(1, 9)]
     assert 'Qty' in hdrs and 'Amount' in hdrs
     # 数据
-    assert ws.cell(2, 2).value == '8226'          # ITEM.NO
-    assert ws.cell(2, 6).value == 22              # 21.5*1.03=22.145 round=22
-    assert ws.cell(2, 7).value == 100             # Qty
-    assert ws.cell(2, 8).value == 2200            # 22*100
-    assert ws.cell(3, 2).value == '8227'
-    assert ws.cell(3, 6).value == 31              # 30*1.03=30.9 round=31
-    assert ws.cell(3, 7).value == 500
-    assert ws.cell(3, 8).value == 15500           # 31*500
+    assert ws.cell(15, 2).value == '8226'          # ITEM.NO
+    assert ws.cell(15, 6).value == 22              # 21.5*1.03=22.145 round=22
+    assert ws.cell(15, 7).value == 100             # Qty
+    assert ws.cell(15, 8).value == 2200            # 22*100
+    assert ws.cell(16, 2).value == '8227'
+    assert ws.cell(16, 6).value == 31              # 30*1.03=30.9 round=31
+    assert ws.cell(16, 7).value == 500
+    assert ws.cell(16, 8).value == 15500           # 31*500
