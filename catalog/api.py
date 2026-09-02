@@ -278,9 +278,12 @@ def register_routes(app: FastAPI):
         _auth(request, app.state.token)
         if category not in TEMPLATES:
             raise HTTPException(404, '未知品类')
+        norm, to_remark = tickets.normalize_changes(TEMPLATES[category], body.changes or {})
+        if not set(body.changes or {}) - set(to_remark) and not body.images:
+            _raise_unknown_fields(category)   # 一个合法字段都没有=AI没做映射，打回让它重发
         tk = tickets.create(app.state.conn, 'mutate', category,
                             {'kind': 'mutate', 'action': 'create',
-                             'product_id': None, 'changes': body.changes,
+                             'product_id': None, 'changes': norm,
                              **({'images': body.images} if body.images else {})})
         return {'ticket_id': tk['id'], 'token': tk['token']}
 
@@ -289,9 +292,12 @@ def register_routes(app: FastAPI):
         _auth(request, app.state.token)
         if not body.changes and not body.images:
             raise HTTPException(400, 'changes 与 images 至少给一个')
+        norm, to_remark = tickets.normalize_changes(TEMPLATES[category], body.changes or {})
+        if not set(body.changes or {}) - set(to_remark) and not body.images:
+            _raise_unknown_fields(category)
         tk = tickets.create(app.state.conn, 'mutate', category,
                             {'kind': 'mutate', 'action': 'update', 'product_id': pid,
-                             'changes': body.changes or {},
+                             'changes': norm,
                              **({'images': body.images} if body.images else {}),
                              'before': _current(category, pid)})
         return {'ticket_id': tk['id'], 'token': tk['token']}
@@ -300,8 +306,16 @@ def register_routes(app: FastAPI):
     def delete_product(category: str, pid: str, request: Request):
         _auth(request, app.state.token)
         tk = tickets.create(app.state.conn, 'mutate', category,
-                            {'kind': 'mutate', 'action': 'delete', 'product_id': pid})
+                            {'kind': 'mutate', 'action': 'delete', 'product_id': pid,
+                             'before': _current(category, pid)})
         return {'ticket_id': tk['id'], 'token': tk['token']}
+
+    def _raise_unknown_fields(category):
+        t = TEMPLATES[category]
+        raise HTTPException(
+            400, 'changes 里没有可识别的字段。该品类合法字段：'
+            + '、'.join(label for _, label in t.fields)
+            + '；清单外的信息请拼进"备注"（如"工作温度：160-220℃｜认证：CE"）')
 
     def _current(category, pid):
         t = TEMPLATES[category]

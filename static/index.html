@@ -244,11 +244,18 @@ async function refreshDetail(tid){
         </div>
       </div>` + html;
     } else if(act === 'delete'){
+      const b = p.before || {};
+      const img = b['主图'] ? `/img/${b['主图']}?token=${TOKEN}` : '';
+      const model = str(b[cur.tpl?.fields?.[0]?.label] || b['产品型号'] || b['ITEM.NO 型号'] || p.product_id);
       html = `
       <div class="draft">
+        ${img?`<img class="p" src="${img}" onclick="lbGallery(['${img}'])">`:''}
         <div class="f">
           <span class="tag del">${actName}</span>
-          <div class="kv">商品ID：${esc(str(p.product_id))}</div>
+          <div class="kv"><b>${esc(model)}</b></div>
+          ${b['报价']?`<div class="kv"><b>报价</b>：${esc(str(b['报价']))}</div>`:''}
+          ${b['价格']?`<div class="kv"><b>价格</b>：${esc(str(b['价格']))}</div>`:''}
+          <div class="kv" style="color:#999">批准后该商品下架，不再出现在找货结果</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;flex:none">
           <button class="btn p s" onclick="submitDecision(${tid},false)">✓通过</button>

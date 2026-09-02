@@ -10,6 +10,31 @@ class TicketError(Exception):
     pass
 
 
+def normalize_changes(t, changes: dict):
+    """字段把关（不做翻译——语义映射是 AI 的活，工具描述里给了字段清单）。
+
+    合法键（模板label 或 列名）→ 统一成 label 键保留；
+    非法键不丢：值以"原字段：值"拼进"备注"（｜连接）。
+    建 单时调（B层：全非法→上层 400 让 AI 自纠）、决策时调（C层：存量脏单保命不 500）。
+    返回 (归一 changes, 进备注的原键清单)。
+    """
+    col_to_label = {col: label for col, label in t.fields}
+    legal = {**{label: label for label in col_to_label.values()}, **col_to_label}
+    norm, extra, to_remark = {}, [], []
+    for k, v in (changes or {}).items():
+        if v is None or str(v).strip() == '':
+            continue
+        if k in legal:
+            norm[legal[k]] = str(v).strip()
+        else:
+            extra.append(f'{k}：{str(v).strip()}')
+            to_remark.append(k)
+    if extra:
+        norm['备注'] = norm['备注'] + '｜' + '｜'.join(extra) if norm.get('备注') \
+            else '｜'.join(extra)
+    return norm, to_remark
+
+
 def create(conn, ticket_type, category, payload) -> dict:
     token = secrets.token_urlsafe(24)
     cur = conn.execute(
@@ -108,30 +133,34 @@ def _apply(conn, payload, category, decisions) -> dict:
 
 def _apply_mutate(conn, t, payload) -> dict:
     action = payload['action']
-    # AI 可能发中文标签而非列名（如"报价"而非"price"）——统一翻译
+    # 字段把关（合法保留/非法进备注）再统一成列名——存量脏工单也能决策，不再 500
     label_to_col = {label: col for col, label in t.fields}
-    if isinstance(payload.get('changes'), dict):
-        payload['changes'] = {label_to_col.get(k, k): v
-                              for k, v in payload['changes'].items()}
-    if action == 'update' and payload.get('images'):
-        return {'mutated': 'update',
-                'images_applied': {'table': t.table, 'id': payload['product_id'],
-                                   'images': payload['images']}}
+    norm, _ = normalize_changes(t, payload.get('changes') or {})
+    changes = {label_to_col.get(k, k): v for k, v in norm.items()}
     if action == 'update':
-        sets = ', '.join(f'{c}=?' for c in payload['changes'])
-        conn.execute(f"UPDATE {t.table} SET {sets}, updated_at=datetime('now') WHERE id=?",
-                     (*payload['changes'].values(), payload['product_id']))
-    elif action == 'delete':
+        if changes:
+            sets = ', '.join(f'{c}=?' for c in changes)
+            conn.execute(f"UPDATE {t.table} SET {sets}, updated_at=datetime('now') WHERE id=?",
+                         (*changes.values(), payload['product_id']))
+        if payload.get('images'):
+            return {'mutated': 'update',
+                    'images_applied': {'table': t.table, 'id': payload['product_id'],
+                                       'images': payload['images']}}
+        return {'mutated': 'update', 'created_rows': [], 'work_dir': None}
+    if action == 'delete':
         conn.execute(f"UPDATE {t.table} SET status='delisted', "
                      f"updated_at=datetime('now') WHERE id=?", (payload['product_id'],))
     elif action == 'create':
         import secrets as _sec
         from . import inner_code as _ic
-        cols = list(payload['changes'])
+        if not changes:
+            return {'mutated': 'create', 'note': '无可识别字段，未落库',
+                    'created_rows': [], 'work_dir': None}
+        cols = list(changes)
         pid = _sec.token_hex(8)
         conn.execute(f"INSERT INTO {t.table}(id, inner_code, {', '.join(cols)}) "
                      f"VALUES(?,?,{','.join('?' for _ in cols)})",
-                     (pid, _ic.gen(), *payload['changes'].values()))
+                     (pid, _ic.gen(), *changes.values()))
         result = {'mutated': action, 'created_rows': [], 'work_dir': None}
         if payload.get('images'):
             result['images_applied'] = {'table': t.table, 'id': pid,

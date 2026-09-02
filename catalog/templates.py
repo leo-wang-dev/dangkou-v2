@@ -22,7 +22,7 @@ RAZOR_PROMPT = '''解析这份 Excel 厂家报价单，按品类模板产出商�
 模板字段（键名=列名，逐字段填，原文有就填没有留空）：
   产品型号(model_no), 功能描述(description), 颜色(color),
   产品尺寸mm(size_mm), 彩盒尺寸mm(giftbox_mm), 单套重量g(unit_weight_g),
-  箱规(ctn_spec), 报价(price)
+  箱规(ctn_spec), 报价(price), 备注(remark,模板字段装不下的补充信息拼这里，没有留空)
 
 # 硬性验收标准
 每一行数据 = 一个独立商品，不做任何合并。
@@ -46,7 +46,8 @@ CURLER_PROMPT = '''解析这份 Excel 厂家报价单，按品类模板产出商
 模板字段（键名=列名，逐字段填，原文有就填没有留空）：
   ITEM.NO型号(item_no), 装箱尺寸(ctn_size), 装箱数量(ctn_qty),
   价格(price), 电压(voltage), 功率(power),
-  发热体(heater), 材质(material), 频率(frequency)
+  发热体(heater), 材质(material), 频率(frequency),
+  备注(remark,模板字段装不下的补充信息如认证/配色/工作温度拼这里，没有留空)
 
 # 硬性验收标准
 每一行数据 = 一个独立商品，不做任何合并。
@@ -65,12 +66,14 @@ RAZOR = Template('razor', '剃须刀', 'product_razor', 'model_no', (
     ('model_no', '产品型号'), ('description', '功能描述'), ('color', '颜色'),
     ('size_mm', '产品尺寸(mm)'), ('giftbox_mm', '彩盒尺寸(mm)'),
     ('unit_weight_g', '单套重量(g)'), ('ctn_spec', '箱规'), ('price', '报价'),
+    ('remark', '备注'),
 ), prompt=RAZOR_PROMPT)
 
 CURLER = Template('curler', '卷发棒', 'product_curler', 'item_no', (
     ('item_no', 'ITEM.NO 型号'), ('ctn_size', '装箱尺寸'), ('ctn_qty', '装箱数量'),
     ('price', '价格'), ('voltage', '电压'), ('power', '功率'),
     ('heater', '发热体'), ('material', '材质'), ('frequency', '频率'),
+    ('remark', '备注'),
 ), prompt=CURLER_PROMPT)
 
 TEMPLATES = {t.key: t for t in (RAZOR, CURLER)}

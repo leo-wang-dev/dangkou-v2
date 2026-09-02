@@ -17,4 +17,14 @@ def connect(path=None):
 
 def init_db(conn):
     conn.executescript(open(_SCHEMA, encoding='utf-8').read())
+    _migrate(conn)
     conn.commit()
+
+
+def _migrate(conn):
+    """老库补列（CREATE TABLE IF NOT EXISTS 不会给已存在的表加新列）。"""
+    from .templates import TEMPLATES
+    for t in TEMPLATES.values():
+        cols = {r[1] for r in conn.execute(f'PRAGMA table_info({t.table})')}
+        if cols and 'remark' not in cols:
+            conn.execute(f"ALTER TABLE {t.table} ADD COLUMN remark TEXT DEFAULT ''")
