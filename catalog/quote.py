@@ -194,6 +194,33 @@ def _ceil_div(qty: int, pcs: int) -> int:
     return (qty + pcs - 1) // pcs
 
 
+# B列(宽45字符)≈320px，数据行高100pt≈133px——图片统一框 + 单元格内居中
+_PHOTO_CELL_W, _PHOTO_CELL_H = 320, 133
+_PHOTO_BOX_W, _PHOTO_BOX_H = 130, 118
+
+
+def _add_photo(ws, r: int, path: str):
+    """商品图放进 B{r} 单元格：等比缩放进统一框(130x118)，水平垂直居中（EMU偏移锚点）。"""
+    from PIL import Image as PILImage
+    from openpyxl.drawing.image import Image as XLImg
+    from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
+    from openpyxl.drawing.xdr import XDRPositiveSize2D
+    from openpyxl.utils.units import pixels_to_EMU
+
+    with PILImage.open(path) as im:
+        w0, h0 = im.size
+    if not w0 or not h0:
+        raise ValueError('空图')
+    scale = min(_PHOTO_BOX_W / w0, _PHOTO_BOX_H / h0)   # 统一框：小图也放大到框，视觉一致
+    iw, ih = int(w0 * scale), int(h0 * scale)
+    xi = XLImg(path)
+    marker = AnchorMarker(col=1, colOff=pixels_to_EMU((_PHOTO_CELL_W - iw) // 2),
+                          row=r - 1, rowOff=pixels_to_EMU((_PHOTO_CELL_H - ih) // 2))
+    xi.anchor = OneCellAnchor(_from=marker,
+                              ext=XDRPositiveSize2D(pixels_to_EMU(iw), pixels_to_EMU(ih)))
+    ws.add_image(xi)
+
+
 def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pct: float = 30):
     """ELETRO BELEZA 模板填充：14列全字段，行数=商品数（插行/删空行），
     合计/DEPOSIT/BALANCE 公式按实际行数重写，定金比例动态。"""
@@ -257,18 +284,9 @@ def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pc
             if (ctns is not None and dims) else None
 
         ws.cell(r, 1, str(_rv(p, t.dedup_field) or ''))       # A ITEM NO.
-        if p['image_main']:                                    # B PHOTO（等比缩放进100pt行）
+        if p['image_main']:                                    # B PHOTO（统一框+居中）
             try:
-                from PIL import Image as PILImage
-                with PILImage.open(storage.abs_path(p['image_main'])) as im:
-                    w0, h0 = im.size
-                ih = 110                                   # 行高100pt≈133px，图110px不越行
-                iw = int(w0 * ih / h0) or ih
-                if iw > 190:                                # B列宽45字符，超宽压回
-                    iw, ih = 190, int(h0 * 190 / w0)
-                xi = XLImg(storage.abs_path(p['image_main']))
-                xi.width, xi.height = iw, ih
-                ws.add_image(xi, f'B{r}')
+                _add_photo(ws, r, storage.abs_path(p['image_main']))
             except Exception as e:  # noqa: BLE001
                 print(f'[quote] 图嵌失败 {p["id"]}: {e}', flush=True)
         c = ws.cell(r, 3, desc)                                # C DESCRIPTION（卷发棒留空）
