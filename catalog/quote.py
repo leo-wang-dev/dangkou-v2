@@ -256,6 +256,11 @@ def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pc
         _shift_below(ws, DATA_START + k, -(TMPL_ROWS - k))
     last = DATA_START + k - 1
 
+    # 数字格式约定：物流列绝不能带货币符号（模板残留 ￥ 格式，填数前必须重设）；
+    # 钱只出现在 E 单价 / G 小计 / 合计 / 定金 / 尾款。
+    _FMT = {8: '0', 9: '0', 10: '0.0', 11: '0.0', 12: 'General', 13: '0.0', 14: '0.000'}
+    sums = {'amount': 0, 'ctns': 0, 'gw': 0.0, 'cbm': 0.0}
+
     for i, (t, p, qty) in enumerate(prows):
         r = DATA_START + i
         base = float(str(p['price'] or '0').replace('¥', '').replace(',', '')) or 0
@@ -294,30 +299,36 @@ def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pc
         ws.cell(r, 4, color)                                   # D COLORS（卷发棒留空）
         ws.cell(r, 5, unit)                                    # E PRICE
         ws.cell(r, 6, qty)                                     # F QUANTITY
-        ws.cell(r, 7, f'=ROUND(E{r}*F{r},2)')                  # G TOTAL AMOUNT（公式，改量自动重算）
+        amount = unit * qty
+        ws.cell(r, 7, amount)                                  # G TOTAL AMOUNT（写值：手机/WPS预览不重算公式会空白）
         ws.cell(r, 8, _num(pcs) if pcs else None)              # H PCS/CTN
         ws.cell(r, 9, ctns)                                    # I CTNS = ⌈量/每箱⌉
         ws.cell(r, 10, _num(gw) if gw else None)               # J G.W/CTN
         ws.cell(r, 11, _num(nw) if nw else None)               # K N.W/CTN
         ws.cell(r, 12, meas)                                   # L MEAS
         ws.cell(r, 13, tgw)                                    # M T.G.W = 箱数×单箱毛重
-        if tcbm is not None:
-            cell = ws.cell(r, 14, tcbm)                        # N T-CBM = 箱数×单箱体积
-            cell.number_format = '0.000'
+        ws.cell(r, 14, tcbm)                                   # N T-CBM = 箱数×单箱体积
+        for c_, fmt_ in _FMT.items():                          # 物流列格式重设（模板残留￥必须压掉）
+            ws.cell(r, c_).number_format = fmt_
+        sums['amount'] += amount
+        sums['ctns'] += ctns or 0
+        sums['gw'] += tgw or 0
+        sums['cbm'] += tcbm or 0
 
-    # 合计/定金：按内容定位（插删行后位置会动），公式全部重写
+    # 合计/定金：按内容定位（插删行后位置会动），写计算值（预览器不重算公式，值才处处可见）
     T = next((rr for rr in range(last + 1, last + 12)
               if str(ws.cell(rr, 1).value or '').strip().upper() == 'TOTAL'), None)
     if T is None:
         raise ValueError('模板里找不到 TOTAL 行')
-    for col in ('G', 'I', 'M'):
-        ws[f'{col}{T}'] = f'=SUM({col}{DATA_START}:{col}{last})'
-    ws[f'N{T}'] = f'=SUM(N{DATA_START}:N{last})'
+    ws[f'G{T}'] = sums['amount']
+    ws[f'I{T}'] = sums['ctns']
+    ws[f'M{T}'] = round(sums['gw'], 2)
+    ws[f'M{T}'].number_format = '0.0'
+    ws[f'N{T}'] = round(sums['cbm'], 3)
     ws[f'N{T}'].number_format = '0.000'
-    D = T + 1                                                   # DEPOSIT 行
-    frac = round(deposit_pct / 100, 4)
-    ws[f'G{D}'] = f'=ROUND(G{T}*{frac},2)'
-    ws[f'G{D + 1}'] = f'=G{T}-G{D}'                             # BALANCE
+    deposit = round(sums['amount'] * deposit_pct / 100, 2)
+    ws[f'G{T + 1}'] = deposit                                   # DEPOSIT
+    ws[f'G{T + 2}'] = round(sums['amount'] - deposit, 2)        # BALANCE
 
     wb.save(out_path)
     return out_path

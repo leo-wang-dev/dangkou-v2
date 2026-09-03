@@ -234,4 +234,4 @@ def test_full_catalog_quote_end_to_end(client):
     assert ws.cell(18 + n - 1, 1).value                       # 最后一行有数据
     T = next(rr for rr in range(18 + n, 18 + n + 12)
              if ws.cell(rr, 1).value == 'TOTAL')
-    assert ws.cell(T, 7).value == f'=SUM(G18:G{17 + n})'      # 合计精确到末行
+    assert ws.cell(T, 7).value == sum(round((10 + i) * 1.03) * 10 for i in range(n))  # 合计=值
