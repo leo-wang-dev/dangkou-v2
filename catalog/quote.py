@@ -284,6 +284,8 @@ def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pc
         pcs, gw, nw = ctn.get('pcs'), ctn.get('gw'), ctn.get('nw')
         meas, dims = ctn.get('meas'), ctn.get('dims')
         ctns = _ceil_div(qty, pcs) if pcs else None
+        if ctns is not None:
+            qty = pcs * ctns          # 整箱口径：QUANTITY = 每箱数×箱数（100台/60箱装→2箱=120台）
         tgw = round(ctns * gw, 2) if (ctns is not None and gw) else None
         tcbm = round(ctns * (dims[0] * dims[1] * dims[2]) / 1e6, 3) \
             if (ctns is not None and dims) else None
