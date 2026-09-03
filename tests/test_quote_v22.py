@@ -119,8 +119,8 @@ def test_full_fields_three_items(tmp_path):
     assert ws.cell(r, 3).value == '描述0'
     assert ws.cell(r, 4).value == '黑色'
     assert ws.cell(r, 5).value == 10                       # E 价格
-    assert ws.cell(r, 6).value == 100                      # F 数量=客户买的台数
-    assert ws.cell(r, 7).value == 1000                     # G 小计=值（10×100）
+    assert ws.cell(r, 6).value == 120                      # F 数量=整箱(40×3)
+    assert ws.cell(r, 7).value == 1200                     # G 小计=值（10×120整箱）
     assert ws.cell(r, 8).value == 40                       # H 每箱
     assert ws.cell(r, 9).value == 3                        # I 箱数 ⌈100/40⌉
     assert ws.cell(r, 10).value == 17.7                    # J 毛重
@@ -145,15 +145,15 @@ def test_full_fields_three_items(tmp_path):
     assert ws.cell(r, 14).value == round(2 * (60 * 40 * 40) / 1e6, 3)
     # 合计：3款 → TOTAL 行在 18+3+3=24（删了3个空行，labels 23）
     assert ws.cell(24, 1).value == 'TOTAL'
-    assert ws.cell(24, 7).value == 3660                   # 1000+900+1760
+    assert ws.cell(24, 7).value == 3860                   # 1200+900+1760
     assert ws.cell(24, 9).value == 6                     # 3+1+2箱
     assert ws.cell(24, 13).value == 72.1                 # 53.1+19.0
     assert ws.cell(24, 14).value == round(round(3 * (38.5 * 37.5 * 42.5) / 1e6, 3) + 0.091 + 0.192, 3)
     # 定金 20%：总额 = 10*100 + round(15*1.03)=15 → 15*60 + 22*80
 
     assert ws.cell(25, 1).value and 'DEPOSIT' in str(ws.cell(25, 1).value)
-    assert ws.cell(25, 7).value == round(3660 * 0.2, 2)   # 定金732
-    assert ws.cell(26, 7).value == 3660 - round(3660 * 0.2, 2)
+    assert ws.cell(25, 7).value == round(3860 * 0.2, 2)   # 定金772
+    assert ws.cell(26, 7).value == 3860 - round(3860 * 0.2, 2)
     # 图片：模板5张（LOGO/门市×2/收款码×2）+ 3张商品图；收款码上移3行（48→45，锚0基44）
     imgs = ws._images
     assert len(imgs) == 8
@@ -174,7 +174,10 @@ def test_twenty_items_insert_path(tmp_path):
     assert ws.cell(18, 1).value == 'M0' and ws.cell(37, 1).value == 'M19'
     T = 41                                                   # 18+20 → remark38 spacer39 labels40 TOTAL41
     assert ws.cell(T, 1).value == 'TOTAL'
-    total20 = sum((10 + i * 5) * (10 + i) for i in range(20))
+    total20 = 0
+    for i in range(20):
+        pcs = REAL_CTN[i][1]
+        total20 += (10 + i * 5) * (pcs * math.ceil((10 + i) / pcs))  # 整箱数量
     assert ws.cell(T, 7).value == total20
     assert ws.cell(T + 2, 7).value == total20 - round(total20 * 0.3, 2)  # BALANCE
     qr = [im.anchor._from.row + 1 for im in ws._images if im.anchor._from.row > 40]
@@ -188,14 +191,14 @@ def test_deposit_default_and_edges(tmp_path):
     quote.generate_v2(conn, st, [{'category': 'razor', 'product_id': 'r0', 'quantity': 100}], 0, out)
     ws = openpyxl.load_workbook(out).active
     T = next(r for r in range(19, 30) if ws.cell(r, 1).value == 'TOTAL')
-    assert ws.cell(T + 1, 7).value == round(10 * 100 * 0.3, 2)      # 默认30%
+    assert ws.cell(T + 1, 7).value == round(10 * 120 * 0.3, 2)      # 默认30%（整箱120台）
     # 定金100%（尾款0）与0%（定金0）不炸
     for pct in (0, 100):
         quote.generate_v2(conn, st, [{'category': 'razor', 'product_id': 'r0', 'quantity': 7}],
                           0, str(tmp_path / f'q{pct}.xlsx'), deposit_pct=pct)
     ws2 = openpyxl.load_workbook(str(tmp_path / 'q100.xlsx')).active
     T2 = next(r for r in range(19, 30) if ws2.cell(r, 1).value == 'TOTAL')
-    assert ws2.cell(T2 + 1, 7).value == round(10 * 7 * 1.0, 2)       # 100%定金=全款70
+    assert ws2.cell(T2 + 1, 7).value == round(10 * 40 * 1.0, 2)       # 100%定金=全款（7台→整箱40）
 
 
 def test_ceil_edges():
@@ -213,7 +216,7 @@ def test_discount_negative_adjustment(tmp_path):
                       -5, out)
     ws = openpyxl.load_workbook(out).active
     assert ws.cell(18, 5).value == round(10 * (1 + (-5) / 100))
-    assert ws.cell(18, 7).value == round(10 * 0.95) * 100
+    assert ws.cell(18, 7).value == round(10 * 0.95) * 120   # 整箱
 
 
 def test_discount_plus_custom_deposit_combo(tmp_path):
@@ -229,7 +232,7 @@ def test_discount_plus_custom_deposit_combo(tmp_path):
     assert ws.cell(18, 5).value == u0
     assert ws.cell(19, 5).value == u1
     T = next(r for r in range(20, 32) if ws.cell(r, 1).value == 'TOTAL')
-    total = round(10 * 0.95) * 100 + round(15 * 0.95) * 60
+    total = round(10 * 0.95) * 120 + round(15 * 0.95) * 60   # 100→整箱120；60恰一箱
     assert ws.cell(T, 7).value == total
     assert ws.cell(T + 1, 7).value == round(total * 0.2, 2)   # 定金20%
     assert ws.cell(T + 2, 7).value == total - round(total * 0.2, 2)
