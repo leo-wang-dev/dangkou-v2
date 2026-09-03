@@ -95,7 +95,7 @@ def test_quote_async_job_with_file_push(tmp_path, monkeypatch):
 
 
 def test_multi_item_quote_with_adjustment(seeded):
-    """多商品报价：各自数量 + 百分比调整 + 小计。"""
+    """多商品报价（v2.2 ELETRO BELEZA 模板）：各自数量 + 百分比调整 + 小计公式 + 合计。"""
     import openpyxl as _oxl
     conn, st, base = seeded
     conn.execute("INSERT INTO product_curler(id,inner_code,item_no,ctn_qty,ctn_size,"
@@ -109,15 +109,20 @@ def test_multi_item_quote_with_adjustment(seeded):
         {'category': 'curler', 'product_id': 'p2', 'quantity': 500},
     ], price_adjustment_pct=3, out_path=out)
     ws = _oxl.load_workbook(out).active
-    # 表头
-    hdrs = [ws.cell(14, c).value for c in range(1, 9)]
-    assert 'Qty' in hdrs and 'Amount' in hdrs
+    # 表头（17行：F=QUANTITY G=TOTAL AMOUNT）
+    assert ws.cell(17, 6).value == 'QUANTITY'
+    assert ws.cell(17, 7).value == 'TOTAL AMOUNT'
     # 数据
-    assert ws.cell(15, 2).value == '8226'          # ITEM.NO
-    assert ws.cell(15, 6).value == 22              # 21.5*1.03=22.145 round=22
-    assert ws.cell(15, 7).value == 100             # Qty
-    assert ws.cell(15, 8).value == 2200            # 22*100
-    assert ws.cell(16, 2).value == '8227'
-    assert ws.cell(16, 6).value == 31              # 30*1.03=30.9 round=31
-    assert ws.cell(16, 7).value == 500
-    assert ws.cell(16, 8).value == 15500           # 31*500
+    assert ws.cell(18, 1).value == '8226'          # ITEM NO.
+    assert ws.cell(18, 5).value == 22              # 21.5*1.03=22.145 round=22
+    assert ws.cell(18, 6).value == 100             # QUANTITY
+    assert ws.cell(18, 7).value == '=ROUND(E18*F18,2)'
+    assert ws.cell(19, 1).value == '8227'
+    assert ws.cell(19, 5).value == 31              # 30*1.03=30.9 round=31
+    assert ws.cell(19, 6).value == 500
+    assert ws.cell(19, 7).value == '=ROUND(E19*F19,2)'
+    # 合计（k=2 删4空行 → TOTAL 在 18+2+3=23）
+    assert ws.cell(23, 1).value == 'TOTAL'
+    assert ws.cell(23, 7).value == '=SUM(G18:G19)'
+    assert ws.cell(24, 7).value == '=ROUND(G23*0.3,2)'    # 默认定金30%
+    assert ws.cell(25, 7).value == '=G23-G24'

@@ -435,6 +435,7 @@ def register_routes(app: FastAPI):
     class QuoteIn(BaseModel):
         items: list[QuoteItem]
         price_adjustment_pct: float = 0
+        deposit_pct: float = 30          # 定金百分比（30=30%），商家说"两成定金"传20
 
     @app.post('/quote')
     def do_quote(body: QuoteIn, request: Request):
@@ -449,7 +450,8 @@ def register_routes(app: FastAPI):
         items = [{'category': i.category, 'product_id': i.product_id, 'quantity': i.quantity}
                  for i in body.items]
         quote_mod.generate_v2(app.state.conn, app.state.storage, items,
-                              body.price_adjustment_pct, out)
+                              body.price_adjustment_pct, out,
+                              deposit_pct=body.deposit_pct)
         from . import notify
         notify.push_file(f'📄 报价单已生成并发送（{len(items)} 款，调整 {body.price_adjustment_pct:+.0f}%）', out)
         return {'path': out}

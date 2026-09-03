@@ -96,9 +96,10 @@ export async function apply(ctx, _config = {}) {
 
   ctx.tools.register({
     name: 'catalog_quote',
-    description: '生成报价单 Excel（多商品+数量+百分比调整，完成后系统自动推送文件）。'
+    description: '生成报价单 Excel（ELETRO BELEZA 全字段模板：14列含装箱物流+合计+定金，完成后系统自动推送文件）。'
       + 'items 每项含 product_id 和 quantity；price_adjustment_pct 正=上浮负=下浮（如 3=+3%, -5=下浮5%）。'
-      + '用户说"出厂价加3个点"→ pct=3；"销售价下浮5%"→ pct=-5；"加3%佣金"→ pct=3。',
+      + '用户说"出厂价加3个点"→ pct=3；"销售价下浮5%"→ pct=-5；"加3%佣金"→ pct=3。'
+      + 'depositPercent=定金百分比：用户说"30%定金"传30、"两成定金"传20，不传默认30。',
     parameters: {
       type: 'object',
       properties: {
@@ -115,34 +116,41 @@ export async function apply(ctx, _config = {}) {
           },
         },
         price_adjustment_pct: { type: 'number', description: '价格调整百分比，正=上浮负=下浮' },
+        depositPercent: { type: 'number', description: '定金百分比（30=30%），用户说了定金比例才传，默认30' },
       },
       required: ['items'],
     },
     output: OUT,
-    async execute({ items, price_adjustment_pct }) {
+    async execute({ items, price_adjustment_pct, depositPercent }) {
       const r = await call('/quote', 'POST', {
         items: (items || []).map(i => ({
           category: i.category, product_id: i.product_id,
           quantity: i.quantity ?? 1,
         })),
         price_adjustment_pct: price_adjustment_pct ?? 0,
+        deposit_pct: depositPercent ?? 30,
       })
       return JSON.stringify({ path: r.path,
-        note: `报价单已生成（${items?.length || 0} 款，调整 ${price_adjustment_pct ?? 0}+%），系统自动推送` })
+        note: `报价单已生成（${items?.length || 0} 款，调整 ${price_adjustment_pct ?? 0}%，定金 ${depositPercent ?? 30}%），系统自动推送` })
     },
   })
 
   ctx.tools.register({
     name: 'catalog_mutate',
     description: 'AI 代操作商品（改字段/下架/新增）——只生成审批工单不落库，返回含 approveUrl 发给用户。'
-      + `用户随消息发了图片时，必须把 [MEDIA:image] 后面的路径放进 imagePaths，图片会关联到商品。不传图片就丢了。`,
+      + 'changes 的字段名必须用该品类清单里的名字（中文名或括号里的列名，二选一；用别的名字会被打回）：'
+      + '剃须刀：产品型号(model_no)/功能描述(description)/颜色(color)/产品尺寸(mm)(size_mm)/彩盒尺寸(mm)(giftbox_mm)/单套重量(g)(unit_weight_g)/箱规(ctn_spec)/报价(price)/备注(remark)；'
+      + '卷发棒：ITEM.NO 型号(item_no)/装箱尺寸(ctn_size)/装箱数量(ctn_qty)/价格(price)/电压(voltage)/功率(power)/发热体(heater)/材质(material)/频率(frequency)/备注(remark)。'
+      + '用户话里或图片上出现清单外的属性（如工作温度/净重/认证/包装尺寸）由你负责映射：同义的对上清单字段（"额定电压"→电压、"产品型号"→ITEM.NO 型号、"报价"对卷发棒是"价格"），'
+      + '对不上的全部拼进"备注"，格式如"工作温度：160-220℃｜净重：355g｜认证：CE"——不要发明清单外的字段名。'
+      + '用户随消息发了图片时，必须把 [MEDIA:image] 后面的路径放进 imagePaths，图片会关联到商品。不传图片就丢了。',
     parameters: {
       type: 'object',
       properties: {
         category: { type: 'string', enum: ['razor', 'curler'] },
         action: { type: 'string', enum: ['update', 'delete', 'create'] },
         productId: { type: 'string' },
-        changes: { type: 'object', description: '列名→新值' },
+        changes: { type: 'object', description: '字段名→新值（名字必须来自上方品类清单，清单外的信息拼进"备注"字段）' },
         imagePaths: { type: 'array', items: { type: 'string' },
           description: '用户发的图片的服务器绝对路径（[MEDIA:image] 后面的路径），新增/换图时传入' },
       },
