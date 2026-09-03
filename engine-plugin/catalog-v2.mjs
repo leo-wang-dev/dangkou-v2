@@ -112,7 +112,8 @@ export async function apply(ctx, _config = {}) {
     description: '生成报价单 Excel（ELETRO BELEZA 全字段模板：14列含装箱物流+合计+定金，完成后系统自动推送文件）。'
       + 'items 每项含 product_id 和 quantity；price_adjustment_pct 正=上浮负=下浮（如 3=+3%, -5=下浮5%）。'
       + '用户说"出厂价加3个点"→ pct=3；"销售价下浮5%"→ pct=-5；"加3%佣金"→ pct=3。'
-      + 'depositPercent=定金百分比：用户说"30%定金"传30、"两成定金"传20，不传默认30。',
+      + 'depositPercent=定金百分比：用户说"30%定金"传30、"两成定金"传20，不传默认30。'
+      + '数量按整箱向上取整（QUANTITY=每箱数×箱数，如要100台每箱60→按2箱120台），回复时主动向用户说明实际按整箱计的数量。',
     parameters: {
       type: 'object',
       properties: {
