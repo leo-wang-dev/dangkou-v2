@@ -202,3 +202,45 @@ def test_ceil_edges():
     assert quote._ceil_div(81, 40) == 3      # 差1进位
     assert quote._ceil_div(1, 40) == 1
     assert quote._ceil_div(100, 40) == 3
+
+
+def test_discount_negative_adjustment(tmp_path):
+    """折扣场景：出厂价下浮 5%（单价=round(base×0.95)，与生产同款公式）。"""
+    conn, st = _mkdb(tmp_path, n_razor=1, curler=False)
+    out = str(tmp_path / 'qdisc.xlsx')
+    quote.generate_v2(conn, st, [{'category': 'razor', 'product_id': 'r0', 'quantity': 100}],
+                      -5, out)
+    ws = openpyxl.load_workbook(out).active
+    assert ws.cell(18, 5).value == round(10 * (1 + (-5) / 100))
+    assert ws.cell(18, 7).value == '=ROUND(E18*F18,2)'
+
+
+def test_discount_plus_custom_deposit_combo(tmp_path):
+    """组合场景：下浮5% + 定金20%（用户最常改的三件套之二）。"""
+    conn, st = _mkdb(tmp_path, n_razor=2, curler=False)
+    out = str(tmp_path / 'qcombo.xlsx')
+    quote.generate_v2(conn, st, [
+        {'category': 'razor', 'product_id': 'r0', 'quantity': 100},
+        {'category': 'razor', 'product_id': 'r1', 'quantity': 60},
+    ], -5, out, deposit_pct=20)
+    ws = openpyxl.load_workbook(out).active
+    u0, u1 = round(10 * 0.95), round(15 * 0.95)
+    assert ws.cell(18, 5).value == u0
+    assert ws.cell(19, 5).value == u1
+    T = next(r for r in range(20, 32) if ws.cell(r, 1).value == 'TOTAL')
+    assert ws.cell(T, 7).value == '=SUM(G18:G19)'
+    assert ws.cell(T + 1, 7).value == f'=ROUND(G{T}*0.2,2)'   # 定金20%
+    assert ws.cell(T + 2, 7).value == f'=G{T}-G{T + 1}'
+    total = u0 * 100 + u1 * 60    # 独立复算金额链
+    assert round(total * 0.2, 2) + (total - round(total * 0.2, 2)) == total
+
+
+def test_price_zero_and_tiny(tmp_path):
+    """边界：出厂价 0 / 大幅上浮 50%。"""
+    conn, st = _mkdb(tmp_path, n_razor=1, curler=False)
+    conn.execute("UPDATE product_razor SET price='0' WHERE id='r0'")
+    conn.commit()
+    out = str(tmp_path / 'q0.xlsx')
+    quote.generate_v2(conn, st, [{'category': 'razor', 'product_id': 'r0', 'quantity': 50}], 50, out)
+    ws = openpyxl.load_workbook(out).active
+    assert ws.cell(18, 5).value == 0
