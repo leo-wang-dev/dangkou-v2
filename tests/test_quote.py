@@ -115,15 +115,15 @@ def test_multi_item_quote_with_adjustment(seeded):
     # 数据
     assert ws.cell(18, 1).value == '8226'          # ITEM NO.
     assert ws.cell(18, 5).value == 22              # 21.5*1.03=22.145 round=22
-    assert ws.cell(18, 6).value == 120             # QUANTITY=整箱(40×3)
-    assert ws.cell(18, 7).value == 22 * 120                # G 小计=值（整箱120）
+    assert ws.cell(18, 6).value == 100             # QUANTITY=客户买的台数
+    assert ws.cell(18, 7).value == 22 * 100                # G 小计=值
     assert ws.cell(19, 1).value == '8227'
     assert ws.cell(19, 5).value == 31              # 30*1.03=30.9 round=31
     assert ws.cell(19, 6).value == 500
     assert ws.cell(19, 7).value == 31 * 500
     # 合计（k=2 删4空行 → TOTAL 在 18+2+3=23）
     assert ws.cell(23, 1).value == 'TOTAL'
-    total = 22 * 120 + 31 * 500
+    total = 22 * 100 + 31 * 500
     assert ws.cell(23, 7).value == total
     assert ws.cell(24, 7).value == round(total * 0.3, 2)  # 默认定金30%
     assert ws.cell(25, 7).value == total - round(total * 0.3, 2)

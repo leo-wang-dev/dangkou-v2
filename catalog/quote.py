@@ -283,9 +283,9 @@ def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pc
             desc, color = '', ''
         pcs, gw, nw = ctn.get('pcs'), ctn.get('gw'), ctn.get('nw')
         meas, dims = ctn.get('meas'), ctn.get('dims')
+        # 数量=客户买的台数（付钱口径，用户要100就100）；箱数=装下这些货需要的箱数
+        # （向上取整，最后一箱可以不满：100台/每箱60 → 2箱，第二箱装40台+20空位）
         ctns = _ceil_div(qty, pcs) if pcs else None
-        if ctns is not None:
-            qty = pcs * ctns          # 整箱口径：QUANTITY = 每箱数×箱数（100台/60箱装→2箱=120台）
         tgw = round(ctns * gw, 2) if (ctns is not None and gw) else None
         tcbm = round(ctns * (dims[0] * dims[1] * dims[2]) / 1e6, 3) \
             if (ctns is not None and dims) else None

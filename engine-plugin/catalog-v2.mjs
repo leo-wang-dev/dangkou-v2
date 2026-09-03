@@ -113,7 +113,7 @@ export async function apply(ctx, _config = {}) {
       + 'items 每项含 product_id 和 quantity；price_adjustment_pct 正=上浮负=下浮（如 3=+3%, -5=下浮5%）。'
       + '用户说"出厂价加3个点"→ pct=3；"销售价下浮5%"→ pct=-5；"加3%佣金"→ pct=3。'
       + 'depositPercent=定金百分比：用户说"30%定金"传30、"两成定金"传20，不传默认30。'
-      + '数量按整箱向上取整（QUANTITY=每箱数×箱数，如要100台每箱60→按2箱120台），回复时主动向用户说明实际按整箱计的数量。',
+      + '数量=用户要多少就传多少（按台数收钱）；箱数由系统按"装下这些货需要几个箱"自动算（最后一箱可以不满）。',
     parameters: {
       type: 'object',
       properties: {
