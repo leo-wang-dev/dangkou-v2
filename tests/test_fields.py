@@ -195,3 +195,43 @@ def test_h5_delete_card_renders_before():
     i = s.find("act === 'delete'")
     seg = s[i:i + 900]
     assert i >= 0 and 'p.before' in seg and '主图' in seg
+
+
+def _seed_razors(client, n=3):
+    for i in range(n):
+        client.app.state.conn.execute(
+            "INSERT INTO product_razor(id, inner_code, model_no, description, color, "
+            "ctn_spec, price) VALUES(?,?,?,?,?,?,?)",
+            (f'sr{i}', f'KS-SR{i}', f'M{i}', f'描述{i}', '黑',
+             'QTY：40 PCS\nN.W.：12 KGS\nG.W.：13 KGS\nMEAS：45*40*40 CM', str(10 + i)))
+    client.app.state.conn.commit()
+
+
+def test_stats_full_mode(client):
+    """full=true：全部在售全字段 + total；默认模式不带 products。"""
+    _seed_razors(client, 3)
+    r = client.get('/stats').json()
+    assert r['total'] == 3 and 'products' not in r
+    r = client.get('/stats?full=true&category=razor').json()
+    ps = r['products']['razor']
+    assert len(ps) == 3 == r['by_category']['剃须刀']
+    assert all('产品型号' in p and 'id' in p and '功能描述' in p for p in ps)  # 全字段中文label
+    assert '卷发棒' not in r['products']                                      # category过滤
+
+
+def test_full_catalog_quote_end_to_end(client):
+    """整品类出单链路：stats full 拿 id → 全部拼 quote → 行数=款数。"""
+    _seed_razors(client, 3)
+    r = client.get('/stats?full=true&category=razor').json()
+    items = [{'category': 'razor', 'product_id': p['id'], 'quantity': 10}
+             for p in r['products']['razor']]
+    q = client.post('/quote', json={'items': items, 'price_adjustment_pct': 3,
+                                    'deposit_pct': 20})
+    assert q.status_code == 200
+    import openpyxl
+    ws = openpyxl.load_workbook(q.json()['path'].replace('\\', '/')).active
+    n = len(items)
+    assert ws.cell(18 + n - 1, 1).value                       # 最后一行有数据
+    T = next(rr for rr in range(18 + n, 18 + n + 12)
+             if ws.cell(rr, 1).value == 'TOTAL')
+    assert ws.cell(T, 7).value == f'=SUM(G18:G{17 + n})'      # 合计精确到末行

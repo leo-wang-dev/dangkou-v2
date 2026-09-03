@@ -85,12 +85,25 @@ export async function apply(ctx, _config = {}) {
 
   ctx.tools.register({
     name: 'catalog_stats',
-    description: '查询商品统计数据：总数、按品类数量、示例商品。'
-      + '用户问"有多少款产品""卷发棒有几个""剃须刀有几个"时调这个工具。',
-    parameters: { type: 'object', properties: {} },
+    description: '查询商品数据：总数、按品类数量；full=true 时返回该品类全部在售商品（全字段）。'
+      + '问"有多少款产品""卷发棒有几个"→ 不传 full；'
+      + '问"都有哪些型号/什么颜色/某款什么配置"→ full=true（品类≤200款，全量直接看）；'
+      + '清单里查不到的型号=已下架或不存在，如实告诉用户。'
+      + '报数量一律用返回里的 total，不要自己数行数。'
+      + '整品类出报价单：full=true 拿到全部 id → 数量向用户确认 → catalog_quote。',
+    parameters: {
+      type: 'object',
+      properties: {
+        full: { type: 'boolean', description: 'true=返回全部在售商品全字段（默认 false 只报数）' },
+        category: { type: 'string', enum: ['razor', 'curler'], description: '只查一个品类时传' },
+      },
+    },
     output: OUT,
-    async execute() {
-      return JSON.stringify(await call('/stats'))
+    async execute({ full, category }) {
+      const q = []
+      if (full) q.push('full=true')
+      if (category) q.push(`category=${category}`)
+      return JSON.stringify(await call('/stats' + (q.length ? '?' + q.join('&') : '')))
     },
   })
 

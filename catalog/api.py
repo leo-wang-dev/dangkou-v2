@@ -325,21 +325,36 @@ def register_routes(app: FastAPI):
 
     # ---- 统计查询 ----
     @app.get('/stats')
-    def stats():
+    def stats(full: bool = False, category: str | None = None):
+        """查询商品数据。默认=总数+3个示例（答"多少款"）；
+        full=true 返回在售全量行（全字段中文label）——答明细/整品类出单/导清单用。
+        报数请用 total（别自己数行）；清单里查不到的型号即已下架或不存在。"""
         total = 0
         by_cat = {}
         samples = {}
+        products = {}
         for key, t in TEMPLATES.items():
             n = app.state.conn.execute(
                 f"SELECT COUNT(*) c FROM {t.table} WHERE status != 'delisted'").fetchone()['c']
             by_cat[t.name] = n
             total += n
-            row = app.state.conn.execute(
-                f"SELECT * FROM {t.table} WHERE status != 'delisted' LIMIT 3").fetchall()
-            samples[key] = [row_to_dict(t, r) for r in row]
-        return {'total': total, 'by_category': by_cat,
-                'category_keys': {t.name: k for k, t in TEMPLATES.items()},
-                'samples': samples}
+            if full and (category is None or category == key):
+                rows = app.state.conn.execute(
+                    f"SELECT * FROM {t.table} WHERE status != 'delisted' ORDER BY id").fetchall()
+                products[key] = [row_to_dict(t, r) for r in rows]
+            else:
+                row = app.state.conn.execute(
+                    f"SELECT * FROM {t.table} WHERE status != 'delisted' LIMIT 3").fetchall()
+                samples[key] = [row_to_dict(t, r) for r in row]
+        out = {'total': total, 'by_category': by_cat,
+               'category_keys': {t.name: k for k, t in TEMPLATES.items()},
+               'samples': samples}
+        if full:
+            out['products'] = products
+            out['note'] = ('products=各品类全部在售商品（全字段，id 可直接作 quote items 的 product_id）；'
+                           '报数一律用 total；问某款详情从这里找，查不到=已下架或不存在；'
+                           '整品类出报价单数量必须向用户确认')
+        return out
 
     # ---- 检索 ----
     class SearchIn(BaseModel):
