@@ -3,3 +3,7 @@ data/
 __pycache__/
 *.pyc
 .venv/
+.DS_Store
+.pytest_cache/
+.serena/
+deploy/.deploy.env

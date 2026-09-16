@@ -4,7 +4,9 @@
 set -euo pipefail
 
 SRV=ubuntu@134.175.135.102
-PW='REDACTED'
+# 密码不入 git：写在 deploy/.deploy.env（PW='...'，见 .deploy.env.example），或先 export PW
+[ -f "$(dirname "$0")/.deploy.env" ] && . "$(dirname "$0")/.deploy.env"
+PW="${PW:?!! 缺服务器密码：export PW=... 或创建 deploy/.deploy.env（参考 .deploy.env.example）}"
 SSHCMD="sshpass -p $PW ssh -o StrictHostKeyChecking=no $SRV"
 SCPCMD="sshpass -p $PW scp -o StrictHostKeyChecking=no"
 REPO_LOCAL="$(cd "$(dirname "$0")/.." && pwd)"
