@@ -208,4 +208,48 @@ export async function apply(ctx, _config = {}) {
       return JSON.stringify(r)
     },
   })
+
+  // ---- C端：转人工红线（自然语言知识，微信对话式修改，审批生效）----
+  registry.register({
+    name: 'cs_redline_get',
+    description: '查看当前转人工红线（商家问"现在的红线是什么"时用）。product_id 传商品ID查单个商品的红线（未单独设置=继承全店默认）。',
+    parameters: {
+      type: 'object',
+      properties: {
+        productId: { type: 'string', description: '商品ID（查全店红线时不传）' },
+      },
+    },
+    async execute({ productId }) {
+      const q = productId ? `?product_id=${encodeURIComponent(productId)}` : ''
+      const r = await call(`/cs/redline${q}`, 'GET')
+      return JSON.stringify({
+        作用域: productId ? `商品 ${productId}` : '全店',
+        商家原文: r.text_raw, 注入版: r.text_summary,
+      })
+    },
+  })
+
+  registry.register({
+    name: 'cs_redline_set',
+    description: '修改转人工红线（商家说人话即可，如"数量少于50的转人工""这款低于9块不谈"）。'
+      + '记录商家的原文（或你的简明总结，保留全部数字阈值）；只生成审批工单不直接生效，'
+      + '审批卡已自动推送到商家微信，批准后下一条询价即按新红线判定。改前先用 cs_redline_get 看当前值。',
+    parameters: {
+      type: 'object',
+      properties: {
+        textRaw: { type: 'string', description: '红线原文（优先商家原话；或忠实总结，保留全部数字）' },
+        productId: { type: 'string', description: '只改某个商品时传商品ID；改全店默认不传' },
+      },
+      required: ['textRaw'],
+    },
+    async execute({ textRaw, productId }) {
+      const body = { text_raw: textRaw }
+      if (productId) body.product_id = productId
+      const r = await call('/cs/redline', 'POST', body)
+      return JSON.stringify({
+        已生成审批工单: true, 工单号: r.ticket_id,
+        提示: '审批卡已推送商家微信（显示旧文→新文），批准即生效。请提醒商家点开确认。',
+      })
+    },
+  })
 }
