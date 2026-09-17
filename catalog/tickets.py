@@ -67,6 +67,11 @@ def decide(conn, ticket_id, token, approved: bool, decisions=None) -> dict:
 
 
 def _apply(conn, payload, category, decisions) -> dict:
+    if payload.get('kind') == 'redline':            # C端：红线知识（批准即写入）
+        from . import cs
+        cs.set_redline(conn, payload.get('product_id'),
+                       payload['text_raw'], payload.get('text_summary'))
+        return {'mutated': 'redline'}
     t = TEMPLATES[category]
     if payload.get('kind') == 'mutate':
         return _apply_mutate(conn, t, payload)

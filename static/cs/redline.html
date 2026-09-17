@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>红线修改审批</title>
+<style>
+  body{font-family:-apple-system,"PingFang SC",sans-serif;margin:0;background:#f5f6f8;color:#222}
+  .card{max-width:560px;margin:24px auto;background:#fff;border-radius:12px;padding:20px;
+        box-shadow:0 1px 6px rgba(0,0,0,.1)}
+  h1{font-size:17px;margin:0 0 4px}
+  .scope{color:#888;font-size:13px;margin-bottom:14px}
+  .box{border-radius:8px;padding:12px;font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-all}
+  .old{background:#fff4f4;border:1px solid #ffd6d6}
+  .new{background:#f0fff4;border:1px solid #b7eb8f}
+  .arrow{text-align:center;color:#999;margin:8px 0;font-size:18px}
+  .btns{display:flex;gap:12px;margin-top:18px}
+  button{flex:1;padding:12px;border:0;border-radius:8px;font-size:16px}
+  .ok{background:#2da44e;color:#fff}
+  .no{background:#fff;color:#d33;border:1px solid #d33}
+  .done{text-align:center;color:#666;padding:20px 0;font-size:15px;display:none}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>⚠️ 转人工红线修改</h1>
+  <div class="scope" id="scope"></div>
+  <div class="box old" id="old">加载中…</div>
+  <div class="arrow">↓ 改为</div>
+  <div class="box new" id="new"></div>
+  <div class="btns" id="btns">
+    <button class="no" onclick="decide(false)">驳回</button>
+    <button class="ok" onclick="decide(true)">批准生效</button>
+  </div>
+  <div class="done" id="done"></div>
+</div>
+<script>
+const q = new URLSearchParams(location.search);
+const id = q.get('i'), t = q.get('t');
+async function load(){
+  const r = await fetch(`/tickets/${id}`);
+  if(!r.ok){ document.getElementById('old').textContent='工单不存在或已过期'; return; }
+  const {payload} = await r.json();
+  document.getElementById('scope').textContent =
+    (payload.product_id ? `作用域：商品 ${payload.product_id}` : '作用域：全店') +
+    '　（批准后下一条询价即按新红线判定）';
+  document.getElementById('old').textContent = payload.old_text_raw || '（无）';
+  document.getElementById('new').textContent = payload.text_raw;
+}
+async function decide(ok){
+  const r = await fetch(`/tickets/${id}/decision`, {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({token:t, approved:ok})});
+  const d = document.getElementById('done');
+  document.getElementById('btns').style.display='none';
+  d.style.display='block';
+  d.textContent = r.ok ? (ok ? '✅ 已批准生效' : '已驳回，红线不变') : '操作失败：'+(await r.json()).detail;
+}
+load();
+</script>
+</body>
+</html>

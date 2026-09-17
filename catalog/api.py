@@ -33,6 +33,27 @@ class MutateIn(BaseModel):
     images: list[str] | None = None
 
 
+def _push_redline_card(ticket_id, token, product_id, old_text, new_text):
+    """红线审批卡推微信（本地未配 NOTIFY_TOKEN 时静默跳过，E2E 用落盘验证）。"""
+    import requests
+    url = os.environ.get('CATALOG_NOTIFY_URL', 'http://127.0.0.1:17606/notify')
+    ntoken = os.environ.get('CATALOG_NOTIFY_TOKEN', '')
+    if not ntoken:
+        print(f'[cs-redline] 审批卡(未配微信通道，仅日志)：旧「{old_text[:30]}」→'
+              f'新「{new_text[:30]}」', flush=True)
+        return
+    base = os.environ.get('CATALOG_V2_PUBLIC_URL', 'http://127.0.0.1:8890')
+    scope = f'商品 {product_id}' if product_id else '全店'
+    link = f'{base}/cs/redline.html?i={ticket_id}&t={token}'
+    try:
+        requests.post(url, json={'text': (
+            f'⚠️ 红线修改审批（{scope}）\n旧：{old_text}\n新：{new_text}\n'
+            f'点开确认（批准即生效）：{link}')}, timeout=15,
+            headers={'Authorization': f'Bearer {ntoken}'})
+    except Exception as e:  # noqa: BLE001
+        print(f'[cs-redline] 审批卡推送失败: {e}', flush=True)
+
+
 def register_routes(app: FastAPI):
     @app.get('/health')
     def health():
@@ -478,4 +499,122 @@ def register_routes(app: FastAPI):
             return quote_mod.job_status(job_id)
         except KeyError:
             raise HTTPException(404, 'no such job')
+
+    # ---- C端：红线知识（微信 AI 对话 → 工具 → 审批 → 生效）----
+    class RedlineIn(BaseModel):
+        text_raw: str
+        text_summary: str | None = None
+        product_id: str | None = None
+
+    @app.get('/cs/redline')
+    def cs_redline_get(product_id: str | None = None, request: Request = None):
+        _auth(request, app.state.token)
+        from . import cs
+        return cs.get_redline(app.state.conn, product_id or None)
+
+    @app.post('/cs/redline')
+    def cs_redline_set(body: RedlineIn, request: Request):
+        """AI 工具入口：只建审批工单，批准才生效（与改价格同款管道）。"""
+        _auth(request, app.state.token)
+        text_raw = body.text_raw.strip()
+        if not text_raw:
+            raise HTTPException(400, 'text_raw 不能为空')
+        from . import cs, tickets
+        summary = body.text_summary or cs.summarize(text_raw)
+        old = cs.get_redline(app.state.conn, body.product_id or None)
+        payload = {'kind': 'redline', 'product_id': body.product_id or None,
+                   'text_raw': text_raw, 'text_summary': summary,
+                   'old_text_raw': old['text_raw']}          # 审批卡显示旧文→新文
+        t = tickets.create(app.state.conn, 'redline', None, payload)
+        _push_redline_card(t['id'], t['token'], body.product_id, old['text_raw'], text_raw)
+        return {'ticket_id': t['id'], 'status': 'pending_approval'}
+
+    # ---- C端：清单临时链接（客户网页查看/补改/导出）----
+    @app.get('/cs/photo')
+    def cs_photo(path: str, request: Request):
+        _auth(request, app.state.token)
+        base = os.path.abspath(os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'cs_photos'))
+        fp = os.path.abspath(path)
+        if not fp.startswith(base + os.sep):          # 防路径穿越
+            raise HTTPException(403, 'forbidden')
+        if not os.path.exists(fp):
+            raise HTTPException(404, 'no photo')
+        return Response(content=open(fp, 'rb').read(), media_type='image/jpeg')
+
+    def _link_conn(token):
+        row = app.state.conn.execute('SELECT * FROM cs_link WHERE token=?', (token,)).fetchone()
+        if row is None:
+            raise HTTPException(404, '链接无效')
+        return row
+
+    @app.get('/cs/link/{token}')
+    def cs_link_view(token: str):
+        row = _link_conn(token)
+        notes = app.state.conn.execute(
+            "SELECT * FROM cs_note WHERE customer_id=? AND status='confirmed' "
+            'ORDER BY id', (row['customer_id'],)).fetchall()
+        return {'customer_id': row['customer_id'],
+                'notes': [{'id': n['id'], 'photo': n['photo'],
+                           'fields': json.loads(n['fields_json'])} for n in notes]}
+
+    @app.patch('/cs/link/{token}/note/{note_id}')
+    async def cs_link_edit(token: str, note_id: int, request: Request):
+        _link_conn(token)
+        body = await request.json()
+        field, value = str(body.get('field', '')), str(body.get('value', ''))
+        if not field:
+            raise HTTPException(400, 'field 不能为空')
+        row = app.state.conn.execute('SELECT * FROM cs_note WHERE id=?', (note_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, '条目不存在')
+        fields = json.loads(row['fields_json'])
+        fields[field] = value
+        app.state.conn.execute('UPDATE cs_note SET fields_json=? WHERE id=?',
+                               (json.dumps(fields, ensure_ascii=False), note_id))
+        app.state.conn.commit()
+        return {'saved': True, 'fields': fields}
+
+    @app.get('/cs/link/{token}/export.xlsx')
+    def cs_link_export(token: str):
+        import io
+
+        import openpyxl
+        row = _link_conn(token)
+        notes = app.state.conn.execute(
+            "SELECT * FROM cs_note WHERE customer_id=? AND status='confirmed' ORDER BY id",
+            (row['customer_id'],)).fetchall()
+        items = [json.loads(n['fields_json']) for n in notes]
+        keys = []
+        for f in items:                              # 动态字段列（保持出现顺序）
+            for k in f:
+                if k not in keys:
+                    keys.append(k)
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        has_img_col = any('图' in k for k in keys)
+        if has_img_col:
+            from openpyxl.drawing.image import Image as XlImage
+        ws.append(['序号', *keys])
+        for i, f in enumerate(items, 1):
+            ws.append([i, *[str(f.get(k, '')) for k in keys]])
+        for r_i, n in enumerate(notes, start=2):      # 商品图嵌入（有图且装了 pillow）
+            if not (n['photo'] and os.path.exists(n['photo'])):
+                continue
+            try:
+                img = XlImage(n['photo'])
+                img.width, img.height = 90, 90
+                ws.add_image(img, f'A{r_i}')
+                ws.row_dimensions[r_i].height = 70
+            except Exception:                         # noqa: BLE001 pillow 缺失/图损坏 → 跳过
+                pass
+        for col, k in enumerate(keys, start=2):      # 列宽
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 16
+        buf = io.BytesIO()
+        wb.save(buf)
+        from urllib.parse import quote
+        fname = quote(f"清单-{row['customer_id'][:6]}.xlsx")
+        return Response(content=buf.getvalue(),
+                        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        headers={'Content-Disposition': f"attachment; filename*=UTF-8''{fname}"})
 

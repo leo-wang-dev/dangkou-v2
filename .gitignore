@@ -7,3 +7,5 @@ __pycache__/
 .pytest_cache/
 .serena/
 deploy/.deploy.env
+runs/
+data/cs_photos/

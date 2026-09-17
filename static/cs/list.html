@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>我的采购清单</title>
+<style>
+  body{font-family:-apple-system,"PingFang SC",sans-serif;margin:0;background:#f5f6f8;color:#222}
+  .wrap{max-width:760px;margin:0 auto;padding:16px}
+  h1{font-size:18px}
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;
+        box-shadow:0 1px 4px rgba(0,0,0,.08);table-layout:fixed}
+  th,td{padding:8px 10px;border-bottom:1px solid #eee;font-size:14px;word-break:break-all;
+        text-align:left;vertical-align:top}
+  th{background:#fafafa;color:#666;font-weight:600}
+  td[contenteditable]{cursor:text}
+  td[contenteditable]:focus{outline:2px solid #4a90d9;background:#f0f7ff}
+  .saved{color:#2da44e;font-size:12px}
+  button{padding:10px 22px;border:0;border-radius:8px;background:#1677ff;color:#fff;font-size:15px}
+  button.ghost{background:#fff;color:#1677ff;border:1px solid #1677ff}
+  .bar{display:flex;gap:10px;margin:14px 0}
+  .photo{max-width:90px;border-radius:4px}
+  .empty{padding:40px;text-align:center;color:#999;background:#fff;border-radius:8px}
+  #tip{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#222;color:#fff;
+       padding:6px 14px;border-radius:16px;font-size:13px;opacity:0;transition:opacity .3s}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📦 我的采购清单</h1>
+  <div class="bar">
+    <button onclick="location.href=exportUrl()">⬇️ 导出 Excel</button>
+    <button class="ghost" onclick="load()">↻ 刷新</button>
+  </div>
+  <div id="list"><div class="empty">加载中…</div></div>
+</div>
+<div id="tip"></div>
+<script>
+const k = new URLSearchParams(location.search).get('k') || '';
+const exportUrl = () => `/cs/link/${k}/export.xlsx`;
+function tip(msg){ const t=document.getElementById('tip'); t.textContent=msg; t.style.opacity=1;
+  setTimeout(()=>t.style.opacity=0, 1500); }
+async function load(){
+  const r = await fetch(`/cs/link/${k}`);
+  if(!r.ok){ document.getElementById('list').innerHTML=
+    '<div class="empty">链接无效或已过期，请找商家重新生成</div>'; return; }
+  const {notes} = await r.json();
+  if(!notes.length){ document.getElementById('list').innerHTML=
+    '<div class="empty">清单还是空的——先在 Telegram 里拍照发给我吧</div>'; return; }
+  const keys = [...new Set(notes.flatMap(n=>Object.keys(n.fields)))];
+  let html = '<table><tr><th style="width:36px">#</th>' +
+    keys.map(x=>`<th>${esc(x)}</th>`).join('') + '</tr>';
+  notes.forEach((n,i)=>{
+    html += `<tr><td>${i+1}</td>` + keys.map(x=>{
+      const v = n.fields[x]||'';
+      const isPhoto = x.includes('图') || /^photo$/i.test(x);
+      if(isPhoto && n.photo) return `<td><img class="photo" src="/cs/photo?path=${encodeURIComponent(n.photo)}" onerror="this.remove()"></td>`;
+      return `<td contenteditable="true" data-id="${n.id}" data-field="${esc(x)}"
+        onblur="edit(this)">${esc(v)}</td>`;}).join('') + '</tr>';
+  });
+  document.getElementById('list').innerHTML = html + '</table>' +
+    '<p class="saved">提示：直接点击单元格即可修改，改完自动保存</p>';
+}
+async function edit(td){
+  const value = td.textContent.trim();
+  const r = await fetch(`/cs/link/${k}/note/${td.dataset.id}`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({field: td.dataset.field, value})});
+  tip(r.ok ? '已保存 ✓' : '保存失败');
+}
+function esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+load();
+</script>
+</body>
+</html>
