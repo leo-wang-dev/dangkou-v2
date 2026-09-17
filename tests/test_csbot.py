@@ -32,6 +32,7 @@ class FakeLlm:
     """LLM 假件：可编程应答 + 捕获 system prompt（验证知识注入）。"""
     def __init__(self):
         self.text_reply = '在的，欢迎看货～'
+        self.edit_reply = '{"action":"none"}'
         self.vision_reply = json.dumps([{
             '型号或品名': '直发夹板', '价格': '80R', '装箱数': '40 PCS',
             '颜色': '黑色', '体积或尺寸': '未拍到', '起订量': '未拍到'}],
@@ -40,6 +41,8 @@ class FakeLlm:
 
     def chat_text(self, system, messages, **kw):
         self.calls.append(('text', system, messages))
+        if '草稿编辑判定' in system:
+            return self.edit_reply
         return self.text_reply
 
     def chat_vision(self, prompt, image_bytes, **kw):
@@ -103,6 +106,52 @@ def test_voice_gets_fixed_hint(bot):
     del upd['message']['text']
     bot.handle_update(upd)
     assert '打字' in bot.api.sent[-1][1]
+
+
+# ---------- 草稿自然语言补改 ----------
+
+def test_draft_edit_applies_and_rereceipts(bot, conn):
+    bot.handle_update(_photo_upd())
+    bot.llm.edit_reply = '{"action":"edit","index":1,"field":"价格","value":"2.5"}'
+    bot.handle_update(_text_upd('1 价格改成2.5'))
+    f = json.loads(conn.execute("SELECT fields_json FROM cs_note WHERE status='draft'")
+                   .fetchone()['fields_json'])
+    assert f['价格'] == '2.5'                                  # 改到草稿
+    assert '2.5' in bot.api.sent[-1][1] and '确认' in bot.api.sent[-1][1]  # 回执含新值
+
+
+def test_draft_add_field_to_last(bot, conn):
+    bot.handle_update(_photo_upd())
+    bot.llm.edit_reply = '{"action":"add","field":"起订量","value":"1箱"}'
+    bot.handle_update(_text_upd('起订量一箱起'))
+    f = json.loads(conn.execute("SELECT fields_json FROM cs_note WHERE status='draft'")
+                   .fetchone()['fields_json'])
+    assert f['起订量'] == '1箱'
+
+
+def test_draft_delete_note(bot, conn):
+    bot.handle_update(_photo_upd())
+    bot.llm.edit_reply = '{"action":"delete_note","index":1}'
+    bot.handle_update(_text_upd('第1条删了'))
+    n = conn.execute("SELECT COUNT(*) c FROM cs_note WHERE status='draft'").fetchone()['c']
+    assert n == 0
+
+
+def test_non_edit_message_falls_to_persona(bot, conn):
+    bot.handle_update(_photo_upd())
+    bot.llm.edit_reply = '{"action":"none"}'
+    bot.handle_update(_text_upd('你们还有什么货？'))
+    assert bot.api.sent[-1][1] == '在的，欢迎看货～'            # 落回 persona
+
+
+def test_catalog_brief_carries_cost_price(bot, conn):
+    """底价红线可判：商品简表带出厂价（标注内部禁报）。"""
+    conn.execute(
+        "INSERT INTO product_curler(id, inner_code, item_no, price, tier_price, cs_visible) "
+        "VALUES('p1','KS-X','8226','10','20:12',1)")
+    conn.commit()
+    brief = bot._catalog_brief()
+    assert '成本价' in brief and '12' in brief and '内部' in brief
 
 
 # ---------- persona + 红线 ----------

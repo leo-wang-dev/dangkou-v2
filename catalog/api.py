@@ -525,7 +525,7 @@ def register_routes(app: FastAPI):
         product_id: str | None = None
 
     @app.get('/cs/redline')
-    def cs_redline_get(product_id: str | None = None, request: Request = None):
+    def cs_redline_get(request: Request, product_id: str | None = None):
         _auth(request, app.state.token)
         from . import cs
         return cs.get_redline(app.state.conn, product_id or None)

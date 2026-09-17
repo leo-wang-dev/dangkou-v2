@@ -21,11 +21,21 @@ EXTRACT_PROMPT = (
 PERSONA_BASE = (
     '你是义乌档口的智能客服，替商家接待采购员。规则：\n'
     '1) 只报商品库中"可观测=开"的商品，按阶梯价回答（¥，人民币），价格数字只用系统提供的，自己不做算术不浮动；\n'
+    '   标注"内部"的成本价只用于判断价格红线，绝对不可以对客户报出；\n'
     '2) 商品库没有的货不编造，回复请商家确认；\n'
     '3) 正式报价单/盖章文件不代做，请客户等商家；\n'
     '4) 对照下面的红线知识判断每条消息：命中任何一条 → 只回复 '
     f'{TRANSFER_MARK}加上你引用的那条红线原文，不要回答业务内容；\n'
     '5) 未命中正常接待，简短友好，中文。\n\n')
+
+EDIT_JUDGE_SYSTEM = (
+    '你是草稿编辑判定器。客户刚拍过照片，系统生成了待确认草稿。'
+    '判断客户这条消息是不是对草稿的修改/补充/删除指令。只输出 JSON，不要其他文字：\n'
+    '{"action":"edit","index":N,"field":"字段名","value":"新值"}   # 改第N条的字段\n'
+    '{"action":"add","index":N,"field":"字段名","value":"值"}      # 给第N条补字段（N可省略=最后一条）\n'
+    '{"action":"delete_note","index":N}                            # 删第N条\n'
+    '{"action":"none"}                                             # 与草稿无关（问货/闲聊/询价）\n'
+    '字段名尽量沿用草稿里已有的名，或用标准名：型号或品名/价格/装箱数/颜色/体积或尺寸/起订量/其他。')
 
 
 class CsBot:
@@ -104,8 +114,9 @@ class CsBot:
             return self._confirm_drafts(cust)
         if '出表' in low or '导出' in low:
             return self._make_link(cust)
-        if '确认' in low and any(c.isdigit() for c in low):   # "确认"之外的修正语句走 persona
-            pass
+        edited = self._try_edit_draft(cust, text)      # 有草稿时先判是不是补改指令
+        if edited is not None:
+            return edited
         system = PERSONA_BASE + cs.build_knowledge(self.conn) + self._catalog_brief()
         history = self._history(cust['id'])
         reply = self.llm.chat_text(system, history + [{'role': 'user', 'content': text}])
@@ -122,21 +133,68 @@ class CsBot:
         return reply
 
     def _catalog_brief(self) -> str:
-        """可观测商品+阶梯价简表（persona 报价数据源，代码算好喂给它）。"""
+        """可观测商品+阶梯价简表（persona 报价数据源，代码算好喂给它）。
+        成本价=出厂价，标注内部——只供 AI 判价格红线，禁止对外报。"""
         lines = []
         from .templates import TEMPLATES
         for t in TEMPLATES.values():
             rows = self.conn.execute(
                 f"SELECT * FROM {t.table} WHERE cs_visible=1 AND status='approved'").fetchall()
             for r in rows:
-                name = r['model_no'] or r['item_no'] or r['inner_code']
+                name = next((r[n] for n in ('model_no', 'item_no', 'inner_code')
+                             if n in r.keys() and r[n]), r['inner_code'])
                 tiers = cs.parse_tiers(r['tier_price'])
                 tp = ';'.join(f'{q}个¥{p}' for q, p in tiers) or '未设阶梯价'
-                lines.append(f'- {name}（{t.name}）：{tp}')
+                cost = str(r['price'] or '').strip() or '未录'
+                lines.append(f'- {name}（{t.name}）：{tp}｜成本价¥{cost}（内部，禁对外报）')
         return ('\n\n当前可报商品（只能报这些）：\n' + '\n'.join(lines)) if lines else \
             '\n\n当前没有可观测商品，任何询价都请客户等商家。'
 
     # ---------- 确认 / 出表 ----------
+
+    def _try_edit_draft(self, cust, text):
+        """有草稿时判定补改指令（edit/add/delete_note），命中则应用并回执；无关返回 None 落回 persona。"""
+        drafts = self.conn.execute(
+            "SELECT * FROM cs_note WHERE customer_id=? AND status='draft' ORDER BY id",
+            (cust['id'],)).fetchall()
+        if not drafts:
+            return None
+        listing = '\n'.join(
+            f'【{i}】' + json.dumps(json.loads(d['fields_json']), ensure_ascii=False)
+            for i, d in enumerate(drafts, 1))
+        raw = self.llm.chat_text(
+            EDIT_JUDGE_SYSTEM,
+            [{'role': 'user', 'content': f'当前草稿：\n{listing}\n\n客户消息：{text}'}],
+            temperature=0)
+        try:
+            cmd = json.loads(raw.strip().removeprefix('```json').removeprefix('```')
+                             .removesuffix('```').strip())
+        except json.JSONDecodeError:
+            return None
+        action = cmd.get('action')
+        idx = int(cmd.get('index') or len(drafts))
+        if not (1 <= idx <= len(drafts)):
+            return None
+        note = drafts[idx - 1]
+        fields = json.loads(note['fields_json'])
+        if action == 'delete_note':
+            self.conn.execute("UPDATE cs_note SET status='discarded' WHERE id=?", (note['id'],))
+            self.conn.commit()
+            self._log(cust['id'], 'assistant', f'[删草稿] 第{idx}条')
+            return f'好的，第 {idx} 条已删除。其余不变，回复"确认"入清单。'
+        field, value = str(cmd.get('field', '')).strip(), str(cmd.get('value', '')).strip()
+        if not field or not value or action not in ('edit', 'add'):
+            return None
+        fields[field] = value
+        self.conn.execute('UPDATE cs_note SET fields_json=? WHERE id=?',
+                          (json.dumps(fields, ensure_ascii=False), note['id']))
+        self.conn.commit()
+        self._log(cust['id'], 'assistant', f'[改草稿] {idx} {field}={value}')
+        got = '；'.join(f'{k}={v}' for k, v in fields.items()
+                       if v and '未拍到' not in str(v) and '模糊' not in str(v))
+        miss = [k for k, v in fields.items() if '未拍到' in str(v) or '模糊' in str(v)]
+        line = f'【{idx}】' + got + (f'\n　仍缺：{"、".join(miss)}' if miss else '')
+        return f'已改：{field} → {value}\n{line}\n\n继续补改或回复"确认"入清单。'
 
     def _confirm_drafts(self, cust) -> str:
         cur = self.conn.execute(
