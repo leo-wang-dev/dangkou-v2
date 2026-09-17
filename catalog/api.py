@@ -294,6 +294,22 @@ def register_routes(app: FastAPI):
                              'fields': [{'col': c, 'label': l} for c, l in t.fields]},
                 'products': [row_to_dict(t, r) for r in rows]}
 
+    def _check_cs_visible(category, pid, changes):
+        """C端开关约束（B层）：开可观测 ⇒ 阶梯价必填且可解析（本次带或库里已有）。"""
+        from . import cs
+        if str(changes.get('cs_visible', '0')).strip() not in ('1', 'true', 'True'):
+            return
+        tp = changes.get('tier_price')
+        if tp is None and pid:                       # 本次没带 → 看库里已有
+            t = TEMPLATES[category]
+            row = app.state.conn.execute(
+                f'SELECT tier_price FROM {t.table} WHERE id=?', (pid,)).fetchone()
+            tp = row['tier_price'] if row else None
+        if not cs.parse_tiers(tp):
+            raise HTTPException(
+                400, '开启"可观测"必须同时提供合法阶梯价（格式如 20:12;50:11，至少一档，'
+                     '数量升序，利润烤进价里）。请补上阶梯价再开。')
+
     @app.post('/products/{category}')
     def create_product(category: str, body: MutateIn, request: Request):
         _auth(request, app.state.token)
@@ -302,6 +318,7 @@ def register_routes(app: FastAPI):
         norm, to_remark = tickets.normalize_changes(TEMPLATES[category], body.changes or {})
         if not set(body.changes or {}) - set(to_remark) and not body.images:
             _raise_unknown_fields(category)   # 一个合法字段都没有=AI没做映射，打回让它重发
+        _check_cs_visible(category, None, norm)
         tk = tickets.create(app.state.conn, 'mutate', category,
                             {'kind': 'mutate', 'action': 'create',
                              'product_id': None, 'changes': norm,
@@ -316,6 +333,7 @@ def register_routes(app: FastAPI):
         norm, to_remark = tickets.normalize_changes(TEMPLATES[category], body.changes or {})
         if not set(body.changes or {}) - set(to_remark) and not body.images:
             _raise_unknown_fields(category)
+        _check_cs_visible(category, pid, norm)
         tk = tickets.create(app.state.conn, 'mutate', category,
                             {'kind': 'mutate', 'action': 'update', 'product_id': pid,
                              'changes': norm,

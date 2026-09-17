@@ -164,7 +164,9 @@ export async function apply(ctx, _config = {}) {
         category: { type: 'string', enum: ['razor', 'curler'] },
         action: { type: 'string', enum: ['update', 'delete', 'create'] },
         productId: { type: 'string' },
-        changes: { type: 'object', description: '字段名→新值（名字必须来自上方品类清单，清单外的信息拼进"备注"字段）' },
+        changes: { type: 'object', description: '字段名→新值（名字必须来自上方品类清单；'
+          + '另有两个C端字段可用：「阶梯价」（格式 20:12;50:11，数量:单价，升序，至少一档，利润烤进价里）'
+          + '和「可观测」（1=对客户可见，0=不可见；开1必须同时给合法阶梯价）。清单外的信息拼进"备注"字段）' },
         imagePaths: { type: 'array', items: { type: 'string' },
           description: '用户发的图片的服务器绝对路径（[MEDIA:image] 后面的路径），新增/换图时传入' },
       },

@@ -5,6 +5,10 @@ import secrets
 from . import inner_code
 from .templates import TEMPLATES
 
+# C端专用列（不在品类模板里——模板字段驱动导入提示词，供应商单里没有阶梯价）。
+# 键=AI 可用的中文名，值=落库列名；normalize 后直接以列名进入 changes。
+CS_FIELDS = {'阶梯价': 'tier_price', '可观测': 'cs_visible', '对客户可见': 'cs_visible'}
+
 
 class TicketError(Exception):
     pass
@@ -19,12 +23,18 @@ def normalize_changes(t, changes: dict):
     返回 (归一 changes, 进备注的原键清单)。
     """
     col_to_label = {col: label for col, label in t.fields}
-    legal = {**{label: label for label in col_to_label.values()}, **col_to_label}
+    legal = {**{label: label for label in col_to_label.values()}, **col_to_label,
+             **CS_FIELDS}
+    cs_cols = set(CS_FIELDS.values())             # 二次归一：已归一的列名直通
     norm, extra, to_remark = {}, [], []
     for k, v in (changes or {}).items():
         if v is None or str(v).strip() == '':
             continue
-        if k in legal:
+        if k in CS_FIELDS:                        # C端列：中文名 → 列名
+            norm[CS_FIELDS[k]] = str(v).strip()
+        elif k in cs_cols:
+            norm[k] = str(v).strip()
+        elif k in legal:
             norm[legal[k]] = str(v).strip()
         else:
             extra.append(f'{k}：{str(v).strip()}')
