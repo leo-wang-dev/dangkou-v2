@@ -10,8 +10,8 @@ h1{font-size:22px;margin:0 0 10px}.hint{color:#666;line-height:1.7;font-size:14p
 button{border:0;border-radius:9px;padding:9px 15px;margin:4px 6px 0 0;cursor:pointer;font-size:14px}.primary{background:#1652f0;color:#fff}.outline{background:#fff;border:1px solid #ddd}.muted{font-size:12px;color:#888;margin-top:14px}
 </style></head>
 <body><main><div class="card">
-<h1>微信扫码绑定档口</h1>
-<div class="hint">请使用要绑定的老板微信扫描二维码，并在手机上确认。二维码会定时刷新；如果换了新微信扫描，确认后会替换原来绑定的微信，旧账号立即失去管理权限。</div>
+<h1>微信扫码绑定 / 换绑档口</h1>
+<div class="hint">请使用要绑定的老板微信扫描二维码，并在手机上确认。二维码只在本次扫码期间短时有效，绑定关系会长期保存；以后更换老板微信时，回到本页点击“再次换绑微信”即可，确认后会替换原来绑定的微信，旧账号立即失去管理权限。</div>
 <div id="status" class="status" role="status">正在连接微信扫码服务…</div><div id="qr" class="empty">二维码加载中</div>
 <div><button id="start" class="primary">生成/刷新二维码</button><button id="cancel" class="outline">取消本次扫码</button></div>
 <p class="muted">本页面不显示微信服务密钥。若提示服务未配置，请联系开通人员。</p>
@@ -20,7 +20,7 @@ button{border:0;border-radius:9px;padding:9px 15px;margin:4px 6px 0 0;cursor:poi
 const prefix=location.pathname.match(/^\/merchant\/manage\/[a-f0-9]{24}/)?.[0]||'';const query=new URLSearchParams(location.search).get('t')||'';const store='catalog-service-token:'+prefix;const token=query||sessionStorage.getItem(store)||'';if(query){sessionStorage.setItem(store,query);history.replaceState(null,'',location.pathname)}
 const headers={'X-Service-Token':token,'Content-Type':'application/json'};let sid='';let timer=0;let busy=false;const $=id=>document.getElementById(id);const setStatus=t=>{$('status').textContent=t};
 async function api(path,opt={}){const r=await fetch(prefix+'/'+path,{...opt,headers});const text=await r.text();let d;try{d=JSON.parse(text)}catch{throw Error('服务返回异常')};if(!r.ok)throw Error(d.detail||'请求失败');return d}
-function render(s){sid=s?.sessionId||sid;const state=s?.state||'idle';const source=s?.qrPngBase64?(s=>`data:image/png;base64,${s}`)(s.qrPngBase64):s?.qrUrl;if(source){$('qr').className='';$('qr').innerHTML='';const i=new Image();i.alt='微信扫码二维码';i.src=source;i.style.cssText='width:100%;height:100%;object-fit:contain;border-radius:12px';$('qr').append(i)}else{$('qr').className='empty';$('qr').textContent=state==='finalized'?'已完成绑定':'当前没有二维码'}
+function render(s){sid=s?.sessionId||sid;const state=s?.state||'idle';$('start').textContent=state==='finalized'?'再次换绑微信':state==='qr_ready'||state==='scanned'||state==='needs_verification'?'刷新二维码':'生成绑定二维码';const source=s?.qrPngBase64?(s=>`data:image/png;base64,${s}`)(s.qrPngBase64):s?.qrUrl;if(source){$('qr').className='';$('qr').innerHTML='';const i=new Image();i.alt='微信扫码二维码';i.src=source;i.style.cssText='width:100%;height:100%;object-fit:contain;border-radius:12px';$('qr').append(i)}else{$('qr').className='empty';$('qr').textContent=state==='finalized'?'已完成绑定':'当前没有二维码'}
 const text={idle:'等待生成二维码',qr_ready:'请用要绑定的微信扫描二维码',scanned:'已扫码，请在手机上确认',needs_verification:'请按手机提示完成验证',confirmed:'已确认，正在替换旧微信…',finalized:'绑定完成，新微信已生效',cancelled:'本次扫码已取消',expired:'二维码已过期，正在刷新',failed:'扫码失败，请重新生成'}[state]||state;setStatus(text);if(state==='confirmed'&&sid)finalize();if(state==='expired'||state==='failed')setTimeout(start,500)}
 async function poll(){try{render((await api('wechat-binding/session')).session)}catch(e){setStatus(e.message)}finally{timer=setTimeout(poll,2000)}}async function start(){if(busy)return;busy=true;try{render((await api('wechat-binding/start',{method:'POST'})).session)}catch(e){setStatus(e.message)}finally{busy=false}}
 async function finalize(){if(busy)return;busy=true;try{const d=await api('wechat-binding/finalize',{method:'POST',body:JSON.stringify({sessionId:sid})});setStatus(d.replaced?'绑定完成，已替换旧微信':'绑定完成，新微信已生效');$('qr').className='empty';$('qr').textContent='已完成绑定'}catch(e){setStatus(e.message)}finally{busy=false}}
