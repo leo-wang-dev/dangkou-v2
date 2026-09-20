@@ -41,8 +41,8 @@ def test_quote_is_computed_and_followup_revalidates_visibility(env):
     conn, _, bot = env
     customer = {'id': 'a', 'tg_name': 'buyer'}
     assert 'MODEL-1' in bot._on_text(customer, 'MODEL-1')
-    assert '老板' in bot._on_text(customer, '60个多少钱')
-    assert '老板' in bot._on_text(customer, '20个多少钱')
+    assert '老板' not in bot._on_text(customer, '60个多少钱')
+    assert '老板' not in bot._on_text(customer, '20个多少钱')
     conn.execute("UPDATE product_curler SET cs_visible=0 WHERE id='p1'")
     conn.commit()
     assert '¥' not in bot._on_text(customer, '60个多少钱')

@@ -138,9 +138,11 @@ def test_reimport_same_model_updates_specs_without_duplicate(conn, tmp_path):
     after = dynamic_catalog.list_products(conn, category)
     assert result['created'] == 0 and result['updated'] == 1
     assert len(after) == 1 and after[0]['id'] == product_id
-    assert after[0]['data']['颜色'] == '蓝色'
-    assert after[0]['data']['功率'] == '1800W'
-    assert after[0]['data']['备注'] == '新规格'
+    fields = dynamic_catalog.get_template(conn, category)['fields']
+    by_label = {field['label']: field['key'] for field in fields}
+    assert after[0]['data'][by_label['颜色']] == '蓝色'
+    assert after[0]['data'][by_label['功率']] == '1800W'
+    assert after[0]['data'][by_label['备注']] == '新规格'
 
 
 def test_pending_reimport_cannot_overwrite_a_newer_product_edit_or_delist(conn, tmp_path):

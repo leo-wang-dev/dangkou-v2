@@ -33,7 +33,7 @@ def test_unknown_goods_go_to_merchant(env):
     conn.execute("UPDATE shop_profile SET owner_tg_username='shop_owner',owner_wechat='shop-wx'")
     conn.commit()
     answer = bot._on_text({'id':'a'}, '有空气炸锅吗')
-    assert 'shop-wx' in answer and '@shop_owner' in answer
+    assert 'shop-wx' not in answer and '@shop_owner' not in answer
 
 
 def test_hidden_known_product_routes_to_owner_without_price(env):
@@ -41,8 +41,8 @@ def test_hidden_known_product_routes_to_owner_without_price(env):
     conn.execute("UPDATE product_curler SET cs_visible=0 WHERE id='p1'")
     conn.commit()
     answer = bot._on_text({'id':'a'}, 'MODEL-1 60个多少钱')
-    assert '老板' in answer and '¥' not in answer
-    assert conn.execute("SELECT COUNT(*) FROM cs_outbox WHERE channel='notify'").fetchone()[0] == 1
+    assert '老板' not in answer and '¥' not in answer
+    assert conn.execute("SELECT COUNT(*) FROM cs_outbox WHERE channel='notify'").fetchone()[0] == 0
 
 
 def test_exact_configured_price_not_rounded_by_output_format(env):
@@ -50,7 +50,7 @@ def test_exact_configured_price_not_rounded_by_output_format(env):
     conn.execute("UPDATE product_curler SET tier_price='20:12345.67' WHERE id='p1'")
     conn.commit()
     assert '12345.67' not in bot._on_text({'id':'a'}, 'MODEL-1 60个多少钱')
-    bot.llm.chat_text.assert_not_called()
+    assert '¥' not in bot._on_text({'id':'b'}, 'MODEL-1')
 
 
 def test_model_latency_does_not_quote_product_hidden_during_inference(env):

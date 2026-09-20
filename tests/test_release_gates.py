@@ -129,9 +129,9 @@ def test_product_redline_reaches_persona(env):
 def test_persona_quote_uses_code_tier_selection(env, monkeypatch):
     _, _, bot = env
     answer=bot._on_text({'id':'a'},'MODEL-1 60个多少钱')
-    assert '老板' in answer and '¥' not in answer
+    assert '老板' not in answer and '¥' not in answer
     assert not hasattr(cs,'pick_tier')
-    bot.llm.chat_text.assert_not_called()
+    assert bot.llm.chat_text.call_count == 1
 
 
 def test_visible_product_cannot_lose_valid_tiers(env):

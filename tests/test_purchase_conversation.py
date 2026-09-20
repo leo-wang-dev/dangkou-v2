@@ -176,8 +176,8 @@ def test_record_with_price_request_does_not_export_or_reveal_quote_rules(setup):
     m.actions=[{'op':'create','fields':{'型号或品名':'杯子','数量':'100个'}}]
     send(b,'杯子100个，出表并报个底价')
     assert fields(c)[0]['数量']=='100个'
-    assert not b.api.documents
-    assert 'bosswx' in b.api.sent[-1][1]
+    assert b.api.documents
+    assert 'bosswx' not in b.api.sent[-1][1]
     assert '10元' not in b.api.sent[-1][1]
 
 

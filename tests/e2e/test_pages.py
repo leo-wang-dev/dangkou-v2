@@ -171,7 +171,7 @@ def test_redline_card_approve_effect(server):
         page.wait_for_selector('.new')
         # 审批卡显示 旧文→新文
         assert '50' in page.locator('.new').text_content()
-        assert '账期' in page.locator('.old').text_content()      # 默认文案(旧)含20
+        assert '（无）' in page.locator('.old').text_content()      # 平台无默认红线
         # 点批准 → 生效
         page.click('button:has-text("批准")')
         page.wait_for_selector('#done:not([style*="display: none"])', state='visible')

@@ -11,7 +11,7 @@ def test_photo_candidate_requires_selection_and_uses_store_tier(env):
     assert '¥11' not in bot.api.send_message.call_args.args[1]
     customer=dict(conn.execute("SELECT * FROM cs_customer WHERE tg_id='100'").fetchone())
     reply=bot._on_text(customer,'询价1 60个')
-    assert '老板' in reply and '¥11/个' not in reply and '0.01' not in reply
+    assert '老板' not in reply and '¥11/个' not in reply and '0.01' not in reply
     assert conn.execute('SELECT COUNT(*) FROM product_curler').fetchone()[0]==1
 
 

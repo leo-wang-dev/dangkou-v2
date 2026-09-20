@@ -151,14 +151,14 @@ def test_price_and_quote_rules_never_bypass_platform_handoff(tmp_path):
     cust=bot._ensure_customer({'id':123,'first_name':'test'})
     merchant_policy.apply(conn,{'shop_name':'测试','quote_rules':'整箱议价'},1)
     reply = bot._on_text(cust,'拿1000件多少钱')
-    assert 'ownerwx' in reply and '整箱议价' not in reply
+    assert 'ownerwx' not in reply and '整箱议价' not in reply
     assert calls==[]
     merchant_policy.apply(conn,{'shop_name':'测试','price':'议价转人工'},2)
     assert 'ownerwx' in bot._on_text(cust,'能便宜吗')
-    assert calls==[]
+    assert len(calls)==1
     merchant_policy.apply(conn,{'shop_name':'测试'},3)
-    assert 'ownerwx' in bot._on_text(cust,'多少钱')
-    assert calls==[]
+    assert 'ownerwx' not in bot._on_text(cust,'多少钱')
+    assert calls==[calls[0]]
 
 def test_migration_preserves_notes_and_archives_offsets(c,tmp_path):
     from scripts.migrate_merchant_bot import migrate

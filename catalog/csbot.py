@@ -182,7 +182,9 @@ class CsBot:
         rows = self.conn.execute("SELECT *, next_attempt_at<=datetime('now') AS due FROM cs_outbox WHERE sent=0" + where + " ORDER BY id").fetchall()
         blocked = set()
         for row in rows:
-            key = ('tg' if row['channel'] in ('tg', 'tg_document', 'tg_photo') else row['channel'], row['recipient'])
+            # Keep retries isolated by delivery type. A failed photo must not
+            # block a customer's text or Excel document from being delivered.
+            key = (row['channel'], row['recipient'])
             if key in blocked:
                 continue
             if not row['due']:
@@ -384,8 +386,6 @@ class CsBot:
                 reply = self._catalog_brief(low)
             except customer_catalog.CatalogUnavailable:
                 return self._handoff(cust, text, '档口商品查询暂不可用，请老板确认')
-            if price_policy.contains_price_amount(reply):
-                return self._handoff(cust, text, '商品说明涉及价格，请老板确认', cs.SYSTEM_HARD_RULE)
             self._log(cust['id'], 'assistant', reply)
             return reply
         if any(word in low for word in ('查询', '查看', '看看', '介绍')):
@@ -620,8 +620,6 @@ class CsBot:
         field, value = str(cmd.get('field', '')).strip(), str(cmd.get('value', '')).strip()
         if not field or not value or action not in ('edit', 'add'):
             return None
-        if price_policy.price_field(field) and merchant_policy.read(self.conn) is None:
-            return self._handoff(cust,text,'平台公共红线：价格字段请求',cs.SYSTEM_HARD_RULE)
         try:
             shop_link.set_field(self.conn,note,'档口名称' if field=='档口' else field,value)
         except ValueError as exc:

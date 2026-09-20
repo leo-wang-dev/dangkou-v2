@@ -25,7 +25,7 @@ def apply(conn, values, revision):
 
 def answer(bot,cust,text,allow_edit=True):
     from .merchant_onboarding import RULE_KEYS
-    policy=read(bot.conn);low=text.strip()
+    policy=read(bot.conn) or {};low=text.strip()
     rules=[policy[k] for k in sorted(RULE_KEYS) if policy.get(k)]
     wants_export = '出表' in low or '导出' in low
     export_reply = bot._make_link(cust) if wants_export else ''

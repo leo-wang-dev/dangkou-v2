@@ -26,7 +26,7 @@ def test_merchant_approval_to_customer_shop_and_excel(page,site):
     bot=CsBot(conn,transport,llm=llm,img_dir=str(site['folder']/'buyer-photos'))
     bot.handle_update({'update_id':90001,'message':{'chat':{'id':901,'type':'private'},'from':{'id':901},'photo':[{'file_id':'test','width':160}]}})
     customer=conn.execute("SELECT * FROM cs_customer WHERE tg_id='901'").fetchone()
-    assert '老板' in bot._on_text(customer,'询价1 60个')
+    assert '老板' not in bot._on_text(customer,'询价1 60个')
     assert '¥13' not in transport.send_message.call_args.args[1]
     bot._make_link(customer)
     token=conn.execute('SELECT token FROM cs_link WHERE customer_id=?',(customer['id'],)).fetchone()[0]

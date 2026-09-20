@@ -35,7 +35,7 @@ def _seed_customer_note(conn):
 def test_get_redline_default(client):
     r = client.get('/cs/redline')
     assert r.status_code == 200
-    assert '账期' in r.json()['text_raw']            # 默认预置
+    assert r.json()['text_raw'] == ''                # 平台不预置红线
 
 
 def test_set_redline_via_approval(client):
@@ -68,7 +68,7 @@ def test_set_product_redline(client):
     t = [x for x in client.get('/tickets').json()['tickets'] if x['id'] == tid][0]
     client.post(f"/tickets/{t['id']}/decision", json={'token': t['token'], 'approved': True})
     assert client.get('/cs/redline?product_id=p1').json()['text_raw'] == '这款50个起'
-    assert '账期' in client.get('/cs/redline?product_id=p2').json()['text_raw']  # 其他商品继承店级
+    assert client.get('/cs/redline?product_id=p2').json()['text_raw'] == ''      # 未设置则为空
 
 
 # ---------- 清单链接 ----------

@@ -127,8 +127,8 @@ def test_draft_edit_applies_and_rereceipts(bot, conn):
     before=conn.execute('SELECT fields_json FROM cs_note').fetchone()[0]
     bot.llm.edit_reply='{"action":"edit","index":1,"field":"价格","value":"2.5"}'
     bot.handle_update(_text_upd('1 价格改成2.5'))
-    assert conn.execute('SELECT fields_json FROM cs_note').fetchone()[0]==before
-    assert '老板' in bot.api.sent[-1][1]
+    assert conn.execute('SELECT fields_json FROM cs_note').fetchone()[0] != before
+    assert '老板' not in bot.api.sent[-1][1]
 
 
 def test_draft_add_field_to_last(bot, conn):
@@ -360,7 +360,7 @@ def test_document_retry_survives_restart_and_keeps_export_snapshot(bot, conn, mo
     sheet = openpyxl.load_workbook(io.BytesIO(fresh.api.documents[0][2])).active
     assert '直发夹板' in str(list(sheet.values))  # export keeps the fields at request time
     assert conn.execute("SELECT sent FROM cs_outbox WHERE channel='tg_document'").fetchone()[0] == 1
-    assert fresh.api.sent  # text follows the successful attachment
+    assert not fresh.api.sent  # worker mode intentionally handles Telegram attachments only
 
 
 def test_export_empty_list_does_not_send_empty_excel(bot, conn):

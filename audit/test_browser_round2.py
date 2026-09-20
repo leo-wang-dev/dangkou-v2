@@ -377,7 +377,7 @@ def test_c_download_contains_photo(page, site):
 def test_redline_card_decision_click(page, site, approve):
     ticket = new_redline(site)
     page.goto(f'{site["base"]}/cs/redline.html?i={ticket["id"]}&t={ticket["token"]}')
-    expect(page.locator('#old')).to_contain_text('账期')
+    expect(page.locator('#old')).to_contain_text('（无）')
     expect(page.locator('#new')).to_contain_text('88')
     page.get_by_role('button', name='批准生效' if approve else '驳回', exact=True).click()
     expect(page.locator('#done')).to_contain_text('已批准' if approve else '已驳回')
