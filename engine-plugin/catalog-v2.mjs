@@ -212,7 +212,7 @@ export async function apply(ctx, _config = {}) {
   })
 
   // ---- C端：转人工红线（自然语言知识，微信对话式修改，审批生效）----
-  registry.register({
+  ctx.tools.register({
     name: 'cs_redline_get',
     description: '查看当前转人工红线（商家问"现在的红线是什么"时用）。product_id 传商品ID查单个商品的红线（未单独设置=继承全店默认）。',
     parameters: {
@@ -231,7 +231,7 @@ export async function apply(ctx, _config = {}) {
     },
   })
 
-  registry.register({
+  ctx.tools.register({
     name: 'cs_redline_set',
     description: '修改转人工红线（商家说人话即可，如"数量少于50的转人工""这款低于9块不谈"）。'
       + '记录商家的原文（或你的简明总结，保留全部数字阈值）；只生成审批工单不直接生效，'
