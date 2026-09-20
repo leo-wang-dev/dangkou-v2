@@ -8,6 +8,7 @@ import time
 from fastapi import HTTPException, Request
 from . import config, shop_link, merchant_policy
 from .merchant_binding import write_secret
+from .wechat_binding import bound_owner_ids
 from .tg import TgApi
 
 
@@ -83,7 +84,12 @@ def register(app):
         except ValueError:raise HTTPException(400,'请求格式无效。') from None
         if not isinstance(body,dict) or not isinstance(body.get('token'),str) or not isinstance(body.get('owner_id'),str):
             raise HTTPException(400,'请求格式无效。')
+        # Keep the explicit allowlist for pre-provisioned deployments, while
+        # also accepting the owner that just completed the QR binding flow.
+        # This lets a new merchant self-serve after scanning the management
+        # page; no operator-side env edit or service restart is required.
         owners={x.strip() for x in os.environ.get('WECHAT_MERCHANT_OWNER_IDS','').split(',') if x.strip()}
+        owners.update(bound_owner_ids())
         if body['owner_id'] not in owners:raise HTTPException(403,'此微信身份未获该档口管理授权。')
         token=body['token'].strip()
         if token.split(':')[0] in {x.strip() for x in os.environ.get('WECHAT_RESERVED_TG_BOT_IDS','').split(',') if x.strip()}:
