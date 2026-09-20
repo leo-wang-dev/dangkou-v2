@@ -1,5 +1,6 @@
 """报价单：科森 5 列模板（型号/图片/价格/产品规格/起订量），输出可直接转发客户。"""
 import os
+import math
 import re
 import threading
 import uuid
@@ -102,7 +103,7 @@ def _rv(row, key):
 
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'quote_template.xlsx')
-TEMPLATE_V2_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'quote_template_v2.xlsx')
+TEMPLATE_V2_PATH = os.environ.get('CATALOG_QUOTE_TEMPLATE') or os.path.join(os.path.dirname(__file__), '..', 'data', 'quote_template_v2.xlsx')
 
 
 def _rv(row, key):
@@ -228,17 +229,24 @@ def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pc
     from openpyxl.drawing.image import Image as XLImg
     from openpyxl.styles import Alignment
 
+    if not math.isfinite(price_adjustment_pct) or price_adjustment_pct < -100:
+        raise ValueError('价格调整百分比无效')
+    if not math.isfinite(deposit_pct) or not 0 <= deposit_pct <= 100:
+        raise ValueError('定金必须在 0 到 100% 之间')
     # 先取数（无效商品剔除后再定行数）
     prows = []
     for item in items:
         t = TEMPLATES.get(item.get('category', ''))
         if not t:
-            continue
+            raise ValueError('商品品类无效')
         p = conn.execute(f'SELECT * FROM {t.table} WHERE id=?',
                          (item['product_id'],)).fetchone()
-        if p is None:
-            continue
-        prows.append((t, p, int(item.get('quantity', 1))))
+        if p is None or p['status'] != 'approved':
+            raise ValueError('商品不存在或已下架')
+        qty = item.get('quantity', 1)
+        if isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0:
+            raise ValueError('商品数量必须为正整数')
+        prows.append((t, p, qty))
     if not prows:
         raise ValueError('没有可报价的商品')
     k = len(prows)

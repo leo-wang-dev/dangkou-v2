@@ -1,0 +1,8 @@
+{
+  "concurrent_imports": 2,
+  "rows_per_import": 2,
+  "independent_edit": true,
+  "independent_rejection": true,
+  "test_tickets_cleaned_up": true,
+  "javascript_errors": []
+}

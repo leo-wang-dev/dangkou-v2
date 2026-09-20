@@ -29,6 +29,8 @@ def test_build_prompt_contains_template_fields_and_rules():
 
 def test_parse_returns_products_via_fake_agent(tmp_path, monkeypatch):
     out = str(tmp_path / 'products.json')
+    (tmp_path/'in.xlsx').write_bytes(b'test workbook')
+    monkeypatch.setenv('CATALOG_AGENT_CONTAINER_IMAGE','test-parser:fixture')
     monkeypatch.setattr(agent.shutil, 'which',
                         lambda _: _make_fake(tmp_path, out,
                                              [{'model_no': '8225', 'price': '21.5'}]))

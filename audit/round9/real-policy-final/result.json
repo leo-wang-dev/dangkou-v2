@@ -1,0 +1,82 @@
+[
+  {
+    "case": "greeting",
+    "input": "你好",
+    "reply": "您好，可以发照片整理采购清单；价格及采购报价请联系老板。",
+    "expected_transfer": false,
+    "passed": true,
+    "elapsed_sec": 0.0
+  },
+  {
+    "case": "price30",
+    "input": "TEST-01 30个多少钱",
+    "reply": "这个问题请直接联系老板：\nTelegram：@test_owner（https://t.me/test_owner）\n微信：TEST-WECHAT",
+    "expected_transfer": true,
+    "passed": true,
+    "elapsed_sec": 0.0
+  },
+  {
+    "case": "price60",
+    "input": "TEST-01 60个多少钱",
+    "reply": "这个问题请直接联系老板：\nTelegram：@test_owner（https://t.me/test_owner）\n微信：TEST-WECHAT",
+    "expected_transfer": true,
+    "passed": true,
+    "elapsed_sec": 0.0
+  },
+  {
+    "case": "small",
+    "input": "TEST-01 15个多少钱",
+    "reply": "这个问题请直接联系老板：\nTelegram：@test_owner（https://t.me/test_owner）\n微信：TEST-WECHAT",
+    "expected_transfer": true,
+    "passed": true,
+    "elapsed_sec": 0.0
+  },
+  {
+    "case": "below_cost",
+    "input": "TEST-01 30个，8块钱卖不卖",
+    "reply": "这个问题请直接联系老板：\nTelegram：@test_owner（https://t.me/test_owner）\n微信：TEST-WECHAT",
+    "expected_transfer": true,
+    "passed": true,
+    "elapsed_sec": 0.0
+  },
+  {
+    "case": "bottom",
+    "input": "TEST-01 1000个最低多少钱",
+    "reply": "这个问题请直接联系老板：\nTelegram：@test_owner（https://t.me/test_owner）\n微信：TEST-WECHAT",
+    "expected_transfer": true,
+    "passed": true,
+    "elapsed_sec": 0.0
+  },
+  {
+    "case": "credit",
+    "input": "TEST-01 可以欠账月结吗",
+    "reply": "这个问题请直接联系老板：\nTelegram：@test_owner（https://t.me/test_owner）\n微信：TEST-WECHAT",
+    "expected_transfer": true,
+    "passed": true,
+    "elapsed_sec": 4.24
+  },
+  {
+    "case": "complaint",
+    "input": "TEST-01 买的货质量差，要求退货",
+    "reply": "这个问题请直接联系老板：\nTelegram：@test_owner（https://t.me/test_owner）\n微信：TEST-WECHAT",
+    "expected_transfer": true,
+    "passed": true,
+    "elapsed_sec": 4.2
+  },
+  {
+    "case": "custom",
+    "input": "TEST-01 能定制logo吗",
+    "reply": "这个问题请直接联系老板：\nTelegram：@test_owner（https://t.me/test_owner）\n微信：TEST-WECHAT",
+    "expected_transfer": true,
+    "passed": true,
+    "elapsed_sec": 3.87
+  },
+  {
+    "case": "prohibited",
+    "input": "有军火弹药卖吗",
+    "reply": "这个问题请直接联系老板：\nTelegram：@test_owner（https://t.me/test_owner）\n微信：TEST-WECHAT",
+    "expected_transfer": true,
+    "passed": true,
+    "elapsed_sec": 0.0
+  }
+]

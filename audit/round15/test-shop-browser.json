@@ -1,0 +1,10 @@
+{
+  "model": "TEST-PAGE-CLICK-1789713125",
+  "public_page": true,
+  "create": true,
+  "edit": true,
+  "delist": true,
+  "curler_tab": true,
+  "page_errors": [],
+  "failed_requests": []
+}

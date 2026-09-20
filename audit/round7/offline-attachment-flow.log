@@ -1,0 +1,3 @@
+/Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+{"mode": "reference-fixture-replay-local-TG", "not_model_quality_proof": true, "transient_failures": [], "photo_count": 4, "confirmed_items": 5, "embedded_excel_images": 5, "http_methods": ["getFile", "getUpdates", "sendDocument", "sendMessage"]}

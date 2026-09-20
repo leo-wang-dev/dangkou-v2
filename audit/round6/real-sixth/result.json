@@ -1,0 +1,149 @@
+{
+  "mode": "real-model-local-TG",
+  "not_model_quality_proof": false,
+  "photo_count": 4,
+  "confirmed_items": 5,
+  "embedded_excel_images": 5,
+  "http_methods": [
+    "getFile",
+    "getUpdates",
+    "sendMessage"
+  ],
+  "photos": [
+    {
+      "photo": "hair_oil",
+      "elapsed_sec": 12.83,
+      "sha256": "dbf4f17d30c03155afddf66b54815e5d211dce8bf0c5228a2408300b4bd5513b",
+      "term_checks": {
+        "59": true,
+        "Wendy": true
+      },
+      "fields": [
+        {
+          "型号或品名": "Miss Wendy ROSEMARY MINT SCALP & HAIR STRENGTHENING OIL",
+          "价格": "7.25（照片识别，待确认）",
+          "装箱数": "未拍到",
+          "颜色": "绿色包装",
+          "体积或尺寸": "2 fl. oz. (59mL)",
+          "起订量": "未拍到",
+          "其他": "包装标注：Infused w/Biotin & Encourages Growth；FOR: ✓DAILY USE, ✓SCALP TREATMENT, ✓SPLIT END CARE；阿拉伯文：روزماري النعناع النفط；手写数字'192'含义待确认"
+        }
+      ]
+    },
+    {
+      "photo": "coffee_scrub",
+      "elapsed_sec": 16.68,
+      "sha256": "394191a526f96a66618daa6722bb2f6ecd5daf9ec08577274dd5eadb261c3547",
+      "term_checks": {
+        "350": true,
+        "COFFEE": true
+      },
+      "fields": [
+        {
+          "型号或品名": "COFFEE SHERBET BODY SCRUB",
+          "价格": "¥3.8（照片识别，待确认）",
+          "装箱数": "未拍到",
+          "颜色": "深褐色",
+          "体积或尺寸": "11.83FL.OZ.(350ml)",
+          "起订量": "未拍到",
+          "其他": "手写'350 mL'、'96'（含义待确认）；品牌：Miss wendy；适用肤质：for all skin types"
+        }
+      ]
+    },
+    {
+      "photo": "hair_food",
+      "elapsed_sec": 12.4,
+      "sha256": "8cc6f8f7327e80381da7d2bbcf66efee35c90433285416ecbf2d5c4f4323eaac",
+      "term_checks": {
+        "Sylkin": true,
+        "Hair": true
+      },
+      "fields": [
+        {
+          "型号或品名": "Sylkin Hair Food Olive",
+          "价格": "¥4.8（照片识别，待确认）",
+          "装箱数": "未拍到",
+          "颜色": "黄绿色包装，黑色盖子",
+          "体积或尺寸": "未拍到",
+          "起订量": "未拍到",
+          "其他": "手写数字'144'（含义待确认）"
+        }
+      ]
+    },
+    {
+      "photo": "two_tubes",
+      "elapsed_sec": 22.66,
+      "sha256": "d5abf4909535dc8ce7475aeb180bf98a4a50c19cdb94eab4f4f745c669e5b65e",
+      "term_checks": {
+        "100": true,
+        "260": true,
+        "cropped_price_not_invented": true
+      },
+      "fields": [
+        {
+          "型号或品名": "Magic Moon KERATIN Body Lotion",
+          "价格": "模糊（待确认）",
+          "装箱数": "未拍到",
+          "颜色": "紫色花纹管身，金色盖子",
+          "体积或尺寸": "260g/9.15oz",
+          "起订量": "未拍到",
+          "其他": "手写价签'￥:3'；包装标'SINCE 1986'、'CUSTOMIZED BEAUTY NOURISHMENT'、'SUITABLE FOR ANY SKIN'；净含量260g/9.15oz明确可见"
+        },
+        {
+          "型号或品名": "Magic Moon WHITENING CREAM 24K GOLD",
+          "价格": "3.5（照片识别，待确认）",
+          "装箱数": "未拍到",
+          "颜色": "金色管身",
+          "体积或尺寸": "100g",
+          "起订量": "未拍到",
+          "其他": "手写价签'￥:3.5'；包装含阿拉伯文'تَفتيح البشرة كريم'；净含量100g明确可见；膏体图片非实际可见内容"
+        }
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "chat_id": 9001,
+      "text": "整理好了，请核对：\n【1】型号或品名=Miss Wendy ROSEMARY MINT SCALP & HAIR STRENGTHENING OIL；价格=7.25（照片识别，待确认）；颜色=绿色包装；体积或尺寸=2 fl. oz. (59mL)；其他=包装标注：Infused w/Biotin & Encourages Growth；FOR: ✓DAILY USE, ✓SCALP TREATMENT, ✓SPLIT END CARE；阿拉伯文：روزماري النعناع النفط；手写数字'192'含义待确认\n　没拍到/看不清：装箱数、起订量（可以回复我补上，比如\"颜色黑色\"）\n\n回复\"确认\"入清单；要改就直接说，比如\"1 价格改成2.5\"。说\"出表\"可随时导出Excel。\n照片里的价格只是采购记录，不是本店确认报价。\n尚未匹配到本店在线商品；需要询价可补充型号，或回复“找老板”。"
+    },
+    {
+      "chat_id": 9001,
+      "text": "整理好了，请核对：\n【2】型号或品名=COFFEE SHERBET BODY SCRUB；价格=¥3.8（照片识别，待确认）；颜色=深褐色；体积或尺寸=11.83FL.OZ.(350ml)；其他=手写'350 mL'、'96'（含义待确认）；品牌：Miss wendy；适用肤质：for all skin types\n　没拍到/看不清：装箱数、起订量（可以回复我补上，比如\"颜色黑色\"）\n\n回复\"确认\"入清单；要改就直接说，比如\"1 价格改成2.5\"。说\"出表\"可随时导出Excel。\n照片里的价格只是采购记录，不是本店确认报价。\n尚未匹配到本店在线商品；需要询价可补充型号，或回复“找老板”。"
+    },
+    {
+      "chat_id": 9001,
+      "text": "整理好了，请核对：\n【3】型号或品名=Sylkin Hair Food Olive；价格=¥4.8（照片识别，待确认）；颜色=黄绿色包装，黑色盖子；其他=手写数字'144'（含义待确认）\n　没拍到/看不清：装箱数、体积或尺寸、起订量（可以回复我补上，比如\"颜色黑色\"）\n\n回复\"确认\"入清单；要改就直接说，比如\"1 价格改成2.5\"。说\"出表\"可随时导出Excel。\n照片里的价格只是采购记录，不是本店确认报价。\n尚未匹配到本店在线商品；需要询价可补充型号，或回复“找老板”。"
+    },
+    {
+      "chat_id": 9001,
+      "text": "整理好了，请核对：\n【4】型号或品名=Magic Moon WHITENING CREAM 24K GOLD；价格=3.5（照片识别，待确认）；颜色=金色管身；体积或尺寸=100g；其他=手写价签'￥:3.5'；包装含阿拉伯文'تَفتيح البشرة كريم'；净含量100g明确可见；膏体图片非实际可见内容\n　没拍到/看不清：装箱数、起订量（可以回复我补上，比如\"颜色黑色\"）\n【5】型号或品名=Magic Moon KERATIN Body Lotion；颜色=紫色花纹管身，金色盖子；体积或尺寸=260g/9.15oz；其他=手写价签'￥:3'；包装标'SINCE 1986'、'CUSTOMIZED BEAUTY NOURISHMENT'、'SUITABLE FOR ANY SKIN'；净含量260g/9.15oz明确可见\n　没拍到/看不清：价格、装箱数、起订量（可以回复我补上，比如\"颜色黑色\"）\n\n回复\"确认\"入清单；要改就直接说，比如\"1 价格改成2.5\"。说\"出表\"可随时导出Excel。\n照片里的价格只是采购记录，不是本店确认报价。\n尚未匹配到本店在线商品；需要询价可补充型号，或回复“找老板”。"
+    },
+    {
+      "chat_id": 9001,
+      "text": "已改：价格 → 2.5\n【1】型号或品名=Miss Wendy ROSEMARY MINT SCALP & HAIR STRENGTHENING OIL；价格=2.5；颜色=绿色包装；体积或尺寸=2 fl. oz. (59mL)；其他=包装标注：Infused w/Biotin & Encourages Growth；FOR: ✓DAILY USE, ✓SCALP TREATMENT, ✓SPLIT END CARE；阿拉伯文：روزماري النعناع النفط；手写数字'192'含义待确认\n　仍缺：装箱数、起订量\n\n继续补改或回复\"确认\"入清单。"
+    },
+    {
+      "chat_id": 9001,
+      "text": "已改：起订量 → 一箱起\n【1】型号或品名=Miss Wendy ROSEMARY MINT SCALP & HAIR STRENGTHENING OIL；价格=2.5；颜色=绿色包装；体积或尺寸=2 fl. oz. (59mL)；起订量=一箱起；其他=包装标注：Infused w/Biotin & Encourages Growth；FOR: ✓DAILY USE, ✓SCALP TREATMENT, ✓SPLIT END CARE；阿拉伯文：روزماري النعناع النفط；手写数字'192'含义待确认\n　仍缺：装箱数\n\n继续补改或回复\"确认\"入清单。"
+    },
+    {
+      "chat_id": 9001,
+      "text": "店铺尚未填写店铺地址。这个问题请直接联系老板：\nTelegram：@test_owner（https://t.me/test_owner）\n微信：TEST-ONLY-WECHAT"
+    },
+    {
+      "chat_id": 9001,
+      "text": "好的，5 条已进您的清单。继续拍照，或说\"出表\"导出Excel。"
+    },
+    {
+      "chat_id": 9001,
+      "text": "清单链接（2天内有效）：\nhttp://127.0.0.1:8890/cs/list.html?k=IgvtyZQYL0BQc03-Lj1GwQ\n打开即可查看和导出Excel。"
+    },
+    {
+      "chat_id": 9001,
+      "text": "这个问题请直接联系老板：\nTelegram：@test_owner（https://t.me/test_owner）\n微信：TEST-ONLY-WECHAT"
+    }
+  ],
+  "merchant_notifications": [
+    "🔔 转人工提醒\n客户：fixture_buyer\n原话：这些样品有货吗？找老板询价\n命中说明：客户主动要求联系老板\n适用红线原文：客户主动要求联系老板\nbot 已提供当前店铺联系方式，请留意客户主动联系。"
+  ]
+}

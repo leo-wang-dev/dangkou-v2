@@ -1,0 +1,21 @@
+# Replace the example upstream with an authorized node before installing as config.yaml.
+# This file alone does not provide an overseas exit node.
+mixed-port: 17891
+bind-address: 127.0.0.1
+allow-lan: false
+mode: rule
+log-level: warning
+ipv6: false
+tun:
+  enable: false
+dns:
+  enable: false
+proxies:
+  - name: authorized-upstream
+    type: socks5
+    server: replace-with-node-host
+    port: 1080
+    username: replace-with-node-user
+    password: replace-with-node-password
+rules:
+  - MATCH,authorized-upstream

@@ -1,0 +1,14 @@
+{
+  "sessionId": "wxlogin_ccec115a846344bfb57361c276fa13af",
+  "state": "qr_ready",
+  "createdAt": "2026-09-18T08:08:07.778Z",
+  "expiresAt": "2026-09-18T08:24:10.263Z",
+  "terminalAt": null,
+  "qrPngBase64": null,
+  "qrUrl": "https://liteapp.weixin.qq.com/q/7GiQu1?qrcode=58348254ea4d60f6e7035b449c8b4bde&bot_type=3",
+  "accountId": null,
+  "normalizedAccountId": null,
+  "userId": null,
+  "lastErrorCode": null,
+  "lastErrorMessage": null
+}

@@ -1,0 +1,13 @@
+{
+  "rows": 6,
+  "images": 6,
+  "receipts": [
+    {
+      "message_id": 17,
+      "filename": "采购清单.xlsx",
+      "file_size": 868815
+    }
+  ],
+  "pending": [],
+  "drafts_unchanged": 6
+}

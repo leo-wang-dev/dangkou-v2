@@ -1,0 +1,4 @@
+
+> dsh-engine@0.1.0 check
+> node --check host.mjs && node --check plugins/feishu-connector.mjs && node --check plugins/wechat-connector.mjs && node --check plugins/wecom-connector.mjs && node --check plugins/dingtalk-connector.mjs && node --check plugins/im-send.mjs && node --check plugins/web-connector.mjs && node --check plugins/kb-admin.mjs && node --check plugins/volcano-kb.mjs && bash -n scripts/kefu-platform.sh && python3 -m py_compile scripts/kb-extract.py && node --check plugins/subagent-claude.mjs && node --check plugins/lib/feishu-media.mjs && node --check plugins/lib/env-quote.mjs && node --check plugins/lib/connector-utils.mjs && node --check plugins/memory/index.mjs && node --check plugins/observability/index.mjs && node --check plugins/observability/telemetry.mjs
+

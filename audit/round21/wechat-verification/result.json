@@ -1,0 +1,120 @@
+{
+  "generated_at": "2026-09-20 16:00:14",
+  "mode": "offline-real-api-sqlite-excel-images-no-external-network",
+  "passed": 16,
+  "failed": 0,
+  "cases": [
+    {
+      "id": "AUTH-NEG",
+      "capability": "所有管理能力",
+      "kind": "negative",
+      "status": "passed",
+      "detail": "无服务身份读取统计返回 401"
+    },
+    {
+      "id": "EXCEL-PRE",
+      "capability": "Excel 导入",
+      "kind": "positive",
+      "status": "passed",
+      "detail": "识别 1 个 Sheet/4 行；审批前商品库仍为 0"
+    },
+    {
+      "id": "EXCEL-OK",
+      "capability": "Excel 导入",
+      "kind": "positive",
+      "status": "passed",
+      "detail": "批准后 4 行和 4 张图入库；重复型号、空型号均保留；默认可见"
+    },
+    {
+      "id": "EXCEL-REPLAY",
+      "capability": "Excel 导入",
+      "kind": "negative",
+      "status": "passed",
+      "detail": "重复批准被拒绝且总数仍为 4"
+    },
+    {
+      "id": "EXCEL-REJECT",
+      "capability": "Excel 导入",
+      "kind": "negative",
+      "status": "passed",
+      "detail": "驳回后分类和商品均未落库"
+    },
+    {
+      "id": "EXCEL-BROKEN",
+      "capability": "Excel 导入",
+      "kind": "negative",
+      "status": "passed",
+      "detail": "损坏 xlsx 明确失败且没有审批工单"
+    },
+    {
+      "id": "PHOTO-UPLOAD",
+      "capability": "产品图",
+      "kind": "positive/negative",
+      "status": "passed",
+      "detail": "真实 JPEG 按内容识别；伪装 PNG 在暂存前被拒绝"
+    },
+    {
+      "id": "PHOTO-SEARCH",
+      "capability": "产品图",
+      "kind": "positive",
+      "status": "passed",
+      "detail": "相同图片命中正确商品；换一批排除首个商品 ID"
+    },
+    {
+      "id": "PHOTO-SEARCH-NEG",
+      "capability": "产品图",
+      "kind": "negative",
+      "status": "passed",
+      "detail": "缺失图片和非法 top_k 均在检索前失败"
+    },
+    {
+      "id": "PHOTO-CREATE",
+      "capability": "产品图",
+      "kind": "positive",
+      "status": "passed",
+      "detail": "带图新增审批前无变化；批准后入库且保持不可观测"
+    },
+    {
+      "id": "PHOTO-CREATE-NEG",
+      "capability": "产品图",
+      "kind": "negative",
+      "status": "passed",
+      "detail": "模板外字段被拒绝，没有空商品工单"
+    },
+    {
+      "id": "QUERY-OK",
+      "capability": "商品查询",
+      "kind": "positive/negative",
+      "status": "passed",
+      "detail": "实时款数=5、全量=5；未知分类返回 404"
+    },
+    {
+      "id": "CONTACT-OK",
+      "capability": "档口资料",
+      "kind": "positive",
+      "status": "passed",
+      "detail": "审批前/驳回不变；批准后名称、TG、微信一起生效"
+    },
+    {
+      "id": "CONTACT-NEG",
+      "capability": "档口资料",
+      "kind": "negative",
+      "status": "passed",
+      "detail": "空操作、非法 TG、带换行微信号均未建工单"
+    },
+    {
+      "id": "QUOTE-OK",
+      "capability": "商家正式报价单",
+      "kind": "positive",
+      "status": "passed",
+      "detail": "81 个按 40/箱进位为 120；文件可读并进入文件发送队列"
+    },
+    {
+      "id": "QUOTE-NEG",
+      "capability": "商家正式报价单",
+      "kind": "negative",
+      "status": "passed",
+      "detail": "空商品、0 数量、不存在商品、未配置映射的动态分类均不生成文件"
+    }
+  ]
+}

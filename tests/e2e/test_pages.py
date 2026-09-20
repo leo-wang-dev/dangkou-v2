@@ -14,6 +14,46 @@ import pytest
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def test_two_expanded_imports_edit_the_clicked_ticket(server):
+    from catalog import tickets
+    from playwright.sync_api import sync_playwright
+    base, path = server
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    ids = []
+    for name, color in [('CONCURRENT-A', '黑色'), ('CONCURRENT-B', '银色')]:
+        ticket = tickets.create(conn, 'import', 'razor', {
+            'kind': 'import', 'source_key': name,
+            'drafts': {'new': [{'_rid': 'n0', 'model_no': name,
+                               'color': color, 'images': []}],
+                       'update': [], 'delist': []},
+        })
+        ids.append(ticket['id'])
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(base + '/?t=e2e-service-token')
+        for tid in ids:
+            page.locator(f'button[onclick="loadDetail({tid})"]').click()
+            page.locator(f'#row-{tid}-n0').wait_for()
+        # Both cards use row key n0. The first card must retain its own data
+        # and submission target after the second card has been expanded.
+        page.locator(f'#row-{ids[0]}-n0').get_by_role('button', name='编辑').click()
+        assert page.locator('#fg-model_no').input_value() == 'CONCURRENT-A'
+        assert page.locator('#fg-color').input_value() == '黑色'
+        page.locator('#fg-color').fill('白色')
+        with page.expect_response(lambda r: r.request.method == 'PATCH' and r.url.endswith('/draft')) as saved:
+            page.locator('#modalBox').get_by_role('button', name='提交').click()
+        assert saved.value.status == 200
+        assert saved.value.url.endswith(f'/tickets/{ids[0]}/draft')
+        payloads = [json.loads(conn.execute('SELECT payload FROM approval_ticket WHERE id=?', (tid,)).fetchone()[0]) for tid in ids]
+        assert payloads[0]['drafts']['new'][0]['color'] == '白色'
+        assert payloads[1]['drafts']['new'][0]['color'] == '银色'
+        assert all(conn.execute('SELECT status FROM approval_ticket WHERE id=?', (tid,)).fetchone()[0] == 'pending' for tid in ids)
+        browser.close()
+    conn.close()
+
+
 @pytest.fixture(scope='module')
 def server():
     """起真实 uvicorn 子进程：临时库 + 随机端口；退出断言端口释放（Harness 复原）。"""
@@ -21,7 +61,7 @@ def server():
     port = 18890
     env = {**os.environ, 'CATALOG_V2_DB': os.path.join(tmp, 'e2e.db'),
            'CATALOG_V2_IMG': os.path.join(tmp, 'img'),
-           'CATALOG_V2_SERVICE_TOKEN': ''}          # e2e 关鉴权（真实部署有 token）
+           'CATALOG_V2_SERVICE_TOKEN': 'e2e-service-token'}          # 服务鉴权开启，客户/审批链接使用自己的 token
     proc = subprocess.Popen(
         [sys.executable, '-m', 'uvicorn', 'catalog.main:app', '--port', str(port)],
         cwd=REPO, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -91,15 +131,38 @@ def test_list_page_click_edit_export(server):
         browser.close()
 
 
+def test_direct_delist_disappears_from_management_page(server):
+    from playwright.sync_api import sync_playwright
+    base, _ = server
+    req = urllib.request.Request(
+        f'{base}/products/razor/direct', method='POST',
+        data=json.dumps({'changes': {'model_no': 'PAGE-DELIST-1',
+                                     'description': '下架页面回归'}}).encode(),
+        headers={'Content-Type': 'application/json',
+                 'X-Service-Token': 'e2e-service-token'})
+    json.load(urllib.request.urlopen(req))
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(f'{base}/?t=e2e-service-token')
+        page.locator('#v-products').click()
+        card = page.locator('.pcard').filter(has_text='PAGE-DELIST-1')
+        card.wait_for()
+        page.once('dialog', lambda dialog: dialog.accept())
+        card.get_by_role('button', name='下架').click()
+        card.wait_for(state='detached')
+        browser.close()
+
+
 def test_redline_card_approve_effect(server):
     from playwright.sync_api import sync_playwright
     base, db_path = server
     # 走真实 API 建审批单（=微信 AI 工具调用同款入口）
     req = urllib.request.Request(f'{base}/cs/redline', method='POST',
                                  data=json.dumps({'text_raw': '数量少于50的转人工'}).encode(),
-                                 headers={'Content-Type': 'application/json'})
+                                 headers={'Content-Type': 'application/json', 'X-Service-Token': 'e2e-service-token'})
     tid = json.load(urllib.request.urlopen(req))['ticket_id']
-    tickets = json.load(urllib.request.urlopen(f'{base}/tickets'))['tickets']
+    tickets = json.load(urllib.request.urlopen(urllib.request.Request(f'{base}/tickets', headers={'X-Service-Token': 'e2e-service-token'})))['tickets']
     t = [x for x in tickets if x['id'] == tid][0]
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -108,11 +171,11 @@ def test_redline_card_approve_effect(server):
         page.wait_for_selector('.new')
         # 审批卡显示 旧文→新文
         assert '50' in page.locator('.new').text_content()
-        assert '20' in page.locator('.old').text_content()      # 默认文案(旧)含20
+        assert '账期' in page.locator('.old').text_content()      # 默认文案(旧)含20
         # 点批准 → 生效
         page.click('button:has-text("批准")')
         page.wait_for_selector('#done:not([style*="display: none"])', state='visible')
         assert '已批准' in page.locator('#done').text_content()
         browser.close()
-    after = json.load(urllib.request.urlopen(f'{base}/cs/redline'))
+    after = json.load(urllib.request.urlopen(urllib.request.Request(f'{base}/cs/redline', headers={'X-Service-Token': 'e2e-service-token'})))
     assert after['text_raw'] == '数量少于50的转人工'            # 页面点击 → 库里生效

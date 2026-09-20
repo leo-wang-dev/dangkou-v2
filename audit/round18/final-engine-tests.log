@@ -1,0 +1,769 @@
+
+> dsh-engine@0.1.0 test
+> node --test plugins/observability/*.test.mjs plugins/lib/*.test.mjs plugins/*.test.mjs
+
+TAP version 13
+# Subtest: notify authenticates and only delivers to approved merchant sessions
+ok 1 - notify authenticates and only delivers to approved merchant sessions
+  ---
+  duration_ms: 33.087583
+  type: 'test'
+  ...
+# Subtest: notify returns retryable safe error when no eligible context can receive
+ok 2 - notify returns retryable safe error when no eligible context can receive
+  ---
+  duration_ms: 16.503042
+  type: 'test'
+  ...
+# Subtest: notify-file enforces real allowed paths and blocks inline media bypass
+ok 3 - notify-file enforces real allowed paths and blocks inline media bypass
+  ---
+  duration_ms: 20.50675
+  type: 'test'
+  ...
+# Subtest: notify validates empty payloads and malformed request bodies
+ok 4 - notify validates empty payloads and malformed request bodies
+  ---
+  duration_ms: 18.222708
+  type: 'test'
+  ...
+# Subtest: dingtalk group policy preserves open, allowlist and per-group allowFrom
+ok 5 - dingtalk group policy preserves open, allowlist and per-group allowFrom
+  ---
+  duration_ms: 0.59675
+  type: 'test'
+  ...
+# Subtest: dingtalk reconnect guards detect 503, null endpoints and private hosts
+ok 6 - dingtalk reconnect guards detect 503, null endpoints and private hosts
+  ---
+  duration_ms: 0.264875
+  type: 'test'
+  ...
+# [dingtalk-connector] Stream connected
+# [dingtalk-connector] owner bound: selftest
+# [dingtalk-connector] queued selftest-1789718987860 (DM selftest-user)
+# Subtest: dingtalk Stream client retries a transient endpoint and connects through SDK _connect
+ok 7 - dingtalk Stream client retries a transient endpoint and connects through SDK _connect
+  ---
+  duration_ms: 22.737792
+  type: 'test'
+  ...
+# Subtest: dingtalk API downloads by code, extracts text and uploads media
+ok 8 - dingtalk API downloads by code, extracts text and uploads media
+  ---
+  duration_ms: 4.592375
+  type: 'test'
+  ...
+# [dingtalk-connector] selfTest complete: ack -> followup -> sessionWebhook send mock
+# [dingtalk-connector] disposed
+# Subtest: dingtalk selfTest covers early ack, owner binding, followup and sessionWebhook send
+ok 9 - dingtalk selfTest covers early ack, owner binding, followup and sessionWebhook send
+  ---
+  duration_ms: 31.444417
+  type: 'test'
+  ...
+# [info]: [ 'event-dispatch is ready' ]
+# [feishu-connector] bot: test (ou_bot)
+# [feishu-connector] WSClient started
+# [feishu-in] group/oc_quote_chat type=text parent=om_parent sender=ou_user mentions=[cli_test] {"text":"看我引用的图是啥"}
+# Subtest: feishu group policy supports smart, legacy smart_groups and per-group allowFrom
+ok 10 - feishu group policy supports smart, legacy smart_groups and per-group allowFrom
+  ---
+  duration_ms: 0.676083
+  type: 'test'
+  ...
+# Subtest: feishu message content extracts image/file keys from direct and post messages
+ok 11 - feishu message content extracts image/file keys from direct and post messages
+  ---
+  duration_ms: 0.212125
+  type: 'test'
+  ...
+# Subtest: feishu API message shape and interactive quote content are normalized
+ok 12 - feishu API message shape and interactive quote content are normalized
+  ---
+  duration_ms: 0.443917
+  type: 'test'
+  ...
+# Subtest: feishu quote fetch returns API item and logs a structured failure
+ok 13 - feishu quote fetch returns API item and logs a structured failure
+  ---
+  duration_ms: 11.53975
+  type: 'test'
+  ...
+# Subtest: feishu merge forward falls back to raw title text
+ok 14 - feishu merge forward falls back to raw title text
+  ---
+  duration_ms: 0.078125
+  type: 'test'
+  ...
+# [feishu-connector] created session feishu-oc_quote_chat-c05a1bd9 for chat oc_quote_chat
+# [feishu-connector] queued msg om_child (chat oc_quote_chat, group)
+# [feishu-connector] disposed
+# Subtest: feishu quoted media is downloaded, described by vision and injected as context
+ok 15 - feishu quoted media is downloaded, described by vision and injected as context
+  ---
+  duration_ms: 174.885459
+  type: 'test'
+  ...
+# Subtest: feishu media downloads safely and upload dispatches platform keys
+ok 16 - feishu media downloads safely and upload dispatches platform keys
+  ---
+  duration_ms: 2.385125
+  type: 'test'
+  ...
+# Subtest: feishu drive links download files and expose permission denial without leaking tokens
+ok 17 - feishu drive links download files and expose permission denial without leaking tokens
+  ---
+  duration_ms: 1.692083
+  type: 'test'
+  ...
+# [feishu-connector] vision 未配置（需 .env 里 DSH_VISION_BASE_URL/API_KEY/MODEL 三件套），图片描述已禁用
+# [info]: [ 'event-dispatch is ready' ]
+# [feishu-connector] bot: test (ou_bot)
+# [feishu-connector] WSClient started
+# [feishu-connector] firing boot self-test
+# [feishu-in] p2p/oc_selftest type=text parent=- sender=ou_selftest mentions=[] {"text":"ping"}
+# [feishu-connector] owner bound: selftest
+# [feishu-connector] created session feishu-oc_selftest-9b20a04b for chat oc_selftest
+# [feishu-connector] queued msg selftest-1789718987909 (chat oc_selftest, p2p)
+# [feishu-connector] stream card opened om_sent (4 chars)
+# Subtest: vision (glm-4v-flash default) returns descriptions, skips 4xx retries and retries one 5xx
+ok 18 - vision (glm-4v-flash default) returns descriptions, skips 4xx retries and retries one 5xx
+  ---
+  duration_ms: 1.898917
+  type: 'test'
+  ...
+# [feishu-connector] stream card finalized (4 chars)
+# [feishu-connector] selfTest complete: followup -> session -> send mock/API
+# [feishu-connector] disposed
+# [feishu-connector] vision 未配置（需 .env 里 DSH_VISION_BASE_URL/API_KEY/MODEL 三件套），图片描述已禁用
+# [info]: [ 'event-dispatch is ready' ]
+# [feishu-connector] bot: test (ou_bot)
+# [feishu-connector] WSClient started
+# [feishu-in] group/oc_same_chat type=text parent=- sender=ou_user mentions=[cli_test] {"text":"om_first"}
+# [feishu-in] group/oc_same_chat type=text parent=- sender=ou_user mentions=[cli_test] {"text":"om_second"}
+# Subtest: feishu selfTest covers owner binding, followup, session and streamed send
+ok 19 - feishu selfTest covers owner binding, followup, session and streamed send
+  ---
+  duration_ms: 4.41125
+  type: 'test'
+  ...
+# [feishu-connector] created session feishu-oc_same_chat-e987d047 for chat oc_same_chat
+# [feishu-connector] queued msg om_first (chat oc_same_chat, group)
+# [feishu-connector] queued msg om_second (chat oc_same_chat, group)
+# [feishu-connector] disposed
+# Subtest: feishu concurrent inbound messages initialize one agent per chat
+ok 20 - feishu concurrent inbound messages initialize one agent per chat
+  ---
+  duration_ms: 1.508583
+  type: 'test'
+  ...
+# [im-send] registered for channels: feishu, wechat
+# [im-send] skipped: no channel connectors assembled
+# Subtest: im_send exposes only assembled channels and routes text/media to the sender
+ok 21 - im_send exposes only assembled channels and routes text/media to the sender
+  ---
+  duration_ms: 0.776583
+  type: 'test'
+  ...
+# Subtest: im_send does not register when no connector is assembled
+ok 22 - im_send does not register when no connector is assembled
+  ---
+  duration_ms: 0.106666
+  type: 'test'
+  ...
+# [kb-admin] listening on http://127.0.0.1:58012 (仅本机，勿暴露公网)
+# Subtest: kb-admin validateUploadRequest 校验平台/品牌/文档类型/文件
+ok 23 - kb-admin validateUploadRequest 校验平台/品牌/文档类型/文件
+  ---
+  duration_ms: 1.291
+  type: 'test'
+  ...
+# Subtest: kb-admin chunkText 按 ~size 分块且不丢内容
+ok 24 - kb-admin chunkText 按 ~size 分块且不丢内容
+  ---
+  duration_ms: 0.191417
+  type: 'test'
+  ...
+# [kb-admin] listening on http://127.0.0.1:58022 (仅本机，勿暴露公网)
+# Subtest: kb-admin GET / 管理页与 /status 激活状态
+ok 25 - kb-admin GET / 管理页与 /status 激活状态
+  ---
+  duration_ms: 41.534666
+  type: 'test'
+  ...
+# Subtest: kb-admin P1-1 renderAdminPage 对 botName 做 HTML 转义（title 与 h1）
+ok 26 - kb-admin P1-1 renderAdminPage 对 botName 做 HTML 转义（title 与 h1）
+  ---
+  duration_ms: 0.138875
+  type: 'test'
+  ...
+# Subtest: kb-admin 管理页含文档类型单选组 + 红线提示
+ok 27 - kb-admin 管理页含文档类型单选组 + 红线提示
+  ---
+  duration_ms: 0.149958
+  type: 'test'
+  ...
+# [kb-admin] listening on http://127.0.0.1:58030 (仅本机，勿暴露公网)
+# Subtest: kb-admin POST /upload 参数校验（非法品牌名/平台/文档类型被拒）
+ok 28 - kb-admin POST /upload 参数校验（非法品牌名/平台/文档类型被拒）
+  ---
+  duration_ms: 28.387084
+  type: 'test'
+  ...
+# [kb-admin] listening on http://127.0.0.1:58038 (仅本机，勿暴露公网)
+# Subtest: kb-admin 防 CSRF：Content-Type/Origin/X-Admin-Token 三重闸
+# [kb-admin] listen 127.0.0.1:58038 failed: listen EADDRINUSE: address already in use 127.0.0.1:58038（引擎继续运行，KB 管理台不可用）
+ok 29 - kb-admin 防 CSRF：Content-Type/Origin/X-Admin-Token 三重闸
+  ---
+  duration_ms: 23.539209
+  type: 'test'
+  ...
+# [kb-admin] listening on http://127.0.0.1:58039 (仅本机，勿暴露公网)
+# Subtest: kb-admin listen 失败（端口被占）不抛出：报错跳过而非拖垮引擎
+ok 30 - kb-admin listen 失败（端口被占）不抛出：报错跳过而非拖垮引擎
+  ---
+  duration_ms: 3.491375
+  type: 'test'
+  ...
+# [kb-admin] listening on http://127.0.0.1:58042 (仅本机，勿暴露公网)
+# Subtest: kb-admin 流水线：md 直拷、pptx 走 mock 蒸馏、单文件失败不中断、预览可读
+ok 31 - kb-admin 流水线：md 直拷、pptx 走 mock 蒸馏、单文件失败不中断、预览可读
+  ---
+  duration_ms: 15.790084
+  type: 'test'
+  ...
+# Subtest: kb-admin validateProfileRequest 严格校验
+ok 32 - kb-admin validateProfileRequest 严格校验
+  ---
+  duration_ms: 0.868
+  type: 'test'
+  ...
+# Subtest: kb-admin renderPersonaTemplate 占位符全渲染 + 平台条件块
+ok 33 - kb-admin renderPersonaTemplate 占位符全渲染 + 平台条件块
+  ---
+  duration_ms: 0.2855
+  type: 'test'
+  ...
+# Subtest: kb-admin buildBrandInfoMd 留空字段写 [待品牌方提供] 且带来源注记
+ok 34 - kb-admin buildBrandInfoMd 留空字段写 [待品牌方提供] 且带来源注记
+  ---
+  duration_ms: 0.056083
+  type: 'test'
+  ...
+# Subtest: kb-admin writeEnvKeys 原子改写：替换目标 key、保留其余行、值单引号包裹
+ok 35 - kb-admin writeEnvKeys 原子改写：替换目标 key、保留其余行、值单引号包裹
+  ---
+  duration_ms: 1.527375
+  type: 'test'
+  ...
+# Subtest: kb-admin writeEnvKeys P0-1：拒绝含换行的值（防伪造 .env 行）
+ok 36 - kb-admin writeEnvKeys P0-1：拒绝含换行的值（防伪造 .env 行）
+  ---
+  duration_ms: 0.327875
+  type: 'test'
+  ...
+# Subtest: kb-admin writeEnvKeys P1-5 权限：新建 0600、已有 .env 透传原权限
+ok 37 - kb-admin writeEnvKeys P1-5 权限：新建 0600、已有 .env 透传原权限
+  ---
+  duration_ms: 1.386125
+  type: 'test'
+  ...
+# Subtest: kb-admin writeEnvKeys P0-1 round-trip：bash source 后原值逐字还原
+ok 38 - kb-admin writeEnvKeys P0-1 round-trip：bash source 后原值逐字还原
+  ---
+  duration_ms: 21.158916
+  type: 'test'
+  ...
+# [kb-admin] 档案 heal-me 的 generated persona 缺失，已按 profiles.json 重渲染
+# [kb-admin] listening on http://127.0.0.1:58049 (仅本机，勿暴露公网)
+# Subtest: kb-admin 档案 CRUD：保存生成 persona/品牌信息、列表、更新、防 CSRF
+# [kb-admin] listening on http://127.0.0.1:58050 (仅本机，勿暴露公网)
+ok 39 - kb-admin 档案 CRUD：保存生成 persona/品牌信息、列表、更新、防 CSRF
+  ---
+  duration_ms: 20.02225
+  type: 'test'
+  ...
+# Subtest: kb-admin P0-2 启动自愈：profiles.json 在位但 generated persona 缺失 → 自动重渲染
+ok 40 - kb-admin P0-2 启动自愈：profiles.json 在位但 generated persona 缺失 → 自动重渲染
+  ---
+  duration_ms: 3.709708
+  type: 'test'
+  ...
+# [kb-admin] listening on http://127.0.0.1:58054 (仅本机，勿暴露公网)
+# Subtest: kb-admin P1-4 品牌信息.md 覆盖保护：人工文件 409、表单产物覆盖前留 .bak、上传保留名 400
+ok 41 - kb-admin P1-4 品牌信息.md 覆盖保护：人工文件 409、表单产物覆盖前留 .bak、上传保留名 400
+  ---
+  duration_ms: 9.047042
+  type: 'test'
+  ...
+# [kb-admin] 档案 bad-env 的 generated persona 缺失，已按 profiles.json 重渲染
+# [kb-admin] listening on http://127.0.0.1:58059 (仅本机，勿暴露公网)
+# Subtest: kb-admin P1-3 向量步骤失败如实透出：exit code / sidecar 离线 / 真实错误 / 成功
+ok 42 - kb-admin P1-3 向量步骤失败如实透出：exit code / sidecar 离线 / 真实错误 / 成功
+  ---
+  duration_ms: 59.462
+  type: 'test'
+  ...
+# [kb-admin] request failed: kefu-platform.sh 失败: 投影炸了
+# [kb-admin] request failed: env value must not contain newline characters
+# [kb-admin] listening on http://127.0.0.1:58066 (仅本机，勿暴露公网)
+# Subtest: kb-admin P1-2 激活失败中间态：响应带 stage/warning/实际现状
+ok 43 - kb-admin P1-2 激活失败中间态：响应带 stage/warning/实际现状
+  ---
+  duration_ms: 31.046042
+  type: 'test'
+  ...
+# [kb-admin] listening on http://127.0.0.1:58069 (仅本机，勿暴露公网)
+# Subtest: kb-admin POST /profiles/activate：投影+改写 .env（bot 名/generated persona）+ 状态推导
+ok 44 - kb-admin POST /profiles/activate：投影+改写 .env（bot 名/generated persona）+ 状态推导
+  ---
+  duration_ms: 30.810917
+  type: 'test'
+  ...
+# Subtest: kb-admin P2 pushBrandToVolcano：VOLCANO 关时无 volcano 字段；开时本地 filePath 直传被如实跳过（未进火山）
+ok 45 - kb-admin P2 pushBrandToVolcano：VOLCANO 关时无 volcano 字段；开时本地 filePath 直传被如实跳过（未进火山）
+  ---
+  duration_ms: 89.211084
+  type: 'test'
+  ...
+# Subtest: catalog plugin stays disabled unless an absolute module path is configured
+ok 46 - catalog plugin stays disabled unless an absolute module path is configured
+  ---
+  duration_ms: 1.296875
+  type: 'test'
+  ...
+# Subtest: catalog plugin loads exactly the configured local file with URL-safe path encoding
+ok 47 - catalog plugin loads exactly the configured local file with URL-safe path encoding
+  ---
+  duration_ms: 0.489375
+  type: 'test'
+  ...
+# Subtest: WeChat merchant persona preserves base and only overrides onboarding when explicitly enabled
+ok 48 - WeChat merchant persona preserves base and only overrides onboarding when explicitly enabled
+  ---
+  duration_ms: 0.231875
+  type: 'test'
+  ...
+# Subtest: connector-utils stripLeadingEnglishReasoning ① 正常中文回复不动
+ok 49 - connector-utils stripLeadingEnglishReasoning ① 正常中文回复不动
+  ---
+  duration_ms: 0.815834
+  type: 'test'
+  ...
+# Subtest: connector-utils stripLeadingEnglishReasoning ② 正常英文全文不动（无中文正文跟随）
+ok 50 - connector-utils stripLeadingEnglishReasoning ② 正常英文全文不动（无中文正文跟随）
+  ---
+  duration_ms: 0.124292
+  type: 'test'
+  ...
+# Subtest: connector-utils stripLeadingEnglishReasoning ③ 泄漏样例：英文推理前导段被剥离
+ok 51 - connector-utils stripLeadingEnglishReasoning ③ 泄漏样例：英文推理前导段被剥离
+  ---
+  duration_ms: 0.215083
+  type: 'test'
+  ...
+# Subtest: connector-utils stripLeadingEnglishReasoning ④ 中英混排正文不误伤
+ok 52 - connector-utils stripLeadingEnglishReasoning ④ 中英混排正文不误伤
+  ---
+  duration_ms: 0.092125
+  type: 'test'
+  ...
+# Subtest: connector-utils sanitizeOutboundText 集成：哨兵/规划行/英文前导一起清理
+ok 53 - connector-utils sanitizeOutboundText 集成：哨兵/规划行/英文前导一起清理
+  ---
+  duration_ms: 0.691583
+  type: 'test'
+  ...
+# Subtest: env-quote quoteEnvValue POSIX 单引号包裹与内部单引号转义
+ok 54 - env-quote quoteEnvValue POSIX 单引号包裹与内部单引号转义
+  ---
+  duration_ms: 0.863875
+  type: 'test'
+  ...
+# Subtest: env-quote 含换行的值直接拒绝（防伪造 .env 行）
+ok 55 - env-quote 含换行的值直接拒绝（防伪造 .env 行）
+  ---
+  duration_ms: 0.207708
+  type: 'test'
+  ...
+# Subtest: env-quote unquoteEnvValue 剥离单/双引号包裹并兼容裸值
+ok 56 - env-quote unquoteEnvValue 剥离单/双引号包裹并兼容裸值
+  ---
+  duration_ms: 0.120833
+  type: 'test'
+  ...
+# Subtest: records one turn, first token, model call, and terminal result without message data
+ok 57 - records one turn, first token, model call, and terminal result without message data
+  ---
+  duration_ms: 1.415542
+  type: 'test'
+  ...
+# Subtest: normalizes turn failures instead of recording dynamic error details
+ok 58 - normalizes turn failures instead of recording dynamic error details
+  ---
+  duration_ms: 0.127417
+  type: 'test'
+  ...
+# Subtest: propagates traceparent only to explicitly allowed Gateway origins
+ok 59 - propagates traceparent only to explicitly allowed Gateway origins
+  ---
+  duration_ms: 32.689083
+  type: 'test'
+  ...
+# Subtest: registers the claude provider with no start capabilities
+ok 60 - registers the claude provider with no start capabilities
+  ---
+  duration_ms: 1.098
+  type: 'test'
+  ...
+# Subtest: success JSON settles as completed with the result text
+ok 61 - success JSON settles as completed with the result text
+  ---
+  duration_ms: 1.975417
+  type: 'test'
+  ...
+# Subtest: spawns claude -p with json output, bypass permissions, cwd and env
+ok 62 - spawns claude -p with json output, bypass permissions, cwd and env
+  ---
+  duration_ms: 0.577667
+  type: 'test'
+  ...
+# Subtest: error_max_turns settles as max-tokens
+ok 63 - error_max_turns settles as max-tokens
+  ---
+  duration_ms: 0.161959
+  type: 'test'
+  ...
+# Subtest: error subtype settles as error and carries the stderr tail
+ok 64 - error subtype settles as error and carries the stderr tail
+  ---
+  duration_ms: 0.818834
+  type: 'test'
+  ...
+# Subtest: unparseable output settles as error mentioning exit code
+ok 65 - unparseable output settles as error mentioning exit code
+  ---
+  duration_ms: 0.679625
+  type: 'test'
+  ...
+# Subtest: abort before settle maps to aborted and terminates the child
+ok 66 - abort before settle maps to aborted and terminates the child
+  ---
+  duration_ms: 1.049166
+  type: 'test'
+  ...
+# Subtest: dispose terminates a live child and waits for exit
+ok 67 - dispose terminates a live child and waits for exit
+  ---
+  duration_ms: 0.337458
+  type: 'test'
+  ...
+# Subtest: start rejects for a prompt without text blocks
+ok 68 - start rejects for a prompt without text blocks
+  ---
+  duration_ms: 1.483667
+  type: 'test'
+  ...
+# Subtest: subagent failure detail survives settleRun (job_output 可见失败原因)
+ok 69 - subagent failure detail survives settleRun (job_output 可见失败原因)
+  ---
+  duration_ms: 0.871875
+  type: 'test'
+  ...
+# [volcano-kb] recall 未启用：VOLCANO_AK/VOLCANO_SK 未配置 — 召回恒返回 null
+# [volcano-kb] recall 未启用：VOLCANO_KB_COLLECTION（知识库名）未配置 — 召回恒返回 null
+# [volcano-kb] recall active: host=api-knowledgebase.mlp.cn-beijing.volces.com collection=kb-demo brand=* platform=* topK=5
+# [volcano-kb] ⚠ 隔离靠独立库：collection=kb-demo 绑定 brand=(未指定)，请确保该知识库只含该品牌文档（检索不下发 platform/brand filter，答错平台=事故）
+# Subtest: formatLayeredRecall 四类齐全：固定顺序 红线→SOP→话术→店铺信息
+ok 70 - formatLayeredRecall 四类齐全：固定顺序 红线→SOP→话术→店铺信息
+  ---
+  duration_ms: 0.725417
+  type: 'test'
+  ...
+# Subtest: formatLayeredRecall 部分层有内容：空层不出现
+ok 71 - formatLayeredRecall 部分层有内容：空层不出现
+  ---
+  duration_ms: 0.057958
+  type: 'test'
+  ...
+# Subtest: formatLayeredRecall 同层多条聚合为多行
+ok 72 - formatLayeredRecall 同层多条聚合为多行
+  ---
+  duration_ms: 0.044667
+  type: 'test'
+  ...
+# Subtest: formatLayeredRecall 全空 / 无正文 / 空数组 → null
+ok 73 - formatLayeredRecall 全空 / 无正文 / 空数组 → null
+  ---
+  duration_ms: 0.093
+  type: 'test'
+  ...
+# Subtest: formatLayeredRecall 未知 doc_type 收进「其他参考资料」不丢弃
+ok 74 - formatLayeredRecall 未知 doc_type 收进「其他参考资料」不丢弃
+  ---
+  duration_ms: 0.121958
+  type: 'test'
+  ...
+# Subtest: formatLayeredRecall 从 metadata.doc_type 兜底取类型 + 多路取正文
+ok 75 - formatLayeredRecall 从 metadata.doc_type 兜底取类型 + 多路取正文
+  ---
+  duration_ms: 0.04575
+  type: 'test'
+  ...
+# Subtest: formatLayeredRecall 读真实结构：content + doc_info.doc_meta(JSON字符串) 里的 doc_type
+ok 76 - formatLayeredRecall 读真实结构：content + doc_info.doc_meta(JSON字符串) 里的 doc_type
+  ---
+  duration_ms: 0.096875
+  type: 'test'
+  ...
+# Subtest: createVolcanoRecall 缺 AK/SK → 返回恒 null 的函数
+ok 77 - createVolcanoRecall 缺 AK/SK → 返回恒 null 的函数
+  ---
+  duration_ms: 0.283792
+  type: 'test'
+  ...
+# Subtest: createVolcanoRecall 有 AK/SK 但缺知识库名 → 恒 null
+ok 78 - createVolcanoRecall 有 AK/SK 但缺知识库名 → 恒 null
+  ---
+  duration_ms: 0.220083
+  type: 'test'
+  ...
+# Subtest: createVolcanoRecall 空/空白 query 直接返回 null（不发请求）
+ok 79 - createVolcanoRecall 空/空白 query 直接返回 null（不发请求）
+  ---
+  duration_ms: 0.256125
+  type: 'test'
+  ...
+# Subtest: buildSearchRequest 关键字段：project / name / query / limit / path（真实契约）
+ok 80 - buildSearchRequest 关键字段：project / name / query / limit / path（真实契约）
+  ---
+  duration_ms: 0.100333
+  type: 'test'
+  ...
+# Subtest: buildSearchRequest 不下发 filter/doc_filter（隔离靠独立 collection；doc_filter 实测 no-op）
+ok 81 - buildSearchRequest 不下发 filter/doc_filter（隔离靠独立 collection；doc_filter 实测 no-op）
+  ---
+  duration_ms: 0.038708
+  type: 'test'
+  ...
+# Subtest: signRequest 写入火山 AK/SK 签名头（离线 HMAC，不发网络）
+ok 82 - signRequest 写入火山 AK/SK 签名头（离线 HMAC，不发网络）
+  ---
+  duration_ms: 1.507833
+  type: 'test'
+  ...
+# Subtest: createVolcanoClient 缺 AK/SK：uploadDoc 跳过不 throw
+ok 83 - createVolcanoClient 缺 AK/SK：uploadDoc 跳过不 throw
+  ---
+  duration_ms: 0.111958
+  type: 'test'
+  ...
+# Subtest: createVolcanoClient uploadDoc 校验 doc_type 枚举
+ok 84 - createVolcanoClient uploadDoc 校验 doc_type 枚举
+  ---
+  duration_ms: 0.040625
+  type: 'test'
+  ...
+# Subtest: createVolcanoClient 暴露 config 与四类枚举一致
+ok 85 - createVolcanoClient 暴露 config 与四类枚举一致
+  ---
+  duration_ms: 0.033958
+  type: 'test'
+  ...
+# [web-connector] listening on http://127.0.0.1:58028 provider=test-provider/test-model
+# Subtest: web validateChatRequest rejects malformed clientId/text and accepts valid input
+ok 86 - web validateChatRequest rejects malformed clientId/text and accepts valid input
+  ---
+  duration_ms: 1.949916
+  type: 'test'
+  ...
+# [web-connector] listening on http://127.0.0.1:58033 provider=test-provider/test-model
+# Subtest: web GET / serves the embedded single-file chat page
+ok 87 - web GET / serves the embedded single-file chat page
+  ---
+  duration_ms: 18.437916
+  type: 'test'
+  ...
+# [web-connector] listening on http://127.0.0.1:58036 provider=test-provider/test-model
+# Subtest: web POST /chat validates the body and unknown routes 404 / wrong methods 405
+ok 88 - web POST /chat validates the body and unknown routes 404 / wrong methods 405
+  ---
+  duration_ms: 15.414875
+  type: 'test'
+  ...
+# [web-connector] listening on http://127.0.0.1:58063 provider=test-provider/test-model
+# Subtest: web 超时僵尸 turn：504 后作废 handle，迟到 turn/end 不污染下一请求
+# [web-connector] listen 127.0.0.1:58063 failed: listen EADDRINUSE: address already in use 127.0.0.1:58063（引擎继续运行，Web 入口不可用）
+ok 89 - web 超时僵尸 turn：504 后作废 handle，迟到 turn/end 不污染下一请求
+  ---
+  duration_ms: 159.124833
+  type: 'test'
+  ...
+# [web-connector] listening on http://127.0.0.1:58064 provider=test-provider/test-model
+# Subtest: web listen 失败（端口被占）不抛出：报错跳过而非拖垮引擎
+ok 90 - web listen 失败（端口被占）不抛出：报错跳过而非拖垮引擎
+  ---
+  duration_ms: 0.985833
+  type: 'test'
+  ...
+# Subtest: web POST /chat maps clientId to its own session and returns the collected reply
+ok 91 - web POST /chat maps clientId to its own session and returns the collected reply
+  ---
+  duration_ms: 2.903458
+  type: 'test'
+  ...
+# Subtest: wechat protocol keeps account schema and crypto round trips
+ok 92 - wechat protocol keeps account schema and crypto round trips
+  ---
+  duration_ms: 8.545958
+  type: 'test'
+  ...
+# Subtest: wechat outbound parsing preserves hard split and media markers
+ok 93 - wechat outbound parsing preserves hard split and media markers
+  ---
+  duration_ms: 0.26375
+  type: 'test'
+  ...
+# Subtest: wechat context tokens persist in the legacy data shape
+ok 94 - wechat context tokens persist in the legacy data shape
+  ---
+  duration_ms: 0.977875
+  type: 'test'
+  ...
+# Subtest: wechat QR session keeps legacy files and stages confirmed credentials
+ok 95 - wechat QR session keeps legacy files and stages confirmed credentials
+  ---
+  duration_ms: 11.905084
+  type: 'test'
+  ...
+# Subtest: wechat api client aligns with dsh-im 2.4.6 login protocol
+ok 96 - wechat api client aligns with dsh-im 2.4.6 login protocol
+  ---
+  duration_ms: 0.610542
+  type: 'test'
+  ...
+# Subtest: wechat QR session surfaces 2.4.6 extended login statuses
+ok 97 - wechat QR session surfaces 2.4.6 extended login statuses
+  ---
+  duration_ms: 2035.556125
+  type: 'test'
+  ...
+# Subtest: wechat cdn upload accepts upload_full_url and upload_param response shapes
+ok 98 - wechat cdn upload accepts upload_full_url and upload_param response shapes
+  ---
+  duration_ms: 2.456
+  type: 'test'
+  ...
+# Subtest: wechat admin preserves account health contract and permits multiple accounts
+ok 99 - wechat admin preserves account health contract and permits multiple accounts
+  ---
+  duration_ms: 37.206625
+  type: 'test'
+  ...
+# [wechat-connector] queued selftest-1789718989991 (selftest-account:selftest-user)
+# [wechat-connector] selfTest complete: followup -> session -> send mock
+# [wechat-connector] disposed
+# Subtest: wechat selfTest exercises synthetic inbound, followup, session and send mock
+ok 100 - wechat selfTest exercises synthetic inbound, followup, session and send mock
+  ---
+  duration_ms: 23.236167
+  type: 'test'
+  ...
+# [wechat-connector] disposed
+# Subtest: customer Bot Token bypasses recall, model and persisted sessions
+ok 101 - customer Bot Token bypasses recall, model and persisted sessions
+  ---
+  duration_ms: 2.741333
+  type: 'test'
+  ...
+# [wechat-connector] disposed
+# [wechat-connector] disposed
+# Subtest: customer Bot Token requires explicit merchant allowlist even in open mode
+ok 102 - customer Bot Token requires explicit merchant allowlist even in open mode
+  ---
+  duration_ms: 3.202667
+  type: 'test'
+  ...
+# [wechat-connector] disposed
+# [wechat-connector] disposed
+# [wechat-connector] disposed
+# Subtest: provision failures and disabled integration never leak Token or reach model
+ok 103 - provision failures and disabled integration never leak Token or reach model
+  ---
+  duration_ms: 4.900875
+  type: 'test'
+  ...
+# [wechat-connector] queued selftest-1789718990015 (account:owner)
+# [wechat-connector] selfTest complete: followup -> session -> send mock
+# [wechat-connector] disposed
+# Subtest: ordinary product messages retain recall and model path
+ok 104 - ordinary product messages retain recall and model path
+  ---
+  duration_ms: 13.913833
+  type: 'test'
+  ...
+# [wechat-connector] disposed
+# [wechat-connector] disposed
+# [wechat-connector] disposed
+# [wechat-connector] disposed
+# Subtest: provision rejection gives fixed status-specific guidance without remote error text
+ok 105 - provision rejection gives fixed status-specific guidance without remote error text
+  ---
+  duration_ms: 5.594667
+  type: 'test'
+  ...
+# [wecom-connector] owner bound: user
+# [wecom-connector] queued mixed-message (DM user-id)
+# [wecom-connector] queued voice-message (DM user-id)
+# Subtest: wecom group policy preserves mention, smart and per-group allowFrom
+ok 106 - wecom group policy preserves mention, smart and per-group allowFrom
+  ---
+  duration_ms: 0.499792
+  type: 'test'
+  ...
+# Subtest: wecom UTF-8 splitter enforces byte limits
+ok 107 - wecom UTF-8 splitter enforces byte limits
+  ---
+  duration_ms: 0.228375
+  type: 'test'
+  ...
+# [wecom-connector] disposed
+# Subtest: wecom accepts official mixed.msg_item and voice.content fields
+ok 108 - wecom accepts official mixed.msg_item and voice.content fields
+  ---
+  duration_ms: 12.851083
+  type: 'test'
+  ...
+# Subtest: wecom media decrypts legacy AES-256-CBC payload and persists it
+ok 109 - wecom media decrypts legacy AES-256-CBC payload and persists it
+  ---
+  duration_ms: 6.457625
+  type: 'test'
+  ...
+# [wecom-connector] owner bound: selftest
+# [wecom-connector] queued selftest-1789718987953 (DM selftest-user)
+# [wecom-connector] stream finalized (18 bytes)
+# Subtest: wecom raw WebSocket uses subscribe req_id and official stream frame
+ok 110 - wecom raw WebSocket uses subscribe req_id and official stream frame
+  ---
+  duration_ms: 1.162875
+  type: 'test'
+  ...
+# [wecom-connector] selfTest complete: followup -> session -> stream send mock
+# [wecom-connector] disposed
+# Subtest: wecom selfTest covers owner binding, followup, session and stream send
+ok 111 - wecom selfTest covers owner binding, followup, session and stream send
+  ---
+  duration_ms: 23.902125
+  type: 'test'
+  ...
+1..111
+# tests 111
+# suites 0
+# pass 111
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6863.666792

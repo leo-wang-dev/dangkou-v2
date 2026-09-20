@@ -1,0 +1,27 @@
+{
+  "branch": "codex-fix-release-gates-20260918",
+  "files": {
+    "catalog/csbot.py": "3b305487719393ad8e13c233167b1886aef8a18557415cb5f6085bfc24bf5c7f",
+    "catalog/llm.py": "4b7d735737541c038d81357c0ef0df7d496628323dc28a3f24ac16f03535428d",
+    "scripts/verify_customer_photos.py": "7376dced0d98078b86065f23f5d0423a706c08ff2e475fb029e533d9fcb296aa",
+    "scripts/verify_real_policy.py": "b4d5943887244f3e9c962cc96cc65919a43573d579cdaeb28ab144de57839101",
+    "tests/e2e/test_real_chain.py": "080fafc9b2bd27a1b3b70079c1a4580d8c4277012a515b25e8839e4e0e208b0c",
+    "tests/test_vision_recovery.py": "ca425e2d839fe0f6347006647502ecd556a8b3ede113cc58045f1952240e4cd8",
+    "tests/test_csbot.py": "0db23000216905ffc84d6de400257742219d6f64824b0af4f859f961d0be8e21"
+  },
+  "offline_suites": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "3",
+      "tests": "239",
+      "time": "8.518",
+      "timestamp": "2026-09-18T04:06:09.104143+08:00",
+      "hostname": "1deMacBook-Pro.local"
+    }
+  ],
+  "real_photo_result": "real-verified/result.json",
+  "real_tg_sent": false,
+  "provider_failures_preserved": true
+}

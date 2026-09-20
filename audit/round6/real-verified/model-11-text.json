@@ -1,0 +1,15 @@
+{
+  "kind": "text",
+  "model": "qwen3.8-max",
+  "prompt": {
+    "system": "你是草稿编辑判定器。客户刚拍过照片，系统生成了待确认草稿。判断客户这条消息是不是对草稿的修改/补充/删除指令。只输出 JSON，不要其他文字：\n{\"action\":\"edit\",\"index\":N,\"field\":\"字段名\",\"value\":\"新值\"}   # 改第N条的字段\n{\"action\":\"add\",\"index\":N,\"field\":\"字段名\",\"value\":\"值\"}      # 给第N条补字段（N可省略=最后一条）\n{\"action\":\"delete_note\",\"index\":N}                            # 删第N条\n{\"action\":\"none\"}                                             # 与草稿无关（问货/闲聊/询价）\n字段名尽量沿用草稿里已有的名，或用标准名：型号或品名/价格/装箱数/颜色/体积或尺寸/起订量/其他。",
+    "messages": [
+      {
+        "role": "user",
+        "content": "当前草稿：\n【1】{\"型号或品名\": \"Miss Wendy ROSEMARY MINT SCALP & HAIR STRENGTHENING OIL\", \"价格\": \"模糊（待确认）\", \"装箱数\": \"未拍到\", \"颜色\": \"绿色包装\", \"体积或尺寸\": \"2 fl. oz. (59mL)\", \"起订量\": \"未拍到\", \"其他\": \"阿拉伯文：روزماري النعناع الفط；英文说明：Infused w/Biotin & Encourages Growth；用途：✓DAILY USE ✓SCALP TREATMENT ✓SPLIT END CARE；手写数字'192'（含义待确认）\"}\n【2】{\"型号或品名\": \"COFFEE SHERBET BODY SCRUB\", \"价格\": \"¥3.8（照片识别，待确认）\", \"装箱数\": \"未拍到\", \"颜色\": \"深褐色膏体，银色金属盖，红棕标签\", \"体积或尺寸\": \"11.83FL.OZ.(350ml)\", \"起订量\": \"未拍到\", \"其他\": \"手写标注'350 mL'、'96'（含义待确认）；品牌：Miss wendy；适用肤质：for all skin types\"}\n【3】{\"型号或品名\": \"Sylkin Hair Food Olive\", \"价格\": \"¥4.8（照片识别，待确认）\", \"装箱数\": \"未拍到\", \"颜色\": \"黄绿色包装，黑色盖子\", \"体积或尺寸\": \"未拍到\", \"起订量\": \"未拍到\", \"其他\": \"手写数字'144'，含义待确认；背景左上角可见另一款产品部分包装：'HYDROLYZED COLLAGEN'，但信息不完整，仅作备注\"}\n【4】{\"型号或品名\": \"Magic Moon 24K GOLD WHITENING CREAM\", \"价格\": \"3.5（照片识别，待确认）\", \"装箱数\": \"未拍到\", \"颜色\": \"金色管身+透明标签\", \"体积或尺寸\": \"100g\", \"起订量\": \"未拍到\", \"其他\": \"包装含阿拉伯文'تَفتيح البشرة كريم'；英文说明'BRIGHTEN AND WHITEN THE SKIN'；标注'Before Use'\"}\n【5】{\"型号或品名\": \"Magic Moon KERATIN Body Lotion\", \"价格\": \"模糊（待确认）\", \"装箱数\": \"未拍到\", \"颜色\": \"紫白渐变花纹管身+金色盖子\", \"体积或尺寸\": \"260g/9.15oz\", \"起订量\": \"未拍到\", \"其他\": \"包装标注'CUSTOMIZED BEAUTY NOURISHMENT'、'SUITABLE FOR ANY SKIN'；品牌标'SINCE 1986'\"}\n\n客户消息：1 价格改成2.5"
+      }
+    ]
+  },
+  "elapsed_sec": 3.26,
+  "response": "{\"action\":\"edit\",\"index\":1,\"field\":\"价格\",\"value\":\"2.5\"}"
+}

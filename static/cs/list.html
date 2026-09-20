@@ -6,12 +6,16 @@
 <title>我的采购清单</title>
 <style>
   body{font-family:-apple-system,"PingFang SC",sans-serif;margin:0;background:#f5f6f8;color:#222}
-  .wrap{max-width:760px;margin:0 auto;padding:16px}
+  .wrap{max-width:1200px;margin:0 auto;padding:16px}
   h1{font-size:18px}
-  table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{min-width:1100px;width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;
         box-shadow:0 1px 4px rgba(0,0,0,.08);table-layout:fixed}
   th,td{padding:8px 10px;border-bottom:1px solid #eee;font-size:14px;word-break:break-all;
         text-align:left;vertical-align:top}
+  th:first-child,td:first-child{width:36px}
+  th:nth-child(2),td:nth-child(2){width:200px}
+  th:last-child,td:last-child{width:110px}
   th{background:#fafafa;color:#666;font-weight:600}
   td[contenteditable]{cursor:text}
   td[contenteditable]:focus{outline:2px solid #4a90d9;background:#f0f7ff}
@@ -29,43 +33,53 @@
 <div class="wrap">
   <h1>📦 我的采购清单</h1>
   <div class="bar">
-    <button onclick="location.href=exportUrl()">⬇️ 导出 Excel</button>
+    <button id="export" disabled onclick="location.href=exportUrl()">⬇️ 导出 Excel</button>
     <button class="ghost" onclick="load()">↻ 刷新</button>
   </div>
   <div id="list"><div class="empty">加载中…</div></div>
 </div>
 <div id="tip"></div>
 <script>
+const prefix = location.pathname.match(/^\/merchant\/(?:customer|manage)\/[a-f0-9]{24}(?=\/|$)/)?.[0] || '';
 const k = new URLSearchParams(location.search).get('k') || '';
-const exportUrl = () => `/cs/link/${k}/export.xlsx`;
+const exportUrl = () => `${prefix}/cs/link/${k}/export.xlsx`;
 function tip(msg){ const t=document.getElementById('tip'); t.textContent=msg; t.style.opacity=1;
   setTimeout(()=>t.style.opacity=0, 1500); }
 async function load(){
-  const r = await fetch(`/cs/link/${k}`);
+  document.getElementById('export').disabled = true;
+  const r = await fetch(`${prefix}/cs/link/${k}`);
   if(!r.ok){ document.getElementById('list').innerHTML=
     '<div class="empty">链接无效或已过期，请找商家重新生成</div>'; return; }
   const {notes} = await r.json();
   if(!notes.length){ document.getElementById('list').innerHTML=
     '<div class="empty">清单还是空的——先在 Telegram 里拍照发给我吧</div>'; return; }
+  document.getElementById('export').disabled = false;
   const keys = [...new Set(notes.flatMap(n=>Object.keys(n.fields)))];
-  let html = '<table><tr><th style="width:36px">#</th>' +
-    keys.map(x=>`<th>${esc(x)}</th>`).join('') + '</tr>';
+  let html = '<div class="table-scroll"><table><tr><th style="width:36px">#</th>' +
+    keys.map(x=>`<th>${esc(x)}</th>`).join('') + '<th>确认状态</th><th>商品照片</th></tr>';
   notes.forEach((n,i)=>{
     html += `<tr><td>${i+1}</td>` + keys.map(x=>{
-      const v = n.fields[x]||'';
+      const v = n.fields[x]??'';
+      if(x==='档口归属依据') return `<td data-id="${n.id}" data-field="${esc(x)}">${esc(v)}</td>`;
       const isPhoto = x.includes('图') || /^photo$/i.test(x);
-      if(isPhoto && n.photo) return `<td><img class="photo" src="/cs/photo?path=${encodeURIComponent(n.photo)}" onerror="this.remove()"></td>`;
+      if(isPhoto && n.photo) return `<td><img class="photo" src="${esc(prefix+n.photo)}" onerror="this.remove()"></td>`;
       return `<td contenteditable="true" data-id="${n.id}" data-field="${esc(x)}"
-        onblur="edit(this)">${esc(v)}</td>`;}).join('') + '</tr>';
+        onblur="edit(this)">${esc(v)}</td>`;}).join('') + `<td>${n.status==='draft'?'待确认':'已确认'}</td><td>${n.photo?`<img class="photo" src="${esc(prefix+n.photo)}">`:''}</td></tr>`;
   });
-  document.getElementById('list').innerHTML = html + '</table>' +
-    '<p class="saved">提示：直接点击单元格即可修改，改完自动保存</p>';
+  document.getElementById('list').innerHTML = html + '</table></div>' +
+    '<p class="saved">提示：待确认条目已包含在清单及导出中；档口信息待补充时请直接编辑对应列，或在 Telegram 发送“清单第1、2条 档口：A档口”。核对后可回复“确认”。左右滑动查看全部字段；点击单元格修改，改完自动保存</p>';
 }
 async function edit(td){
   const value = td.textContent.trim();
-  const r = await fetch(`/cs/link/${k}/note/${td.dataset.id}`, {
+  const r = await fetch(`${prefix}/cs/link/${k}/note/${td.dataset.id}`, {
     method:'PATCH', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({field: td.dataset.field, value})});
+  if(r.ok){
+    const updated = await r.json();
+    for(const cell of document.querySelectorAll('td[data-id]')){
+      if(cell.dataset.id === td.dataset.id && updated.fields[cell.dataset.field] !== undefined) cell.textContent = updated.fields[cell.dataset.field];
+    }
+  }
   tip(r.ok ? '已保存 ✓' : '保存失败');
 }
 function esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }

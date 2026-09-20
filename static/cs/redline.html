@@ -24,6 +24,7 @@
 <body>
 <div class="card">
   <h1>⚠️ 转人工红线修改</h1>
+  <p>商家在微信 Bot 设置需要转人工的红线，确认本次修改后生效。未设置的场景不会自动添加为档口红线。</p>
   <div class="scope" id="scope"></div>
   <div class="box old" id="old">加载中…</div>
   <div class="arrow">↓ 改为</div>
@@ -36,9 +37,11 @@
 </div>
 <script>
 const q = new URLSearchParams(location.search);
-const id = q.get('i'), t = q.get('t');
+const prefix = location.pathname.match(/^\/merchant\/(?:manage|customer)\/[a-f0-9]{24}(?=\/|$)/)?.[0] || '';
+const id = q.get('i'), t = q.get('t'), auth = q.get('auth') || '';
+const authQuery = auth ? `&auth=${encodeURIComponent(auth)}` : '';
 async function load(){
-  const r = await fetch(`/tickets/${id}`);
+  const r = await fetch(`${prefix}/tickets/${id}?t=${encodeURIComponent(t)}${authQuery}`);
   if(!r.ok){ document.getElementById('old').textContent='工单不存在或已过期'; return; }
   const {payload} = await r.json();
   document.getElementById('scope').textContent =
@@ -48,7 +51,7 @@ async function load(){
   document.getElementById('new').textContent = payload.text_raw;
 }
 async function decide(ok){
-  const r = await fetch(`/tickets/${id}/decision`, {method:'POST',
+  const r = await fetch(`${prefix}/tickets/${id}/decision${auth ? `?auth=${encodeURIComponent(auth)}` : ''}`, {method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({token:t, approved:ok})});
   const d = document.getElementById('done');

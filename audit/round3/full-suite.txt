@@ -1,0 +1,150 @@
+..sss................................................................... [ 37%]
+......F........F...............................FFF.FFF.................. [ 75%]
+..............................................                           [100%]
+=================================== FAILURES ===================================
+______________________ test_full_catalog_quote_end_to_end ______________________
+tests/test_fields.py:230: in test_full_catalog_quote_end_to_end
+    assert q.status_code == 200
+E   assert 503 == 200
+E    +  where 503 = <Response [503 Service Unavailable]>.status_code
+____________________ test_multi_item_quote_with_adjustment _____________________
+tests/test_quote.py:107: in test_multi_item_quote_with_adjustment
+    q.generate_v2(conn, st, [
+catalog/quote.py:246: in generate_v2
+    wb = openpyxl.load_workbook(TEMPLATE_V2_PATH)   # 商家真模板（ELETRO BELEZA 单Sheet）
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:346: in load_workbook
+    reader = ExcelReader(filename, read_only, keep_vba,
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:123: in __init__
+    self.archive = _validate_archive(fn)
+                   ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:95: in _validate_archive
+    archive = ZipFile(filename, 'r')
+              ^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/lib/python3.12/zipfile/__init__.py:1353: in __init__
+    self.fp = io.open(file, filemode)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/a1/workSpace/Eryuan/dangkou-v2/catalog/../data/quote_template_v2.xlsx'
+_________________________ test_full_fields_three_items _________________________
+tests/test_quote_v22.py:107: in test_full_fields_three_items
+    quote.generate_v2(conn, st, [
+catalog/quote.py:246: in generate_v2
+    wb = openpyxl.load_workbook(TEMPLATE_V2_PATH)   # 商家真模板（ELETRO BELEZA 单Sheet）
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:346: in load_workbook
+    reader = ExcelReader(filename, read_only, keep_vba,
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:123: in __init__
+    self.archive = _validate_archive(fn)
+                   ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:95: in _validate_archive
+    archive = ZipFile(filename, 'r')
+              ^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/lib/python3.12/zipfile/__init__.py:1353: in __init__
+    self.fp = io.open(file, filemode)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/a1/workSpace/Eryuan/dangkou-v2/catalog/../data/quote_template_v2.xlsx'
+________________________ test_twenty_items_insert_path _________________________
+tests/test_quote_v22.py:172: in test_twenty_items_insert_path
+    quote.generate_v2(conn, st, items, 0, out)
+catalog/quote.py:246: in generate_v2
+    wb = openpyxl.load_workbook(TEMPLATE_V2_PATH)   # 商家真模板（ELETRO BELEZA 单Sheet）
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:346: in load_workbook
+    reader = ExcelReader(filename, read_only, keep_vba,
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:123: in __init__
+    self.archive = _validate_archive(fn)
+                   ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:95: in _validate_archive
+    archive = ZipFile(filename, 'r')
+              ^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/lib/python3.12/zipfile/__init__.py:1353: in __init__
+    self.fp = io.open(file, filemode)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/a1/workSpace/Eryuan/dangkou-v2/catalog/../data/quote_template_v2.xlsx'
+________________________ test_deposit_default_and_edges ________________________
+tests/test_quote_v22.py:191: in test_deposit_default_and_edges
+    quote.generate_v2(conn, st, [{'category': 'razor', 'product_id': 'r0', 'quantity': 100}], 0, out)
+catalog/quote.py:246: in generate_v2
+    wb = openpyxl.load_workbook(TEMPLATE_V2_PATH)   # 商家真模板（ELETRO BELEZA 单Sheet）
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:346: in load_workbook
+    reader = ExcelReader(filename, read_only, keep_vba,
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:123: in __init__
+    self.archive = _validate_archive(fn)
+                   ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:95: in _validate_archive
+    archive = ZipFile(filename, 'r')
+              ^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/lib/python3.12/zipfile/__init__.py:1353: in __init__
+    self.fp = io.open(file, filemode)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/a1/workSpace/Eryuan/dangkou-v2/catalog/../data/quote_template_v2.xlsx'
+______________________ test_discount_negative_adjustment _______________________
+tests/test_quote_v22.py:215: in test_discount_negative_adjustment
+    quote.generate_v2(conn, st, [{'category': 'razor', 'product_id': 'r0', 'quantity': 100}],
+catalog/quote.py:246: in generate_v2
+    wb = openpyxl.load_workbook(TEMPLATE_V2_PATH)   # 商家真模板（ELETRO BELEZA 单Sheet）
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:346: in load_workbook
+    reader = ExcelReader(filename, read_only, keep_vba,
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:123: in __init__
+    self.archive = _validate_archive(fn)
+                   ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:95: in _validate_archive
+    archive = ZipFile(filename, 'r')
+              ^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/lib/python3.12/zipfile/__init__.py:1353: in __init__
+    self.fp = io.open(file, filemode)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/a1/workSpace/Eryuan/dangkou-v2/catalog/../data/quote_template_v2.xlsx'
+___________________ test_discount_plus_custom_deposit_combo ____________________
+tests/test_quote_v22.py:226: in test_discount_plus_custom_deposit_combo
+    quote.generate_v2(conn, st, [
+catalog/quote.py:246: in generate_v2
+    wb = openpyxl.load_workbook(TEMPLATE_V2_PATH)   # 商家真模板（ELETRO BELEZA 单Sheet）
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:346: in load_workbook
+    reader = ExcelReader(filename, read_only, keep_vba,
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:123: in __init__
+    self.archive = _validate_archive(fn)
+                   ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:95: in _validate_archive
+    archive = ZipFile(filename, 'r')
+              ^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/lib/python3.12/zipfile/__init__.py:1353: in __init__
+    self.fp = io.open(file, filemode)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/a1/workSpace/Eryuan/dangkou-v2/catalog/../data/quote_template_v2.xlsx'
+___________________________ test_price_zero_and_tiny ___________________________
+tests/test_quote_v22.py:249: in test_price_zero_and_tiny
+    quote.generate_v2(conn, st, [{'category': 'razor', 'product_id': 'r0', 'quantity': 50}], 50, out)
+catalog/quote.py:246: in generate_v2
+    wb = openpyxl.load_workbook(TEMPLATE_V2_PATH)   # 商家真模板（ELETRO BELEZA 单Sheet）
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:346: in load_workbook
+    reader = ExcelReader(filename, read_only, keep_vba,
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:123: in __init__
+    self.archive = _validate_archive(fn)
+                   ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:95: in _validate_archive
+    archive = ZipFile(filename, 'r')
+              ^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.12/3.12.14/Frameworks/Python.framework/Versions/3.12/lib/python3.12/zipfile/__init__.py:1353: in __init__
+    self.fp = io.open(file, filemode)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/a1/workSpace/Eryuan/dangkou-v2/catalog/../data/quote_template_v2.xlsx'
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv/lib/python3.12/site-packages/starlette/testclient.py:53
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/e2e/test_real_chain.py:34: BLOCKED: 缺 BAILIAN_API_KEY 或 CS_TEST_PHOTO 原始已知照片
+SKIPPED [1] tests/e2e/test_real_chain.py:49: BLOCKED: 缺 BAILIAN_API_KEY
+SKIPPED [1] tests/e2e/test_real_chain.py:63: BLOCKED: 需 TG_BOT_TOKEN、TG_TEST_CHAT_ID、RUN_REAL_TG=1 显式开启真实发送
+8 failed, 179 passed, 3 skipped, 2 warnings in 5.60s

@@ -1,0 +1,25 @@
+{
+  "workbook": "/Users/a1/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_e5mflt4samil22_c065/temp/drag/成本报价单.xlsx",
+  "sheet_count": 1,
+  "category": "吹风机",
+  "category_key": "cat_9cd8dac6a84d",
+  "header_row": 2,
+  "field_count": 11,
+  "image_count": 7,
+  "product_count": 8,
+  "blank_model_count": 3,
+  "duplicate_hd15_count": 2,
+  "public_product_count": 8,
+  "embedding_count": 8,
+  "photo_candidate_count": 3,
+  "photo_hit_product_id": "7b402178986716ba",
+  "tg_reply": "本店可介绍以下在线商品（展示部分）：\n1. 【吹风机】戴森款HD15\n颜色：大红色.玫红色.紫色.银灰色\n装箱数量：单嘴20PCS五嘴10pcs\n体积：单嘴：57.5*37.3*42.5CM           五嘴：50*34*45.5CM\n重量：单嘴：17KG/箱      五嘴：12KG/箱\n\n2. 【吹风机】戴森款HD15\n颜色：马卡龙色.陶瓷白金色.陶瓷蓝金色.镍铜色\n装箱数量：单嘴20PCS五嘴10pcs\n体积：单嘴：57.5*37.3*42.5CM           五嘴：50*34*45.5CM\n重量：单嘴：17KG/箱      五嘴：12KG/箱\n\n3. 【吹风机】戴森款HD16带全部正版功能\n颜色：落日玫瑰色.湛蓝紫色.彩陶青色\n装箱数量：单嘴20PCS五嘴10pcs\n体积：单嘴：36.5*14.5*9CM                五嘴：38.5*28.2*9CM\n重量：单嘴：19KG/箱         五嘴：15.5KG/箱",
+  "tg_photo_count": 3,
+  "tg_photo_bytes": [
+    72789,
+    205823,
+    62400
+  ],
+  "template_download": "audit/round20/dynamic-template/吹风机-标准导入模板.xlsx",
+  "passed": true
+}

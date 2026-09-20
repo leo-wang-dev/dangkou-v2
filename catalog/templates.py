@@ -82,6 +82,7 @@ TEMPLATES = {t.key: t for t in (RAZOR, CURLER)}
 def row_to_dict(t: Template, row) -> dict:
     keys = row.keys() if hasattr(row, 'keys') else ()
     d = {label: row[col] for col, label in t.fields if col in keys}
+    d.update({label: row[col] for col, label in [('cs_visible', '可观测')] if col in keys})
     imgs = row['images'] if 'images' in keys else '[]'
     d.update({'内部货号': row['inner_code'], '状态': row['status'],
               '主图': row['image_main'], 'id': row['id'],

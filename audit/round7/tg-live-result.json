@@ -1,0 +1,39 @@
+{
+  "bot_username": "kehu_serve_bot",
+  "mode": "real Telegram + real Bailian; isolated local test database",
+  "inbox": [
+    {
+      "update_id": 669210682,
+      "processed": 1,
+      "attempts": 0,
+      "last_error": null
+    },
+    {
+      "update_id": 669210683,
+      "processed": 1,
+      "attempts": 0,
+      "last_error": null
+    }
+  ],
+  "outbox": [
+    {
+      "id": 1,
+      "channel": "tg",
+      "sent": 1,
+      "attempts": 0,
+      "last_error": null
+    },
+    {
+      "id": 2,
+      "channel": "tg",
+      "sent": 1,
+      "attempts": 0,
+      "last_error": null
+    }
+  ],
+  "limitations": [
+    "incoming photos not received yet",
+    "Web list URL is localhost, cannot be opened directly on a remote phone",
+    "merchant notification worker not enabled; owner contacts/catalog not configured in isolated test database"
+  ]
+}

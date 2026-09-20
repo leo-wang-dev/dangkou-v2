@@ -1,0 +1,32 @@
+[
+ {
+  "case": "unit-core",
+  "status": "pass",
+  "exit": 0
+ },
+ {
+  "case": "unit-bot",
+  "status": "pass",
+  "exit": 0
+ },
+ {
+  "case": "unit-api",
+  "status": "pass",
+  "exit": 0
+ },
+ {
+  "case": "regression",
+  "status": "fail",
+  "exit": 1
+ },
+ {
+  "case": "e2e-pages",
+  "status": "pass",
+  "exit": 0
+ },
+ {
+  "case": "_cleanup",
+  "status": "pass",
+  "problems": []
+ }
+]

@@ -1,0 +1,820 @@
+.........F................F..........FF....F........FF........F..FF..... [ 21%]
+......F....FsssF.......................F..F.....FFFFFF.......FFFFF.....F [ 42%]
+F..F.F.................................FF............................... [ 64%]
+......................F..............FF..........F.....F.......F..FF.... [ 85%]
+................................................                         [100%]
+=================================== FAILURES ===================================
+____________ test_same_customer_text_not_duplicated_in_llm_history _____________
+
+env = (<sqlite3.Connection object at 0x10b8c32e0>, <starlette.testclient.TestClient object at 0x10bc4faa0>, <catalog.csbot.CsBot object at 0x10bc4fb90>)
+
+    def test_same_customer_text_not_duplicated_in_llm_history(env):
+        _, _, bot = env
+        bot.handle_update({'update_id': 9, 'message': {'chat': {'id': 100},
+                          'from': {'id': 100}, 'text': 'MODEL-1 60个多少钱'}})
+>       messages = bot.llm.chat_text.call_args.args[1]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'args'
+
+audit/test_boundaries_round2.py:57: AttributeError
+_______________ test_b_tier_visibility_fields_can_be_maintained ________________
+
+page = <Page url='http://127.0.0.1:52980/?t=round2-isolated-service-token'>
+site = {'base': 'http://127.0.0.1:52980', 'conn': <sqlite3.Connection object at 0x10ba2b880>, 'api': <httpx.Client object at ...e0>, 'photo': PosixPath('/Users/a1/workSpace/Eryuan/dangkou-v2/data/cs_photos/audit-browser-gqrmi6ik/sample.jpg'), ...}
+
+    def test_b_tier_visibility_fields_can_be_maintained(page, site):
+        products(page, site, category='卷发棒')
+        page.locator('.pcard').get_by_role('button', name='编辑').click()
+>       expect(page.locator('#modalBox')).to_contain_text('阶梯价')
+E       AssertionError: Locator expected to contain text '阶梯价'
+E       Actual value: 编辑商品（卷发棒）ITEM.NO 型号
+E             装箱尺寸
+E             装箱数量
+E             价格
+E             电压
+E             功率
+E             发热体
+E             材质
+E             频率
+E             备注
+E             可观测
+E             图片（点 × 删除，点 ＋ 上传新图）＋
+E         
+E             取消
+E             提交
+E           保存后立即生效。 
+E       Call log:
+E         - Expect "to_contain_text" locator("#modalBox") with timeout 5000ms
+E         - waiting for locator("#modalBox")
+E           - locator resolved to <div class="box" id="modalBox"></div>
+E           - unexpected value ""
+E           13 × locator resolved to <div class="box" id="modalBox">…</div>
+E              - unexpected value "编辑商品（卷发棒）ITEM.NO 型号
+E             装箱尺寸
+E             装箱数量
+E             价格
+E             电压
+E             功率
+E             发热体
+E             材质
+E             频率
+E             备注
+E             可观测
+E             图片（点 × 删除，点 ＋ 上传新图）＋
+E         
+E             取消
+E             提交
+E           保存后立即生效。"
+E       
+E       Aria snapshot:
+E       - heading "编辑商品（卷发棒）" [level=3]
+E       - text: ITEM.NO 型号
+E       - textbox: CURLER-1
+E       - text: 装箱尺寸
+E       - textbox
+E       - text: 装箱数量
+E       - textbox
+E       - text: 价格
+E       - textbox: "10"
+E       - text: 电压
+E       - textbox
+E       - text: 功率
+E       - textbox
+E       - text: 发热体
+E       - textbox
+E       - text: 材质
+E       - textbox
+E       - text: 频率
+E       - textbox
+E       - text: 备注
+E       - textbox
+E       - text: 可观测
+E       - textbox: "1"
+E       - text: 图片（点 × 删除，点 ＋ 上传新图）
+E       - button "＋"
+E       - button "取消"
+E       - button "提交"
+E       - paragraph: 保存后立即生效。
+
+audit/test_browser_round2.py:305: AssertionError
+____________________ test_redline_card_decision_click[True] ____________________
+
+page = <Page url='http://127.0.0.1:52980/cs/redline.html?i=6&t=9o-m0XDG552ylhjabLTMiDjv4OzwBiya'>
+site = {'base': 'http://127.0.0.1:52980', 'conn': <sqlite3.Connection object at 0x10ba2a3e0>, 'api': <httpx.Client object at ...e0>, 'photo': PosixPath('/Users/a1/workSpace/Eryuan/dangkou-v2/data/cs_photos/audit-browser-yrmpz4h8/sample.jpg'), ...}
+approve = True
+
+    @pytest.mark.parametrize('approve', [True, False])
+    def test_redline_card_decision_click(page, site, approve):
+        ticket = new_redline(site)
+        page.goto(f'{site["base"]}/cs/redline.html?i={ticket["id"]}&t={ticket["token"]}')
+>       expect(page.locator('#old')).to_contain_text('20')
+E       AssertionError: Locator expected to contain text '20'
+E       Actual value: 账期、质量投诉、能否定制的问题转人工。 
+E       Call log:
+E         - Expect "to_contain_text" locator("#old") with timeout 5000ms
+E         - waiting for locator("#old")
+E           14 × locator resolved to <div id="old" class="box old">账期、质量投诉、能否定制的问题转人工。</div>
+E              - unexpected value "账期、质量投诉、能否定制的问题转人工。"
+E       
+E       Aria snapshot:
+E       - text: 账期、质量投诉、能否定制的问题转人工。
+
+audit/test_browser_round2.py:380: AssertionError
+___________________ test_redline_card_decision_click[False] ____________________
+
+page = <Page url='http://127.0.0.1:52980/cs/redline.html?i=7&t=3wG4pbr99TU9QYSvoYp9jv2OUkvogzr4'>
+site = {'base': 'http://127.0.0.1:52980', 'conn': <sqlite3.Connection object at 0x10ba2ba60>, 'api': <httpx.Client object at ...e0>, 'photo': PosixPath('/Users/a1/workSpace/Eryuan/dangkou-v2/data/cs_photos/audit-browser-k37hf28l/sample.jpg'), ...}
+approve = False
+
+    @pytest.mark.parametrize('approve', [True, False])
+    def test_redline_card_decision_click(page, site, approve):
+        ticket = new_redline(site)
+        page.goto(f'{site["base"]}/cs/redline.html?i={ticket["id"]}&t={ticket["token"]}')
+>       expect(page.locator('#old')).to_contain_text('20')
+E       AssertionError: Locator expected to contain text '20'
+E       Actual value: 账期、质量投诉、能否定制的问题转人工。 
+E       Call log:
+E         - Expect "to_contain_text" locator("#old") with timeout 5000ms
+E         - waiting for locator("#old")
+E           14 × locator resolved to <div id="old" class="box old">账期、质量投诉、能否定制的问题转人工。</div>
+E              - unexpected value "账期、质量投诉、能否定制的问题转人工。"
+E       
+E       Aria snapshot:
+E       - text: 账期、质量投诉、能否定制的问题转人工。
+
+audit/test_browser_round2.py:380: AssertionError
+_____________________ test_tier_edit_persists_and_reopens ______________________
+
+page = <Page url='http://127.0.0.1:52980/?t=round2-isolated-service-token'>
+site = {'base': 'http://127.0.0.1:52980', 'conn': <sqlite3.Connection object at 0x10b8c31f0>, 'api': <httpx.Client object at ...e0>, 'photo': PosixPath('/Users/a1/workSpace/Eryuan/dangkou-v2/data/cs_photos/audit-browser-7ygao97z/sample.jpg'), ...}
+
+    def test_tier_edit_persists_and_reopens(page, site):
+        products(page, site, category='卷发棒')
+        page.locator('.pcard').get_by_role('button', name='编辑').click()
+>       page.locator('#fg-tier_price').fill('20:15;50:13')
+
+audit/test_browser_round2.py:432: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py:18398: in fill
+    self._sync(
+.venv/lib/python3.12/site-packages/playwright/_impl/_locator.py:219: in fill
+    return await self._frame.fill(self._selector, strict=True, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/playwright/_impl/_frame.py:637: in fill
+    await self._fill(**locals_to_params(locals()))
+.venv/lib/python3.12/site-packages/playwright/_impl/_frame.py:649: in _fill
+    await self._channel.send("fill", self._timeout, locals_to_params(locals()))
+.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <playwright._impl._connection.Connection object at 0x10bbee030>
+cb = <function Channel.send.<locals>.<lambda> at 0x10c2e6020>
+is_internal = False, title = None
+
+    async def wrap_api_call(
+        self, cb: Callable[[], Any], is_internal: bool = False, title: str = None
+    ) -> Any:
+        if self._api_zone.get():
+            return await cb()
+        task = asyncio.current_task(self._loop)
+        parsed_st = _attach_api_call_information(
+            getattr(task, "__pw_stack__", None) or _capture_stack_trace(),
+            is_internal,
+            title,
+        )
+        self._api_zone.set(parsed_st)
+        try:
+            return await cb()
+        except Exception as error:
+>           raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E           playwright._impl._errors.TimeoutError: Locator.fill: Timeout 4500ms exceeded.
+E           Call log:
+E             - waiting for locator("#fg-tier_price")
+
+.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:632: TimeoutError
+_____________________ test_product_redline_reaches_persona _____________________
+
+env = (<sqlite3.Connection object at 0x10ba2a2f0>, <starlette.testclient.TestClient object at 0x10cbd6090>, <catalog.csbot.CsBot object at 0x10c329e20>)
+
+    def test_product_redline_reaches_persona(env):
+        conn, _, bot = env
+        cs.set_redline(conn, 'p1', 'MODEL-1独有红线：少于88个转人工')
+        bot._on_text({'id': 'a', 'tg_name': 'audit'}, 'MODEL-1 60个多少钱')
+>       system = bot.llm.chat_text.call_args.args[0]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'args'
+
+audit/test_release_gates.py:125: AttributeError
+_________________ test_persona_quote_uses_code_tier_selection __________________
+
+env = (<sqlite3.Connection object at 0x10c4eab60>, <starlette.testclient.TestClient object at 0x10cb6d670>, <catalog.csbot.CsBot object at 0x10cb6d910>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c6d0e60>
+
+    def test_persona_quote_uses_code_tier_selection(env, monkeypatch):
+        _, _, bot = env
+>       spy = Mock(wraps=cs.pick_tier)
+                         ^^^^^^^^^^^^
+E       AttributeError: module 'catalog.cs' has no attribute 'pick_tier'
+
+audit/test_release_gates.py:131: AttributeError
+_____________ test_followup_without_quantity_keeps_product_redline _____________
+
+env = (<sqlite3.Connection object at 0x10c524040>, <starlette.testclient.TestClient object at 0x10c2aba10>, <catalog.csbot.CsBot object at 0x10d631130>)
+
+    def test_followup_without_quantity_keeps_product_redline(env):
+        conn, _, bot = env
+        cs.set_redline(conn, 'p1', '仅本款：不接受月结')
+        bot._on_text({'id':'a'}, 'MODEL-1 60个多少钱')
+        bot._on_text({'id':'a'}, '这款能月结吗')
+>       assert '仅本款：不接受月结' in bot.llm.chat_text.call_args.args[0]
+E       AssertionError: assert '仅本款：不接受月结' in '你是义乌档口的智能客服，替商家接待采购员。规则：\n1) 所有价格和数量报价问题无条件转人工，绝不自动报价，店级/商品级规则不得覆盖；\n   商品成本与价格不提供给模型；不得猜测或承诺金额；\n2) 商品库没有的货不编造，回复请商家...算价格或承诺价格。平台公共红线，店级与商品级规则均不能覆盖。军火弹药及违禁品询价：无条件转人工（商家不可关闭）。\n【当前适用红线】账期、质量投诉、能否定制的问题转人工。\n未命中红线时只输出 <<PASS>>，不要报价或提供任何数字。'
+
+audit/test_round3_gaps.py:21: AssertionError
+___________ test_hidden_known_product_routes_to_owner_without_price ____________
+
+env = (<sqlite3.Connection object at 0x10ba2ba60>, <starlette.testclient.TestClient object at 0x10bf21b80>, <catalog.csbot.CsBot object at 0x10bf21be0>)
+
+    def test_hidden_known_product_routes_to_owner_without_price(env):
+        conn, _, bot = env
+        conn.execute("UPDATE product_curler SET cs_visible=0 WHERE id='p1'")
+        conn.commit()
+        answer = bot._on_text({'id':'a'}, 'MODEL-1 60个多少钱')
+>       assert '暂不在线' in answer and '¥' not in answer
+E       AssertionError: assert ('暂不在线' in '这个问题需要老板确认。店铺暂未填写联系方式，请稍后再试。')
+
+audit/test_round3_gaps.py:44: AssertionError
+___________ test_exact_configured_price_not_rounded_by_output_format ___________
+
+env = (<sqlite3.Connection object at 0x10ba2bf10>, <starlette.testclient.TestClient object at 0x10c778a40>, <catalog.csbot.CsBot object at 0x10c778ad0>)
+
+    def test_exact_configured_price_not_rounded_by_output_format(env):
+        conn, _, bot = env
+        conn.execute("UPDATE product_curler SET tier_price='20:12345.67' WHERE id='p1'")
+        conn.commit()
+>       assert '12345.67' in bot._on_text({'id':'a'}, 'MODEL-1 60个多少钱')
+E       AssertionError: assert '12345.67' in '这个问题需要老板确认。店铺暂未填写联系方式，请稍后再试。'
+E        +  where '这个问题需要老板确认。店铺暂未填写联系方式，请稍后再试。' = _on_text({'id': 'a'}, 'MODEL-1 60个多少钱')
+E        +    where _on_text = <catalog.csbot.CsBot object at 0x10c778ad0>._on_text
+
+audit/test_round3_gaps.py:52: AssertionError
+________________ test_import_edit_retains_tiers_and_visibility _________________
+
+page = <Page url='http://127.0.0.1:53074/?t=round2-isolated-service-token'>
+site = {'base': 'http://127.0.0.1:53074', 'conn': <sqlite3.Connection object at 0x10c4e8d60>, 'api': <httpx.Client object at ...00>, 'photo': PosixPath('/Users/a1/workSpace/Eryuan/dangkou-v2/data/cs_photos/audit-browser-ecweitcl/sample.jpg'), ...}
+
+    def test_import_edit_retains_tiers_and_visibility(page,site):
+        tk = make_update(site)
+        detail = review(page,site,tk)
+        detail.get_by_role('button',name='编辑',exact=True).click()
+>       expect(page.locator('#fg-tier_price')).to_have_value('20:12;50:11')
+E       AssertionError: Locator expected to have Value '20:12;50:11'
+E       Actual value: None
+E       Error: element(s) not found 
+E       Call log:
+E         - Expect "to_have_value" locator("#fg-tier_price") with timeout 5000ms
+E         - waiting for locator("#fg-tier_price")
+E       
+E       Aria snapshot:
+E       - banner:
+E         - button "审核"
+E         - button "商品"
+E       - main:
+E         - text: "#1 整批导入 · 卷发棒 · 2026-09-18 02:19:19"
+E         - button "展开明细 ▾"
+E         - button "整单通过"
+E         - button "整单驳回"
+E         - text: 可展开明细逐行编辑（含图片）/驳回 更新 ITEM.NO 型号：CURLER-1 价格：12 可观测：1
+E         - button "✓通过"
+E         - button "编辑"
+E         - button "驳回"
+E       - heading "编辑草稿（审核修正）" [level=3]
+E       - text: ITEM.NO 型号
+E       - textbox: CURLER-1
+E       - text: 装箱尺寸
+E       - textbox
+E       - text: 装箱数量
+E       - textbox
+E       - text: 价格
+E       - textbox: "12"
+E       - text: 电压
+E       - textbox
+E       - text: 功率
+E       - textbox
+E       - text: 发热体
+E       - textbox
+E       - text: 材质
+E       - textbox
+E       - text: 频率
+E       - textbox
+E       - text: 备注
+E       - textbox
+E       - text: 可观测
+E       - textbox: "1"
+E       - text: 图片（点 × 删除，点 ＋ 上传新图）
+E       - button "＋"
+E       - button "取消"
+E       - button "提交"
+E       - paragraph: 提交后需整单通过或单行✓通过才生效。
+
+audit/test_round3_pages.py:20: AssertionError
+_______________________ test_redline_card_approve_effect _______________________
+
+server = ('http://127.0.0.1:18890', '/var/folders/z_/9jwqqszn5c99z0dvq7bydy0m0000gn/T/cs-e2e-qmoyhwv_/e2e.db')
+
+    def test_redline_card_approve_effect(server):
+        from playwright.sync_api import sync_playwright
+        base, db_path = server
+        # 走真实 API 建审批单（=微信 AI 工具调用同款入口）
+        req = urllib.request.Request(f'{base}/cs/redline', method='POST',
+                                     data=json.dumps({'text_raw': '数量少于50的转人工'}).encode(),
+                                     headers={'Content-Type': 'application/json', 'X-Service-Token': 'e2e-service-token'})
+        tid = json.load(urllib.request.urlopen(req))['ticket_id']
+        tickets = json.load(urllib.request.urlopen(urllib.request.Request(f'{base}/tickets', headers={'X-Service-Token': 'e2e-service-token'})))['tickets']
+        t = [x for x in tickets if x['id'] == tid][0]
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(f"{base}/cs/redline.html?i={tid}&t={t['token']}")
+            page.wait_for_selector('.new')
+            # 审批卡显示 旧文→新文
+            assert '50' in page.locator('.new').text_content()
+>           assert '20' in page.locator('.old').text_content()      # 默认文案(旧)含20
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: assert '20' in '账期、质量投诉、能否定制的问题转人工。'
+E            +  where '账期、质量投诉、能否定制的问题转人工。' = text_content()
+E            +    where text_content = <Locator frame=<Frame name= url='http://127.0.0.1:18890/cs/redline.html?i=1&t=uO6JVmGAMkiJmqwlEBVBI77L2FKRoi_g'> selector='.old'>.text_content
+E            +      where <Locator frame=<Frame name= url='http://127.0.0.1:18890/cs/redline.html?i=1&t=uO6JVmGAMkiJmqwlEBVBI77L2FKRoi_g'> selector='.old'> = locator('.old')
+E            +        where locator = <Page url='http://127.0.0.1:18890/cs/redline.html?i=1&t=uO6JVmGAMkiJmqwlEBVBI77L2FKRoi_g'>.locator
+
+tests/e2e/test_pages.py:111: AssertionError
+______________ test_merchant_approval_to_customer_shop_and_excel _______________
+
+page = <Page url='http://127.0.0.1:53120/?t=round2-isolated-service-token'>
+site = {'base': 'http://127.0.0.1:53120', 'conn': <sqlite3.Connection object at 0x10c5255d0>, 'api': <httpx.Client object at ...a0>, 'photo': PosixPath('/Users/a1/workSpace/Eryuan/dangkou-v2/data/cs_photos/audit-browser-sc777moa/sample.jpg'), ...}
+
+    def test_merchant_approval_to_customer_shop_and_excel(page,site):
+        api=site['api'];conn=site['conn']
+        tk=api.patch('/shop',json={'changes':{'shop_name':'联动测试档口','stall_no':'测试A123','tg_bot_id':'12345','owner_wechat':'TEST-OWNER-WX'}}).json()
+        detail=review(page,site,{'id':tk['ticket_id']})
+        expect(detail).to_contain_text('联动测试档口')
+        detail.locator('..').get_by_role('button',name='整单通过',exact=True).click()
+        expect(page.locator('#review')).to_contain_text('没有待办工单')
+        shop_link.verify_bot(conn,{'id':12345,'is_bot':True})
+        # Merchant changes a real catalog tier through approval; C bot sees the same DB.
+        tk=api.patch('/products/curler/c1',json={'changes':{'阶梯价':'20:15;50:13'}}).json()
+>       detail=review(page,site,{'id':tk['ticket_id']})
+                                      ^^^^^^^^^^^^^^^
+E       KeyError: 'ticket_id'
+
+tests/e2e/test_shop_linkage_page.py:21: KeyError
+___________________________ test_get_redline_default ___________________________
+
+client = <starlette.testclient.TestClient object at 0x10cc2ffe0>
+
+    def test_get_redline_default(client):
+        r = client.get('/cs/redline')
+        assert r.status_code == 200
+>       assert '20' in r.json()['text_raw']            # 默认预置
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert '20' in '账期、质量投诉、能否定制的问题转人工。'
+
+tests/test_cs_api.py:38: AssertionError
+___________________________ test_set_product_redline ___________________________
+
+client = <starlette.testclient.TestClient object at 0x10cc2c6e0>
+
+    def test_set_product_redline(client):
+        r = client.post('/cs/redline', json={'product_id': 'p1', 'text_raw': '这款50个起'})
+        tid = r.json()['ticket_id']
+        t = [x for x in client.get('/tickets').json()['tickets'] if x['id'] == tid][0]
+        client.post(f"/tickets/{t['id']}/decision", json={'token': t['token'], 'approved': True})
+        assert client.get('/cs/redline?product_id=p1').json()['text_raw'] == '这款50个起'
+>       assert '20' in client.get('/cs/redline?product_id=p2').json()['text_raw']  # 其他商品继承店级
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert '20' in '账期、质量投诉、能否定制的问题转人工。'
+
+tests/test_cs_api.py:71: AssertionError
+_______________________ test_parse_tiers_basic_and_order _______________________
+
+    def test_parse_tiers_basic_and_order():
+>       assert cs.parse_tiers('20:12;50:11;100:10.5') == [(20, 12.0), (50, 11.0), (100, 10.5)]
+               ^^^^^^^^^^^^^^
+E       AttributeError: module 'catalog.cs' has no attribute 'parse_tiers'
+
+tests/test_cs_core.py:24: AttributeError
+_________________________ test_parse_tiers_dirty_input _________________________
+
+    def test_parse_tiers_dirty_input():
+>       assert cs.parse_tiers('20个12元；50个11元') == [(20, 12.0), (50, 11.0)]      # 口语变体
+               ^^^^^^^^^^^^^^
+E       AttributeError: module 'catalog.cs' has no attribute 'parse_tiers'
+
+tests/test_cs_core.py:29: AttributeError
+___________________________ test_parse_tiers_single ____________________________
+
+    def test_parse_tiers_single():
+>       assert cs.parse_tiers('20:12') == [(20, 12.0)]
+               ^^^^^^^^^^^^^^
+E       AttributeError: module 'catalog.cs' has no attribute 'parse_tiers'
+
+tests/test_cs_core.py:36: AttributeError
+__________________________ test_pick_tier_by_quantity __________________________
+
+    def test_pick_tier_by_quantity():
+>       tiers = cs.parse_tiers('20:12;50:11;100:10.5')
+                ^^^^^^^^^^^^^^
+E       AttributeError: module 'catalog.cs' has no attribute 'parse_tiers'
+
+tests/test_cs_core.py:40: AttributeError
+_____________________________ test_pick_tier_empty _____________________________
+
+    def test_pick_tier_empty():
+>       assert cs.pick_tier([], 100) is None
+               ^^^^^^^^^^^^
+E       AttributeError: module 'catalog.cs' has no attribute 'pick_tier'
+
+tests/test_cs_core.py:49: AttributeError
+_____________________ test_store_redline_seeded_by_default _____________________
+
+conn = <sqlite3.Connection object at 0x10c4e88b0>
+
+    def test_store_redline_seeded_by_default(conn):
+        """init 后店级红线=默认预置文案（开箱即用）。"""
+        red = cs.get_redline(conn)
+>       assert '20' in red['text_raw'] and '1.2' in red['text_raw']
+E       AssertionError: assert ('20' in '账期、质量投诉、能否定制的问题转人工。')
+
+tests/test_cs_core.py:57: AssertionError
+_______________________ test_cs_keys_legal_in_normalize ________________________
+
+t = Template(key='curler', name='卷发棒', table='product_curler', dedup_field='item_no', fields=(('item_no', 'ITEM.NO 型号'), (...品全部图片文件名"],"image_count":N}]}\n用 python 的 json.dump(..., ensure_ascii=False, indent=1) 写入输出文件。\n完成后只回一行：DONE N（N=商品数）')
+changes = {'阶梯价': '20:12;50:11', '可观测': '1', '随便': 'x'}
+
+    def normalize_changes(t, changes: dict):
+        """字段把关（不做翻译——语义映射是 AI 的活，工具描述里给了字段清单）。
+    
+        合法键（模板label 或 列名）→ 统一成 label 键保留；
+        非法键不丢：值以"原字段：值"拼进"备注"（｜连接）。
+        建 单时调（B层：全非法→上层 400 让 AI 自纠）、决策时调（C层：存量脏单保命不 500）。
+        返回 (归一 changes, 进备注的原键清单)。
+        """
+        from .cs import reject_tiers
+        try:
+>           reject_tiers(changes)
+
+catalog/tickets.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {'阶梯价': '20:12;50:11', '可观测': '1', '随便': 'x'}
+
+    def reject_tiers(changes):
+        if any(k in changes for k in ('tier_price','阶梯价','阶梯报价')):
+>           raise ValueError('阶梯报价已取消；所有价格问题按平台公共红线转人工')
+E           ValueError: 阶梯报价已取消；所有价格问题按平台公共红线转人工
+
+catalog/cs.py:11: ValueError
+
+The above exception was the direct cause of the following exception:
+
+    def test_cs_keys_legal_in_normalize():
+        t = TEMPLATES['curler']
+>       norm, to_remark = tickets.normalize_changes(
+            t, {'阶梯价': '20:12;50:11', '可观测': '1', '随便': 'x'})
+
+tests/test_cs_fields.py:38: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+t = Template(key='curler', name='卷发棒', table='product_curler', dedup_field='item_no', fields=(('item_no', 'ITEM.NO 型号'), (...品全部图片文件名"],"image_count":N}]}\n用 python 的 json.dump(..., ensure_ascii=False, indent=1) 写入输出文件。\n完成后只回一行：DONE N（N=商品数）')
+changes = {'阶梯价': '20:12;50:11', '可观测': '1', '随便': 'x'}
+
+    def normalize_changes(t, changes: dict):
+        """字段把关（不做翻译——语义映射是 AI 的活，工具描述里给了字段清单）。
+    
+        合法键（模板label 或 列名）→ 统一成 label 键保留；
+        非法键不丢：值以"原字段：值"拼进"备注"（｜连接）。
+        建 单时调（B层：全非法→上层 400 让 AI 自纠）、决策时调（C层：存量脏单保命不 500）。
+        返回 (归一 changes, 进备注的原键清单)。
+        """
+        from .cs import reject_tiers
+        try:
+            reject_tiers(changes)
+        except ValueError as exc:
+>           raise TicketError(str(exc)) from exc
+E           catalog.tickets.TicketError: 阶梯报价已取消；所有价格问题按平台公共红线转人工
+
+catalog/tickets.py:74: TicketError
+________________________ test_set_tier_price_via_mutate ________________________
+
+client = <starlette.testclient.TestClient object at 0x10cab2b10>
+
+    def test_set_tier_price_via_mutate(client):
+        pid = _mk_product(client)
+        r = client.patch(f'/products/curler/{pid}', json={'changes': {'阶梯价': '20:12;50:11'}})
+>       assert r.status_code == 200
+E       assert 400 == 200
+E        +  where 400 = <Response [400 Bad Request]>.status_code
+
+tests/test_cs_fields.py:48: AssertionError
+_______________________ test_visible_requires_tier_price _______________________
+
+client = <starlette.testclient.TestClient object at 0x10ca8db20>
+
+    def test_visible_requires_tier_price(client):
+        """开可观测没给（也没已有）合法阶梯价 → 400（AI 自纠），提示口径。"""
+        pid = _mk_product(client)
+        r = client.patch(f'/products/curler/{pid}', json={'changes': {'可观测': '1'}})
+>       assert r.status_code == 400
+E       assert 200 == 400
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_cs_fields.py:61: AssertionError
+__________________ test_visible_ok_when_tier_in_same_changes ___________________
+
+client = <starlette.testclient.TestClient object at 0x10cc2c9b0>
+
+    def test_visible_ok_when_tier_in_same_changes(client):
+        pid = _mk_product(client)
+        r = client.patch(f'/products/curler/{pid}',
+                         json={'changes': {'可观测': '1', '阶梯价': '20:12'}})
+>       assert r.status_code == 200
+E       assert 400 == 200
+E        +  where 400 = <Response [400 Bad Request]>.status_code
+
+tests/test_cs_fields.py:69: AssertionError
+___________________ test_visible_ok_when_tier_already_in_db ____________________
+
+client = <starlette.testclient.TestClient object at 0x10ccfa720>
+
+    def test_visible_ok_when_tier_already_in_db(client):
+        pid = _mk_product(client)
+        # 先录阶梯价
+        r = client.patch(f'/products/curler/{pid}', json={'changes': {'阶梯价': '20:12'}})
+>       tid = r.json()['ticket_id']
+              ^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'ticket_id'
+
+tests/test_cs_fields.py:82: KeyError
+____________________ test_draft_edit_applies_and_rereceipts ____________________
+
+bot = <catalog.csbot.CsBot object at 0x10cd64590>
+conn = <sqlite3.Connection object at 0x10c524b80>
+
+    def test_draft_edit_applies_and_rereceipts(bot, conn):
+        bot.handle_update(_photo_upd())
+        bot.llm.edit_reply = '{"action":"edit","index":1,"field":"价格","value":"2.5"}'
+        bot.handle_update(_text_upd('1 价格改成2.5'))
+        f = json.loads(conn.execute("SELECT fields_json FROM cs_note WHERE status='draft'")
+                       .fetchone()['fields_json'])
+>       assert f['价格'] == '2.5'                                  # 改到草稿
+        ^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert '80R（照片识别，待确认）' == '2.5'
+E         
+E         - 2.5
+E         + 80R（照片识别，待确认）
+
+tests/test_csbot.py:126: AssertionError
+_________________________ test_draft_add_field_to_last _________________________
+
+bot = <catalog.csbot.CsBot object at 0x10cd64d70>
+conn = <sqlite3.Connection object at 0x10cad0310>
+
+    def test_draft_add_field_to_last(bot, conn):
+        bot.handle_update(_photo_upd())
+        bot.llm.edit_reply = '{"action":"add","field":"起订量","value":"1箱"}'
+        bot.handle_update(_text_upd('起订量一箱起'))
+        f = json.loads(conn.execute("SELECT fields_json FROM cs_note WHERE status='draft'")
+                       .fetchone()['fields_json'])
+>       assert f['起订量'] == '1箱'
+E       AssertionError: assert '未拍到' == '1箱'
+E         
+E         - 1箱
+E         + 未拍到
+
+tests/test_csbot.py:136: AssertionError
+____________________ test_catalog_brief_carries_cost_price _____________________
+
+bot = <catalog.csbot.CsBot object at 0x10cd67e90>
+conn = <sqlite3.Connection object at 0x10cad0040>
+
+    def test_catalog_brief_carries_cost_price(bot, conn):
+        """底价红线可判：商品简表带出厂价（标注内部禁报）。"""
+        conn.execute(
+            "INSERT INTO product_curler(id, inner_code, item_no, price, tier_price, cs_visible) "
+            "VALUES('p1','KS-X','8226','10','20:12',1)")
+        conn.commit()
+        brief = bot._catalog_brief()
+>       assert '成本价' in brief and '12' in brief and '内部' in brief
+E       AssertionError: assert ('成本价' in '在线商品型号：8226')
+
+tests/test_csbot.py:161: AssertionError
+__________________ test_transfer_escalates_with_rule_citation __________________
+
+bot = <catalog.csbot.CsBot object at 0x10cd67410>
+conn = <sqlite3.Connection object at 0x10ba289a0>
+
+    def test_transfer_escalates_with_rule_citation(bot, conn):
+        cs.set_redline(conn, None, '数量少于50的转人工', '数量少于50转人工')
+        bot.llm.text_reply = f'{TRANSFER_MARK}数量少于50转人工'
+        bot.handle_update(_text_upd('30个多少钱'))
+        # 客户侧：顶话术，不硬答
+        assert '老板' in bot.api.sent[-1][1]
+        assert '30个' not in bot.api.sent[-1][1] or True
+        # 商家侧：微信提醒含客户原话+红线原文
+        assert len(bot.notified) == 1
+        remind = bot.notified[0]
+>       assert '30个多少钱' in remind and '数量少于50的转人工' in remind
+E       AssertionError: assert ('30个多少钱' in '🔔 转人工提醒\n客户：buyer\n原话：30个多少钱\n命中说明：平台公共红线：价格或数量报价问题\n适用红线原文：所有涉及价格、单价、总价、成本、多少数量对应多少价格、报价、折扣、议价、运费及支付金额的问题，一律转人工；不得自动报价、计算价格或承诺价格。平台公共红线，店级与商品级规则均不能覆盖。军火弹药及违禁品询价：无条件转人工（商家不可关闭）。\nbot 已提供当前店铺联系方式，请留意客户主动联系。' and '数量少于50的转人工' in '🔔 转人工提醒\n客户：buyer\n原话：30个多少钱\n命中说明：平台公共红线：价格或数量报价问题\n适用红线原文：所有涉及价格、单价、总价、成本、多少数量对应多少价格、报价、折扣、议价、运费及支付金额的问题，一律转人工；不得自动报价、计算价格或承诺价格。平台公共红线，店级与商品级规则均不能覆盖。军火弹药及违禁品询价：无条件转人工（商家不可关闭）。\nbot 已提供当前店铺联系方式，请留意客户主动联系。')
+
+tests/test_csbot.py:186: AssertionError
+_________ test_photo_candidate_requires_selection_and_uses_store_tier __________
+
+env = (<sqlite3.Connection object at 0x10cad3c40>, <starlette.testclient.TestClient object at 0x10cd372c0>, <catalog.csbot.CsBot object at 0x10cd37710>)
+
+    def test_photo_candidate_requires_selection_and_uses_store_tier(env):
+        conn,_,bot=env
+        bot.llm.chat_vision.return_value=json.dumps([{'型号或品名':'MODEL-1','价格':'0.01','其他':'144含义待确认'}])
+        bot.handle_update(photo(200))
+        assert '询价1' in bot.api.send_message.call_args.args[1]
+        assert '¥11' not in bot.api.send_message.call_args.args[1]
+        customer=dict(conn.execute("SELECT * FROM cs_customer WHERE tg_id='100'").fetchone())
+        reply=bot._on_text(customer,'询价1 60个')
+>       assert '¥11/个' in reply and '0.01' not in reply
+E       AssertionError: assert ('¥11/个' in '这个问题需要老板确认。店铺暂未填写联系方式，请稍后再试。')
+
+tests/test_photo_inquiry.py:14: AssertionError
+_______ test_candidate_selection_rechecks_visibility_expiry_and_customer _______
+
+env = (<sqlite3.Connection object at 0x10cad09a0>, <starlette.testclient.TestClient object at 0x10ce53530>, <catalog.csbot.CsBot object at 0x10ce1d0a0>)
+
+    def test_candidate_selection_rechecks_visibility_expiry_and_customer(env):
+        conn,_,bot=env
+        photo_inquiry.save(conn,'a',[{'category':'curler','product_id':'p1','name':'MODEL-1'}])
+        conn.commit()
+        assert '¥' not in bot._on_text({'id':'b'},'询价1 60个')
+        conn.execute("UPDATE product_curler SET cs_visible=0 WHERE id='p1'")
+        conn.commit()
+>       assert '暂不在线' in bot._on_text({'id':'a'},'询价1 60个')
+E       AssertionError: assert '暂不在线' in '这个问题需要老板确认。店铺暂未填写联系方式，请稍后再试。'
+E        +  where '这个问题需要老板确认。店铺暂未填写联系方式，请稍后再试。' = _on_text({'id': 'a'}, '询价1 60个')
+E        +    where _on_text = <catalog.csbot.CsBot object at 0x10ce1d0a0>._on_text
+
+tests/test_photo_inquiry.py:25: AssertionError
+____________ test_same_customer_text_not_duplicated_in_llm_history _____________
+
+env = (<sqlite3.Connection object at 0x10cad2c50>, <starlette.testclient.TestClient object at 0x10dcb0e60>, <catalog.csbot.CsBot object at 0x10dcb1850>)
+
+    def test_same_customer_text_not_duplicated_in_llm_history(env):
+        _, _, bot = env
+        bot.handle_update({'update_id': 9, 'message': {'chat': {'id': 100},
+                          'from': {'id': 100}, 'text': 'MODEL-1 60个多少钱'}})
+>       messages = bot.llm.chat_text.call_args.args[1]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'args'
+
+tests/test_release_boundaries.py:57: AttributeError
+_____________________ test_product_redline_reaches_persona _____________________
+
+env = (<sqlite3.Connection object at 0x10cad3d30>, <starlette.testclient.TestClient object at 0x10e18bc80>, <catalog.csbot.CsBot object at 0x10e18bb90>)
+
+    def test_product_redline_reaches_persona(env):
+        conn, _, bot = env
+        cs.set_redline(conn, 'p1', 'MODEL-1独有红线：少于88个转人工')
+        bot._on_text({'id': 'a', 'tg_name': 'audit'}, 'MODEL-1 60个多少钱')
+>       system = bot.llm.chat_text.call_args.args[0]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'args'
+
+tests/test_release_gates.py:125: AttributeError
+_________________ test_persona_quote_uses_code_tier_selection __________________
+
+env = (<sqlite3.Connection object at 0x10c5253f0>, <starlette.testclient.TestClient object at 0x10e1f42f0>, <catalog.csbot.CsBot object at 0x10e1f4170>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e105310>
+
+    def test_persona_quote_uses_code_tier_selection(env, monkeypatch):
+        _, _, bot = env
+>       spy = Mock(wraps=cs.pick_tier)
+                         ^^^^^^^^^^^^
+E       AttributeError: module 'catalog.cs' has no attribute 'pick_tier'
+
+tests/test_release_gates.py:131: AttributeError
+__________ test_quote_is_computed_and_followup_revalidates_visibility __________
+
+env = (<sqlite3.Connection object at 0x10c4eb6a0>, <starlette.testclient.TestClient object at 0x10e5e4620>, <catalog.csbot.CsBot object at 0x10e552ea0>)
+
+    def test_quote_is_computed_and_followup_revalidates_visibility(env):
+        conn, _, bot = env
+        customer = {'id': 'a', 'tg_name': 'buyer'}
+>       assert '多少个' in bot._on_text(customer, 'MODEL-1')
+E       AssertionError: assert '多少个' in '已找到商品 MODEL-1。如需价格或采购数量方案，请直接联系老板。'
+E        +  where '已找到商品 MODEL-1。如需价格或采购数量方案，请直接联系老板。' = _on_text({'id': 'a', 'tg_name': 'buyer'}, 'MODEL-1')
+E        +    where _on_text = <catalog.csbot.CsBot object at 0x10e552ea0>._on_text
+
+tests/test_repair_flows.py:43: AssertionError
+________________ test_pending_mutation_revalidated_at_approval _________________
+
+env = (<sqlite3.Connection object at 0x10cad14e0>, <starlette.testclient.TestClient object at 0x10e8381d0>, <catalog.csbot.CsBot object at 0x10e72e4e0>)
+
+    def test_pending_mutation_revalidated_at_approval(env):
+        conn, client, _ = env
+        tk = client.patch('/products/curler/p1', headers=auth(), json={'changes': {'可观测':'1'}}).json()
+        conn.execute("UPDATE product_curler SET cs_visible=0,tier_price='' WHERE id='p1'")
+        conn.commit()
+        response = client.post(f"/tickets/{tk['ticket_id']}/decision", json={'token':tk['token'],'approved':True})
+>       assert response.status_code == 400
+E       assert 200 == 400
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_repair_flows.py:110: AssertionError
+_____________ test_followup_without_quantity_keeps_product_redline _____________
+
+env = (<sqlite3.Connection object at 0x10cad34c0>, <starlette.testclient.TestClient object at 0x10ea980b0>, <catalog.csbot.CsBot object at 0x10e96c710>)
+
+    def test_followup_without_quantity_keeps_product_redline(env):
+        conn, _, bot = env
+        cs.set_redline(conn, 'p1', '仅本款：不接受月结')
+        bot._on_text({'id':'a'}, 'MODEL-1 60个多少钱')
+        bot._on_text({'id':'a'}, '这款能月结吗')
+>       assert '仅本款：不接受月结' in bot.llm.chat_text.call_args.args[0]
+E       AssertionError: assert '仅本款：不接受月结' in '你是义乌档口的智能客服，替商家接待采购员。规则：\n1) 所有价格和数量报价问题无条件转人工，绝不自动报价，店级/商品级规则不得覆盖；\n   商品成本与价格不提供给模型；不得猜测或承诺金额；\n2) 商品库没有的货不编造，回复请商家...算价格或承诺价格。平台公共红线，店级与商品级规则均不能覆盖。军火弹药及违禁品询价：无条件转人工（商家不可关闭）。\n【当前适用红线】账期、质量投诉、能否定制的问题转人工。\n未命中红线时只输出 <<PASS>>，不要报价或提供任何数字。'
+
+tests/test_round3_regressions.py:21: AssertionError
+___________ test_hidden_known_product_routes_to_owner_without_price ____________
+
+env = (<sqlite3.Connection object at 0x10cad13f0>, <starlette.testclient.TestClient object at 0x10eb51100>, <catalog.csbot.CsBot object at 0x10eb50fb0>)
+
+    def test_hidden_known_product_routes_to_owner_without_price(env):
+        conn, _, bot = env
+        conn.execute("UPDATE product_curler SET cs_visible=0 WHERE id='p1'")
+        conn.commit()
+        answer = bot._on_text({'id':'a'}, 'MODEL-1 60个多少钱')
+>       assert '暂不在线' in answer and '¥' not in answer
+E       AssertionError: assert ('暂不在线' in '这个问题需要老板确认。店铺暂未填写联系方式，请稍后再试。')
+
+tests/test_round3_regressions.py:44: AssertionError
+___________ test_exact_configured_price_not_rounded_by_output_format ___________
+
+env = (<sqlite3.Connection object at 0x10cad08b0>, <starlette.testclient.TestClient object at 0x10ec030e0>, <catalog.csbot.CsBot object at 0x10ec02ff0>)
+
+    def test_exact_configured_price_not_rounded_by_output_format(env):
+        conn, _, bot = env
+        conn.execute("UPDATE product_curler SET tier_price='20:12345.67' WHERE id='p1'")
+        conn.commit()
+>       assert '12345.67' in bot._on_text({'id':'a'}, 'MODEL-1 60个多少钱')
+E       AssertionError: assert '12345.67' in '这个问题需要老板确认。店铺暂未填写联系方式，请稍后再试。'
+E        +  where '这个问题需要老板确认。店铺暂未填写联系方式，请稍后再试。' = _on_text({'id': 'a'}, 'MODEL-1 60个多少钱')
+E        +    where _on_text = <catalog.csbot.CsBot object at 0x10ec02ff0>._on_text
+
+tests/test_round3_regressions.py:52: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv/lib/python3.12/site-packages/starlette/testclient.py:53
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED audit/test_boundaries_round2.py::test_same_customer_text_not_duplicated_in_llm_history
+FAILED audit/test_browser_round2.py::test_b_tier_visibility_fields_can_be_maintained
+FAILED audit/test_browser_round2.py::test_redline_card_decision_click[True]
+FAILED audit/test_browser_round2.py::test_redline_card_decision_click[False]
+FAILED audit/test_browser_round2.py::test_tier_edit_persists_and_reopens - pl...
+FAILED audit/test_release_gates.py::test_product_redline_reaches_persona - At...
+FAILED audit/test_release_gates.py::test_persona_quote_uses_code_tier_selection
+FAILED audit/test_round3_gaps.py::test_followup_without_quantity_keeps_product_redline
+FAILED audit/test_round3_gaps.py::test_hidden_known_product_routes_to_owner_without_price
+FAILED audit/test_round3_gaps.py::test_exact_configured_price_not_rounded_by_output_format
+FAILED audit/test_round3_pages.py::test_import_edit_retains_tiers_and_visibility
+FAILED tests/e2e/test_pages.py::test_redline_card_approve_effect - AssertionE...
+FAILED tests/e2e/test_shop_linkage_page.py::test_merchant_approval_to_customer_shop_and_excel
+FAILED tests/test_cs_api.py::test_get_redline_default - AssertionError: asser...
+FAILED tests/test_cs_api.py::test_set_product_redline - AssertionError: asser...
+FAILED tests/test_cs_core.py::test_parse_tiers_basic_and_order - AttributeErr...
+FAILED tests/test_cs_core.py::test_parse_tiers_dirty_input - AttributeError: ...
+FAILED tests/test_cs_core.py::test_parse_tiers_single - AttributeError: modul...
+FAILED tests/test_cs_core.py::test_pick_tier_by_quantity - AttributeError: mo...
+FAILED tests/test_cs_core.py::test_pick_tier_empty - AttributeError: module '...
+FAILED tests/test_cs_core.py::test_store_redline_seeded_by_default - Assertio...
+FAILED tests/test_cs_fields.py::test_cs_keys_legal_in_normalize - catalog.tic...
+FAILED tests/test_cs_fields.py::test_set_tier_price_via_mutate - assert 400 =...
+FAILED tests/test_cs_fields.py::test_visible_requires_tier_price - assert 200...
+FAILED tests/test_cs_fields.py::test_visible_ok_when_tier_in_same_changes - a...
+FAILED tests/test_cs_fields.py::test_visible_ok_when_tier_already_in_db - Key...
+FAILED tests/test_csbot.py::test_draft_edit_applies_and_rereceipts - Assertio...
+FAILED tests/test_csbot.py::test_draft_add_field_to_last - AssertionError: as...
+FAILED tests/test_csbot.py::test_catalog_brief_carries_cost_price - Assertion...
+FAILED tests/test_csbot.py::test_transfer_escalates_with_rule_citation - Asse...
+FAILED tests/test_photo_inquiry.py::test_photo_candidate_requires_selection_and_uses_store_tier
+FAILED tests/test_photo_inquiry.py::test_candidate_selection_rechecks_visibility_expiry_and_customer
+FAILED tests/test_release_boundaries.py::test_same_customer_text_not_duplicated_in_llm_history
+FAILED tests/test_release_gates.py::test_product_redline_reaches_persona - At...
+FAILED tests/test_release_gates.py::test_persona_quote_uses_code_tier_selection
+FAILED tests/test_repair_flows.py::test_quote_is_computed_and_followup_revalidates_visibility
+FAILED tests/test_repair_flows.py::test_pending_mutation_revalidated_at_approval
+FAILED tests/test_round3_regressions.py::test_followup_without_quantity_keeps_product_redline
+FAILED tests/test_round3_regressions.py::test_hidden_known_product_routes_to_owner_without_price
+FAILED tests/test_round3_regressions.py::test_exact_configured_price_not_rounded_by_output_format
+40 failed, 293 passed, 3 skipped, 2 warnings in 43.90s

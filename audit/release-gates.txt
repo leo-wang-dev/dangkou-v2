@@ -1,0 +1,138 @@
+FFFFFFFFFFFFFF..FF                                                       [100%]
+=================================== FAILURES ===================================
+________________ test_unauthenticated_ticket_cannot_be_approved ________________
+audit/test_release_gates.py:81: in test_unauthenticated_ticket_cannot_be_approved
+    assert response.status_code in (401, 403), 'anonymous reader obtained approval token and approved ticket'
+E   AssertionError: anonymous reader obtained approval token and approved ticket
+E   assert 200 in (401, 403)
+E    +  where 200 = <Response [200 OK]>.status_code
+_______________ test_internal_cost_not_public[/products/curler] ________________
+audit/test_release_gates.py:88: in test_internal_cost_not_public
+    assert response.status_code in (401, 403) or '7.35' not in response.text
+E   assert (200 in (401, 403) or '7.35' not in '{"template"...","图集":[]}]}'
+E    +  where 200 = <Response [200 OK]>.status_code
+E     
+E     '7.35' is contained here:
+E       ull,"价格":"7.35","电压":null,"功率":null,"发热体":null,"材质":null,"频率":null,"备注":"","内部货号":"AUDIT-1","状态":"approved","主图":null,"id":"p1","图集":[]}]}
+E     ?           ++++)
+_______________ test_internal_cost_not_public[/stats?full=true] ________________
+audit/test_release_gates.py:88: in test_internal_cost_not_public
+    assert response.status_code in (401, 403) or '7.35' not in response.text
+E   assert (200 in (401, 403) or '7.35' not in '{"total":1,...单数量必须向用户确认"}'
+E    +  where 200 = <Response [200 OK]>.status_code
+E     
+E     '7.35' is contained here:
+E       ull,"价格":"7.35","电压":null,"功率":null,"发热体":null,"材质":null,"频率":null,"备注":"","内部货号":"AUDIT-1","状态":"approved","主图":null,"id":"p1","图集":[]}]},"note":"products=各品类全部在售商品（全字段，id 可直接作 quote items 的 product_id）；报数一律用 total；问某款详情从这里找，查不到=已下架或不存在；整品类出报价单数量必须向用户确认"}
+E     ?           ++++)
+_________________ test_link_cannot_edit_another_customer_note __________________
+audit/test_release_gates.py:95: in test_link_cannot_edit_another_customer_note
+    assert response.status_code in (403, 404), 'customer a changed customer b note'
+E   AssertionError: customer a changed customer b note
+E   assert 200 in (403, 404)
+E    +  where 200 = <Response [200 OK]>.status_code
+________________________ test_expired_link_denied[read] ________________________
+audit/test_release_gates.py:106: in test_expired_link_denied
+    assert response.status_code in (403, 404, 410), f'expired link allowed {operation}'
+E   AssertionError: expired link allowed read
+E   assert 200 in (403, 404, 410)
+E    +  where 200 = <Response [200 OK]>.status_code
+________________________ test_expired_link_denied[edit] ________________________
+audit/test_release_gates.py:106: in test_expired_link_denied
+    assert response.status_code in (403, 404, 410), f'expired link allowed {operation}'
+E   AssertionError: expired link allowed edit
+E   assert 200 in (403, 404, 410)
+E    +  where 200 = <Response [200 OK]>.status_code
+_______________________ test_expired_link_denied[export] _______________________
+audit/test_release_gates.py:106: in test_expired_link_denied
+    assert response.status_code in (403, 404, 410), f'expired link allowed {operation}'
+E   AssertionError: expired link allowed export
+E   assert 200 in (403, 404, 410)
+E    +  where 200 = <Response [200 OK]>.status_code
+_______________________ test_export_contains_real_photo ________________________
+audit/test_release_gates.py:118: in test_export_contains_real_photo
+    assert len(wb.active._images) == 1, 'valid photo omitted from normal extraction fields'
+E   AssertionError: valid photo omitted from normal extraction fields
+E   assert 0 == 1
+E    +  where 0 = len([])
+E    +    where [] = <Worksheet "Sheet">._images
+E    +      where <Worksheet "Sheet"> = <openpyxl.workbook.workbook.Workbook object at 0x10aaefb30>.active
+_____________________ test_product_redline_reaches_persona _____________________
+audit/test_release_gates.py:126: in test_product_redline_reaches_persona
+    assert '少于88个转人工' in system, 'product-specific policy missing from actual prompt'
+E   AssertionError: product-specific policy missing from actual prompt
+E   assert '少于88个转人工' in '你是义乌档口的智能客服，替商家接待采购员。规则：\n1) 只报商品库中"可观测=开"的商品，按阶梯价回答（¥，人民币），价格数字只用系统提供的，自己不做算术不浮动；\n   标注"内部"的成本价只用于判断价格红线，绝对不可以对客户报出...的询价转人工；客户要求价格低于出厂价1.2倍的转人工；询底价、账期、质量投诉、能否定制的转人工。\n\n当前可报商品（只能报这些）：\n- MODEL-1（卷发棒）：20个¥12.0;50个¥11.0｜成本价¥7.35（内部，禁对外报）'
+_________________ test_persona_quote_uses_code_tier_selection __________________
+audit/test_release_gates.py:134: in test_persona_quote_uses_code_tier_selection
+    assert spy.called, 'actual quotation route never calls the implemented tier selector'
+E   AssertionError: actual quotation route never calls the implemented tier selector
+E   assert False
+E    +  where False = <Mock id='4474801568'>.called
+_________________ test_visible_product_cannot_lose_valid_tiers _________________
+audit/test_release_gates.py:147: in test_visible_product_cannot_lose_valid_tiers
+    assert not row['cs_visible'] or cs.parse_tiers(row['tier_price']), f'invalid state accepted: {decided.status_code}'
+E   AssertionError: invalid state accepted: 200
+E   assert (not 1 or [])
+E    +  where [] = <function parse_tiers at 0x109f73920>('garbage')
+E    +    where <function parse_tiers at 0x109f73920> = cs.parse_tiers
+_________________ test_long_redline_is_compressed_through_api __________________
+audit/test_release_gates.py:156: in test_long_redline_is_compressed_through_api
+    assert spy.called, 'API uses summarize default llm=False'
+E   AssertionError: API uses summarize default llm=False
+E   assert False
+E    +  where False = <Mock id='4474629648'>.called
+----------------------------- Captured stdout call -----------------------------
+[cs-redline] 审批卡(未配微信通道，仅日志)：旧「数量低于20个的询价转人工；客户要求价格低于出厂价1.2倍的」→新「数量少于50个转人工；数量少于50个转人工；数量少于50个转」
+_________________ test_second_photo_receipt_indexes_all_drafts _________________
+audit/test_release_gates.py:165: in test_second_photo_receipt_indexes_all_drafts
+    assert '【2】' in receipt, 'second photo is labeled 1 although editing 1 targets first photo'
+E   AssertionError: second photo is labeled 1 although editing 1 targets first photo
+E   assert '【2】' in '整理好了，请核对：\n【1】型号或品名=B；价格=13\n\n回复"确认"入清单；要改就直接说，比如"1 价格改成2.5"。说"出表"可随时导出Excel。'
+_____________________ test_duplicate_update_is_idempotent ______________________
+audit/test_release_gates.py:173: in test_duplicate_update_is_idempotent
+    assert count == 1, 'same Telegram update produced duplicate notes'
+E   AssertionError: same Telegram update produced duplicate notes
+E   assert 2 == 1
+______________ test_failed_update_does_not_discard_rest_of_batch _______________
+audit/test_release_gates.py:204: in test_failed_update_does_not_discard_rest_of_batch
+    assert 2 in handled, f'second update skipped; next poll already acknowledges offset {api._offset}'
+E   AssertionError: second update skipped; next poll already acknowledges offset 3
+E   assert 2 in [1]
+----------------------------- Captured stdout call -----------------------------
+[cs-bot] 启动：bot token 已加载，开始长轮询
+[cs-bot] 轮询异常（10s后继续）: RuntimeError simulated model timeout
+[cs-bot] 收到退出信号
+_____________________ test_wechat_http_failure_is_detected _____________________
+audit/test_release_gates.py:213: in test_wechat_http_failure_is_detected
+    assert response.raise_for_status.called or '失败' in output, 'HTTP 500 is silently treated as successful notification'
+E   AssertionError: HTTP 500 is silently treated as successful notification
+E   assert (False or '失败' in '')
+E    +  where False = <Mock name='mock.raise_for_status' id='4473656800'>.called
+E    +    where <Mock name='mock.raise_for_status' id='4473656800'> = <Mock id='4478252816'>.raise_for_status
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv/lib/python3.12/site-packages/starlette/testclient.py:53
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED audit/test_release_gates.py::test_unauthenticated_ticket_cannot_be_approved
+FAILED audit/test_release_gates.py::test_internal_cost_not_public[/products/curler]
+FAILED audit/test_release_gates.py::test_internal_cost_not_public[/stats?full=true]
+FAILED audit/test_release_gates.py::test_link_cannot_edit_another_customer_note
+FAILED audit/test_release_gates.py::test_expired_link_denied[read] - Assertio...
+FAILED audit/test_release_gates.py::test_expired_link_denied[edit] - Assertio...
+FAILED audit/test_release_gates.py::test_expired_link_denied[export] - Assert...
+FAILED audit/test_release_gates.py::test_export_contains_real_photo - Asserti...
+FAILED audit/test_release_gates.py::test_product_redline_reaches_persona - As...
+FAILED audit/test_release_gates.py::test_persona_quote_uses_code_tier_selection
+FAILED audit/test_release_gates.py::test_visible_product_cannot_lose_valid_tiers
+FAILED audit/test_release_gates.py::test_long_redline_is_compressed_through_api
+FAILED audit/test_release_gates.py::test_second_photo_receipt_indexes_all_drafts
+FAILED audit/test_release_gates.py::test_duplicate_update_is_idempotent - Ass...
+FAILED audit/test_release_gates.py::test_failed_update_does_not_discard_rest_of_batch
+FAILED audit/test_release_gates.py::test_wechat_http_failure_is_detected - As...
+16 failed, 2 passed, 2 warnings in 0.34s

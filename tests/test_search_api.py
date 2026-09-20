@@ -27,11 +27,11 @@ def client(tmp_path, monkeypatch):
     db.init_db(conn)
     st = LocalStorage(str(tmp_path))
     app.state.conn = conn
-    app.state.token = ''
+    app.state.token = 'test-service-token'
     app.state.storage = st
     app.state.callback = None
-    monkeypatch.setattr('catalog.search.embed_image', lambda b: [1.0] + [0.0] * 1023)
-    return TestClient(app)
+    monkeypatch.setattr('catalog.search.embed_image', lambda b, *args: [1.0] + [0.0] * 1023)
+    return TestClient(app, headers={'X-Service-Token': 'test-service-token'})
 
 
 def _import_and_approve(client):
@@ -59,7 +59,8 @@ def test_approve_persists_image_and_embeds(client):
 def test_search_endpoint(client, tmp_path):
     _import_and_approve(client)
     q = tmp_path / 'q.png'
-    q.write_bytes(b'Q')
+    from PIL import Image
+    Image.new('RGB', (8, 8), 'blue').save(q)
     r = client.post('/search', json={'image_path': str(q)})
     assert r.status_code == 200
     hits = r.json()['hits']

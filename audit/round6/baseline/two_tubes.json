@@ -1,0 +1,35 @@
+{
+  "http_status": 200,
+  "elapsed": 13.72,
+  "response": {
+    "choices": [
+      {
+        "message": {
+          "content": "[\n  {\n    \"型号或品名\": \"Magic Moon 24K Gold Whitening Cream\",\n    \"价格\": \"3.5元/支\",\n    \"装箱数\": \"未拍到\",\n    \"颜色\": \"管体金色+浅紫膏体\",\n    \"体积或尺寸\": \"100g\",\n    \"起订量\": \"未拍到\",\n    \"其他值得记录的信息\": \"包装标注：BRIGHTEN AND WHITEN THE SKIN；Before Use；阿拉伯文'كريم تفتيح البشرة'；手写标注'¥:3.5'、'(44)²'（含义待确认）\"\n  },\n  {\n    \"型号或品名\": \"Magic Moon Keratin Body Lotion\",\n    \"价格\": \"模糊\",\n    \"装箱数\": \"未拍到\",\n    \"颜色\": \"管体紫色+金色盖\",\n    \"体积或尺寸\": \"260g/9.15oz\",\n    \"起订量\": \"未拍到\",\n    \"其他值得记录的信息\": \"包装标注：SINCE 1986；CUSTOMIZED BEAUTY NOURISHMENT；BE SUITABLE FOR ANY SKIN；手写标注'¥:?'（部分模糊，似'3'）\"\n  },\n  {\n    \"型号或品名\": \"Magic Moon 产品（金色盒装，仅见局部）\",\n    \"价格\": \"未拍到\",\n    \"装箱数\": \"未拍到\",\n    \"颜色\": \"金色包装盒\",\n    \"体积或尺寸\": \"未拍到\",\n    \"起订量\": \"未拍到\",\n    \"其他值得记录的信息\": \"盒面可见'EAM'字样及女性面部图像；品牌标识'Magic Moon'部分可见；无完整品名与规格信息\"\n  }\n]",
+          "reasoning_content": "",
+          "role": "assistant"
+        },
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 2328,
+      "completion_tokens": 396,
+      "total_tokens": 2724,
+      "completion_tokens_details": {
+        "text_tokens": 396
+      },
+      "prompt_tokens_details": {
+        "image_tokens": 2122,
+        "text_tokens": 206,
+        "cached_tokens": 0
+      }
+    },
+    "created": 1789674953,
+    "model": "qwen3-vl-plus",
+    "id": "chatcmpl-8c24094a-9b62-9ea7-a95d-b749f3bb1373"
+  }
+}

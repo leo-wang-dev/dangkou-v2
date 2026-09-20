@@ -1,0 +1,10 @@
+/Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+Traceback (most recent call last):
+  File "/Users/a1/workSpace/Eryuan/dangkou-v2/scripts/verify_customer_photos.py", line 159, in <module>
+    try:run(args.out,args.real_model)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a1/workSpace/Eryuan/dangkou-v2/scripts/verify_customer_photos.py", line 125, in run
+    assert all(checks.values()) and count_ok,(case['id'],recent)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('two_tubes', [{'型号或品名': 'Magic Moon KERATIN Body Lotion', '价格': '¥3（照片识别，待确认）', '装箱数': '未拍到', '颜色': '紫白渐变花纹管身+金色盖子', '体积或尺寸': '260g/9.15oz', '起订量': '未拍到', '其他': "包装标'SINCE 1986'；'CUSTOMIZED BEAUTY NOURISHMENT'；'SUITABLE FOR ANY SKIN'；容量标注清晰可见"}, {'型号或品名': 'Magic Moon 24K GOLD WHITENING CREAM', '价格': '¥3.5（照片识别，待确认）', '装箱数': '未拍到', '颜色': '金色管身+透明标签', '体积或尺寸': '100g', '起订量': '未拍到', '其他': "包装含阿拉伯文'تَفتيح البشرة كريم'；英文说明'BRIGHTEN AND WHITEN THE SKIN'；标注'Before Use'；膏体颜色为浅紫色（印刷图，非实见内容物）"}])

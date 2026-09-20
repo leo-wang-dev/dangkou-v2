@@ -1,0 +1,60 @@
+{
+  "version": "v1.19.31",
+  "assets": [
+    {
+      "name": "mihomo-linux-amd64-compatible-v1.19.31.gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-compatible-v1.19.31.gz",
+      "digest": "sha256:04cf9f09671704f839ddbee2e93069dc831a4123a75281e725d1d96ab9ac1afc"
+    },
+    {
+      "name": "mihomo-linux-amd64-v1-go120-v1.19.31.gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v1-go120-v1.19.31.gz",
+      "digest": "sha256:13bdb703eb35075b91d46930265c3efa860dd63ac6c97f40d6810828dd4c2abd"
+    },
+    {
+      "name": "mihomo-linux-amd64-v1-go123-v1.19.31.gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v1-go123-v1.19.31.gz",
+      "digest": "sha256:c7a14be98c8265770e6f2a6f3fd1006c664d2898e9f77044eb36b04462b79f75"
+    },
+    {
+      "name": "mihomo-linux-amd64-v1-v1.19.31.gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v1-v1.19.31.gz",
+      "digest": "sha256:d4304c546c3cddcb6fafd4b4fddb0ba1a95ffa36606fda56d75db2e59ad24114"
+    },
+    {
+      "name": "mihomo-linux-amd64-v1.19.31.gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v1.19.31.gz",
+      "digest": "sha256:d5e74bbddbdfff49a1aef7775bf5911da59f0d7196ed509a0ac914b3653dd5f1"
+    },
+    {
+      "name": "mihomo-linux-amd64-v2-go120-v1.19.31.gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v2-go120-v1.19.31.gz",
+      "digest": "sha256:94f342f7cfe07c80f4697d2360b5452c0f57546bace3f7a1b7d73fdf2188d83d"
+    },
+    {
+      "name": "mihomo-linux-amd64-v2-go123-v1.19.31.gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v2-go123-v1.19.31.gz",
+      "digest": "sha256:373c8f9dbecfe056ad032ebe8828ac2491b5c2cf97d3a143eed206e9058fffa7"
+    },
+    {
+      "name": "mihomo-linux-amd64-v2-v1.19.31.gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v2-v1.19.31.gz",
+      "digest": "sha256:560a14ba51482e85e90b6c9b141f3b7b1543795f9ecd82eb9a6c5153a1b7960b"
+    },
+    {
+      "name": "mihomo-linux-amd64-v3-go120-v1.19.31.gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v3-go120-v1.19.31.gz",
+      "digest": "sha256:c3ca192686d58d6bc06ace2af540f2025a6cfa579317f819653a9fcdb5f43fec"
+    },
+    {
+      "name": "mihomo-linux-amd64-v3-go123-v1.19.31.gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v3-go123-v1.19.31.gz",
+      "digest": "sha256:b11832ce64727c42429083b1ffe31179c2475387ef5ec75cd7d15b40f53e71ef"
+    },
+    {
+      "name": "mihomo-linux-amd64-v3-v1.19.31.gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v3-v1.19.31.gz",
+      "digest": "sha256:4e8808e79f1e452a0300ce1ee89fcaf2cccd5249a100f2238877214e5ca316b3"
+    }
+  ]
+}

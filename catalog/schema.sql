@@ -42,7 +42,45 @@ CREATE TABLE IF NOT EXISTS import_doc (
   stats_json TEXT, error TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
--- ===== C端客服（v1.2：阶梯价结构化 + 红线自然语言知识）=====
+CREATE TABLE IF NOT EXISTS category_template (
+  key TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  fields_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'approved',
+  storage TEXT NOT NULL DEFAULT 'dynamic',
+  source_sheet TEXT NOT NULL DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS category_template_version (
+  category_key TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  approved_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY(category_key, version)
+);
+CREATE TABLE IF NOT EXISTS product_dynamic (
+  id TEXT PRIMARY KEY,
+  category_key TEXT NOT NULL,
+  inner_code TEXT UNIQUE NOT NULL,
+  data_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'approved',
+  image_main TEXT NOT NULL DEFAULT '',
+  images_json TEXT NOT NULL DEFAULT '[]',
+  source_doc INTEGER,
+  source_key TEXT NOT NULL DEFAULT '',
+  source_sheet TEXT NOT NULL DEFAULT '',
+  source_row INTEGER,
+  row_fingerprint TEXT NOT NULL DEFAULT '',
+  cs_visible INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY(category_key) REFERENCES category_template(key)
+);
+CREATE INDEX IF NOT EXISTS idx_dynamic_category ON product_dynamic(category_key, status, cs_visible);
+CREATE INDEX IF NOT EXISTS idx_dynamic_source ON product_dynamic(category_key, source_key, source_sheet, source_row);
+-- ===== C端客服（平台公共红线优先，所有报价转人工）=====
 CREATE TABLE IF NOT EXISTS cs_redline (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   product_id TEXT NOT NULL DEFAULT '',  -- ''=店级（SQLite UNIQUE 不去重 NULL）；商品级覆盖店级
@@ -64,5 +102,51 @@ CREATE TABLE IF NOT EXISTS cs_conversation_log (  -- 对话留档（运营排查
   created_at TEXT DEFAULT (datetime('now')));
 CREATE TABLE IF NOT EXISTS cs_link (       -- 清单临时链接（一次性 token）
   token TEXT PRIMARY KEY, customer_id TEXT NOT NULL,
-  used INTEGER DEFAULT 0, expires_at TEXT,
+  used INTEGER DEFAULT 0, expires_at TEXT DEFAULT (datetime('now','+2 days')),
   created_at TEXT DEFAULT (datetime('now')));
+
+
+CREATE TABLE IF NOT EXISTS shop_profile (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    owner_tg_username TEXT NOT NULL DEFAULT '',
+    owner_wechat TEXT NOT NULL DEFAULT '',
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+INSERT OR IGNORE INTO shop_profile(id) VALUES(1);
+CREATE TABLE IF NOT EXISTS cs_inbox (
+    update_id INTEGER PRIMARY KEY,
+    payload TEXT NOT NULL,
+    processed INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT
+);
+CREATE TABLE IF NOT EXISTS cs_outbox (
+    id INTEGER PRIMARY KEY,
+    channel TEXT NOT NULL,
+    recipient TEXT,
+    body TEXT NOT NULL,
+    sent INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    next_attempt_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS cs_context (
+    customer_id TEXT PRIMARY KEY,
+    product_id TEXT,
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS cs_photo_candidates (
+    customer_id TEXT PRIMARY KEY,
+    candidates TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS embedding_retry (
+    product_id TEXT NOT NULL, category TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT NOT NULL DEFAULT '1970-01-01',
+    last_error TEXT,
+    PRIMARY KEY(product_id,category)
+);

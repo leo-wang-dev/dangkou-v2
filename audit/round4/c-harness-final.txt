@@ -1,0 +1,9 @@
+[   pass] unit-core  (03:34:14)
+[   pass] unit-bot  (03:34:14)
+[   pass] unit-api  (03:34:15)
+[   pass] regression  (03:34:21)
+[   pass] e2e-pages  (03:34:23)
+[blocked] e2e-real  (03:34:23)
+
+结果：5 pass / 0 fail / 1 blocked  →  /Users/a1/workSpace/Eryuan/dangkou-v2/runs/cs/20260918-033414/summary.json
+  BLOCKED: e2e-real

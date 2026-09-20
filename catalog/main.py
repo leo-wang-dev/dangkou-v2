@@ -24,6 +24,8 @@ async def no_cache_html(request, call_next):
 
 
 register_routes(app)
+from . import wechat_customer
+wechat_customer.register(app)
 _static = os.path.join(os.path.dirname(__file__), '..', 'static')
 if os.path.isdir(_static):
     app.mount('/', StaticFiles(directory=_static, html=True), name='static')

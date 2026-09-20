@@ -1,0 +1,7 @@
+[   pass] unit-core  (00:21:18)
+[   pass] unit-bot  (00:21:18)
+[   pass] unit-api  (00:21:19)
+[   fail] regression  (00:21:22)
+[   pass] e2e-pages  (00:21:29)
+
+结果：5 pass / 1 fail / 0 blocked  →  /Users/a1/workSpace/Eryuan/dangkou-v2/runs/cs/20260918-002118/summary.json

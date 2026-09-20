@@ -1,0 +1,18 @@
+{
+  "fields": [
+    {
+      "型号或品名": "COFFEE SHERBET BODY SCRUB",
+      "价格": "¥3.8（照片识别，待确认）",
+      "装箱数": "未拍到",
+      "颜色": "深褐色膏体，银色金属盖，红棕标签",
+      "体积或尺寸": "11.83FL.OZ.(350ml)",
+      "起订量": "未拍到",
+      "其他": "手写标注'350 mL'、'96'（含义待确认）；品牌：Miss wendy；适用肤质：for all skin types"
+    }
+  ],
+  "checks": {
+    "350": true,
+    "COFFEE": true
+  },
+  "count_ok": true
+}

@@ -1,0 +1,14 @@
+{
+  "merchant_razors": 30,
+  "merchant_curlers": 44,
+  "customer_rows": 6,
+  "embedded_images": 6,
+  "javascript_errors": [],
+  "readiness": {
+    "ready": false,
+    "blockers": [
+      "CATALOG_V2_PUBLIC_URL 必须为可访问的 HTTPS 地址",
+      "老板 TG 和微信联系方式未补齐"
+    ]
+  }
+}

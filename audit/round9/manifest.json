@@ -1,0 +1,12 @@
+{
+  "catalog/price_policy.py": "a324a6c860979317724669819ffd08ce1b65814f454a827fb4cc1ce5b0c01864",
+  "catalog/cs.py": "3cb1f8b526ca3b17a870e91595f9104e437aa8d45e9fea0b337ef2eb7128ef6a",
+  "catalog/csbot.py": "90ab8e9dd322a55171da666983aba50a4ff483dd32ea7e852c5a1feff7aab060",
+  "catalog/tickets.py": "fdca255931b90659415ebfb902834486f2680583d882b7aa68fa6536adec4c5c",
+  "catalog/api.py": "9b2ca316bb63c1c8c04bb4940a721774df1ec3982d20dae2381d5cc354709305",
+  "catalog/templates.py": "2c1f76989a319b0ec10bdd8ae1b6d7a5e2c3ecd80a55764ef7af29a273620006",
+  "engine-plugin/catalog-v2.mjs": "6cfd6bae248c63604dd1bef2fb11319b1954025a6c58d3eb70103cbbd064e77c",
+  "static/index.html": "f5091dd056bd175216b78521ab196fda890d045d3e7b3517814dbf7a35807cb3",
+  "static/cs/redline.html": "2c15dd9aac1eacd716817821ea2bf1e53aed259a598097295d3deb46af044c23",
+  "tests/test_platform_price_policy.py": "46f027175e7a1f5a3c312de4f81e66b195866d7b0984a10045ceb314b0af8d5e"
+}

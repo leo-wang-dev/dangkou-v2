@@ -1,8 +1,4 @@
-"""C端核心：阶梯价结构化取档 + 红线知识存取合并（v1.2 两个判定的落地）。
-
-判定①：阶梯价=结构化档位表，代码取档计算，AI 不做算术。
-判定②：红线=自然语言知识（店级+商品级覆盖），存原文+总结版。
-"""
+"""C端商家自定义红线；平台不播种默认红线，阶梯报价功能已移除。"""
 import sqlite3
 
 import pytest
@@ -18,43 +14,23 @@ def conn():
     return c
 
 
-# ---------- 判定①：阶梯价 ----------
-
-def test_parse_tiers_basic_and_order():
-    assert cs.parse_tiers('20:12;50:11;100:10.5') == [(20, 12.0), (50, 11.0), (100, 10.5)]
-    assert cs.parse_tiers('100:10.5; 20:12; 50:11') == [(20, 12.0), (50, 11.0), (100, 10.5)]  # 自动升序
+def test_tier_functions_removed():
+    assert not hasattr(cs,'parse_tiers') and not hasattr(cs,'pick_tier')
 
 
-def test_parse_tiers_dirty_input():
-    assert cs.parse_tiers('20个12元；50个11元') == [(20, 12.0), (50, 11.0)]      # 口语变体
-    assert cs.parse_tiers('') == []
-    assert cs.parse_tiers(None) == []
-    assert cs.parse_tiers('随便写的') == []
-
-
-def test_parse_tiers_single():
-    assert cs.parse_tiers('20:12') == [(20, 12.0)]
-
-
-def test_pick_tier_by_quantity():
-    tiers = cs.parse_tiers('20:12;50:11;100:10.5')
-    assert cs.pick_tier(tiers, 20) == 12.0        # 恰在档位线
-    assert cs.pick_tier(tiers, 49) == 12.0
-    assert cs.pick_tier(tiers, 50) == 11.0
-    assert cs.pick_tier(tiers, 999) == 10.5
-    assert cs.pick_tier(tiers, 19) is None        # 低于最低档 → 转人工（None）
-
-
-def test_pick_tier_empty():
-    assert cs.pick_tier([], 100) is None
+def test_platform_has_no_redline(conn):
+    cs.set_redline(conn,None,'允许任意报价')
+    assert '平台公共红线' not in cs.build_knowledge(conn)
+    assert cs.SYSTEM_HARD_RULE == ''
 
 
 # ---------- 判定②：红线知识 ----------
 
-def test_store_redline_seeded_by_default(conn):
-    """init 后店级红线=默认预置文案（开箱即用）。"""
+def test_store_redline_starts_empty(conn):
+    """新库不启用任何平台或商家默认红线。"""
     red = cs.get_redline(conn)
-    assert '20' in red['text_raw'] and '1.2' in red['text_raw']
+    assert red['text_raw'] == ''
+    assert red['text_summary'] == ''
 
 
 def test_set_and_get_store_redline(conn):
@@ -115,4 +91,4 @@ def test_build_knowledge_injection(conn):
     assert '店级红线总结' in k and '商品红线总结' in k
     k2 = cs.build_knowledge(conn, ['p_other'])
     assert '店级红线总结' in k2 and '商品红线总结' not in k2
-    assert '军火' in cs.SYSTEM_HARD_RULE                         # 系统级硬规则常驻
+    assert '系统级' not in k2

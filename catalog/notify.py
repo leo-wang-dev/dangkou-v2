@@ -1,46 +1,43 @@
-"""完成即推送：解析完成/失败 → 引擎 catalog-notify 直连微信发送器（不过模型）。"""
+"""B-end notifications use the same durable outbox as customer-service handoffs."""
+import json
 import os
 
-import requests
-
-from . import config
-
-NOTIFY_URL = os.environ.get('CATALOG_NOTIFY_URL', 'http://127.0.0.1:17606/notify')
-NOTIFY_TOKEN = os.environ.get('CATALOG_NOTIFY_TOKEN', '')
-PUBLIC_FALLBACK = 'http://134.175.135.102:8890'  # 教训：默认绝不能是本地地址
+from . import config, db
 
 CAT_NAME = {'razor': '剃须刀', 'curler': '卷发棒'}
 
 
-def push(doc_id, ticket_id, token, stats):
-    """ingest 回调：直推用户可读的完成/失败通知（带审批入口）。"""
-    if not NOTIFY_TOKEN:
-        return
+def _queue(channel, body, conn=None):
+    own = conn is None
+    conn = conn or db.connect()
+    try:
+        conn.execute('INSERT INTO cs_outbox(channel,body) VALUES(?,?)', (channel, body))
+        conn.commit()
+    finally:
+        if own:
+            conn.close()
+    return {'notification': 'queued'}
+
+
+def push(doc_id, ticket_id, token, stats, conn=None):
     if stats.get('error'):
-        text = f'❌ 导入失败（doc{doc_id}）：{stats["error"][:120]}'
+        text = f'❌ 导入失败（doc{doc_id}）：{stats["error"]}'
     else:
-        cat = CAT_NAME.get(stats.get('category'), '')
-        link = f"{os.environ.get('CATALOG_V2_PUBLIC_URL', PUBLIC_FALLBACK)}/?t={config.SERVICE_TOKEN}"
-        text = (f'📦 导入完成：{cat} 新增{stats.get("new", 0)} / '
-                f'更新{stats.get("update", 0)} / 下架{stats.get("delist", 0)}'
-                f'{"（" + stats["vendor"] + "）" if stats.get("vendor") else ""}\n'
-                f'审批入口：{link}\n（点开即可逐行审批）')
-    try:
-        r = requests.post(NOTIFY_URL, json={'text': text}, timeout=15,
-                          headers={'Authorization': f'Bearer {NOTIFY_TOKEN}'})
-        print(f'[notify] 直推 rc={r.status_code} {r.text[:80]}', flush=True)
-    except Exception as e:  # noqa: BLE001
-        print(f'[notify] 直推失败: {e}', flush=True)
+        return _queue('notify_import', json.dumps({'doc_id': doc_id, 'stats': stats}, ensure_ascii=False), conn)
+    return _queue('notify', text, conn)
 
 
-def push_file(text, file_path):
-    """报价单等产物：文件本体推微信（引擎 catalog-notify /notify-file → 微信发送器 media）。"""
-    if not NOTIFY_TOKEN:
-        return
-    try:
-        r = requests.post(NOTIFY_URL.replace('/notify', '/notify-file'),
-                          json={'text': text, 'file_path': file_path}, timeout=30,
-                          headers={'Authorization': f'Bearer {NOTIFY_TOKEN}'})
-        print(f'[notify] 文件直推 rc={r.status_code} {r.text[:80]}', flush=True)
-    except Exception as e:  # noqa: BLE001
-        print(f'[notify] 文件直推失败: {e}', flush=True)
+def render_import(payload):
+    # Materialize the service credential only in memory at delivery, never in the queue.
+    stats = payload['stats']
+    cat = CAT_NAME.get(stats.get('category'), '')
+    from urllib.parse import quote
+    base = (os.environ.get('CATALOG_V2_MANAGE_URL') or
+            os.environ.get('CATALOG_V2_PUBLIC_URL', 'http://127.0.0.1:8890')).rstrip('/')
+    link = f'{base}/?t={quote(config.SERVICE_TOKEN, safe="")}'
+    return (f'📦 导入完成：{cat} 新增{stats.get("new", 0)} / 更新{stats.get("update", 0)} / 下架{stats.get("delist", 0)}\n'
+            f'供应商：{stats.get("vendor") or "未提供"}\n审批入口：{link}')
+
+
+def push_file(text, file_path, conn=None):
+    return _queue('notify_file', json.dumps({'text': text, 'file_path': file_path}, ensure_ascii=False), conn)

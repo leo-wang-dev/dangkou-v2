@@ -1,0 +1,16 @@
+{
+  "purpose": "微信档口助手正反向人工验收；所有名称、图片和价格均为测试数据",
+  "primary_workbook": "/Users/a1/workSpace/Eryuan/dangkou-v2/audit/round21/wechat-manual-kit/微信正向-吹风机.xlsx",
+  "concurrent_workbook": "/Users/a1/workSpace/Eryuan/dangkou-v2/audit/round21/wechat-manual-kit/微信并发-配件.xlsx",
+  "known_photo": "/Users/a1/workSpace/Eryuan/dangkou-v2/audit/round21/wechat-manual-kit/WX-HD15-red.jpg",
+  "unknown_photo": "/Users/a1/workSpace/Eryuan/dangkou-v2/audit/round21/wechat-manual-kit/WX-unknown-green.jpg",
+  "corrupt_workbook": "/Users/a1/workSpace/Eryuan/dangkou-v2/audit/round21/wechat-manual-kit/反向-损坏Excel.xlsx",
+  "disguised_image": "/Users/a1/workSpace/Eryuan/dangkou-v2/audit/round21/wechat-manual-kit/反向-伪装图片.png",
+  "expected_primary_rows": 4,
+  "expected_primary_models": [
+    "WX-HD15",
+    "WX-HD15",
+    "WX-HD16",
+    ""
+  ]
+}

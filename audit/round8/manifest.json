@@ -1,0 +1,16 @@
+{
+  "catalog/shop_link.py": "ec5cd838f23998d963faf78bb6ba1f2bdacc3163f72718b26de5e557b860c1e3",
+  "catalog/cs_supplier.py": "c43d118f473e5d828507f46913da2c0ce10282fbe6cb8e91969fdf9aeee08f62",
+  "catalog/cs_export.py": "ab998428f131a6b61a0a21cde7f782c95616033675fe05c1c0d24e0355094882",
+  "catalog/db.py": "f0b1e91b24eb8de4c3766109fbb1b32f76340ba69d3d500f9c65885e151986a2",
+  "catalog/cs.py": "790b500f5c51a9ee06c2a1ad365d9ea3d417419c9bc13f1c254cecefe6ac0d64",
+  "catalog/csbot.py": "5467471003ec36d56d1173e82fb54d43d215c216c1679e703e3d2d2a809aa1c6",
+  "catalog/api.py": "0e491f0c339f13b4c91797b905431a1eec42fc9d89505b7754e3ba4cdf59af25",
+  "catalog/tickets.py": "ba4b613493a5552d3df78d36ad1c45f95ccff0386ee34315ff27e64f8500393f",
+  "scripts/run_cs_bot.py": "048828a42fea05f5def39cb2d08d42ede9ce9be28f7db9e096a701c3f52c8f78",
+  "scripts/check_shop_linkage.py": "9e93a029ac1053ab36df9d8de5b0364c56dd8446ed2091182a89f8291b669282",
+  "engine-plugin/catalog-v2.mjs": "d86e2c8a83a6242e264a8d61b18dc5368f5ed0eaa9facd22290b38894cd7b89c",
+  "static/cs/list.html": "b81df1a223d3bde389e144559d4368681595dde02ad34e5a306a6f7cc2d15c85",
+  "tests/test_shop_linkage.py": "ffb2649f105bbddf69cb3dc8d2484116f8f088d51ac1edcdeb984a944f047024",
+  "tests/e2e/test_shop_linkage_page.py": "74e8666bf26daa4c6d3939c59e2d683b1d704fe2fcf5f516cd47b858ba762f17"
+}

@@ -1,0 +1,8 @@
+{
+  "case": "tier60",
+  "input": "TEST-01 60个多少钱",
+  "reply": "TEST-01，60个对应单价 ¥11/个（人民币）。",
+  "expected_transfer": false,
+  "passed": true,
+  "elapsed_sec": 6.58
+}

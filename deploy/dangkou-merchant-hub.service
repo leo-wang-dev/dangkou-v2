@@ -1,0 +1,19 @@
+[Unit]
+Description=Dangkou merchant onboarding control bot
+Wants=network-online.target dangkou-vpn.service
+After=network-online.target dangkou-vpn.service
+Conflicts=dangkou-cs-bot.service
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/dangkou-v2
+EnvironmentFile=/home/ubuntu/dangkou-v2/.env
+EnvironmentFile=/home/ubuntu/dangkou-v2/.env.merchant-hub
+ExecStart=/home/ubuntu/dangkou-v2/.venv-unified/bin/python -u scripts/run_merchant_hub.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target

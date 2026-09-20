@@ -1,0 +1,20 @@
+[Unit]
+Description=Dangkou isolated test Telegram bot
+After=network-online.target dangkou-vpn.service dangkou-cs-test-api.service
+Wants=network-online.target dangkou-vpn.service dangkou-cs-test-api.service
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/dangkou-cs-test-20260918
+EnvironmentFile=/home/ubuntu/dangkou-cs-test-20260918/.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/home/ubuntu/dangkou-cs-test-20260918/.venv/bin/python -u scripts/run_cs_bot.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

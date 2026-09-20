@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="16" skipped="0" tests="16" time="0.337" timestamp="2026-09-18T02:45:56.601046+08:00" hostname="1deMacBook-Pro.local"><testcase classname="audit.test_round3_gaps" name="test_followup_without_quantity_keeps_product_redline" time="0.022"><failure message="assert '仅本款：不接受月结' in '你是义乌档口的智能客服，替商家接待采购员。规则：\n1) 只报商品库中&quot;可观测=开&quot;的商品，按阶梯价回答（¥，人民币），价格数字只用系统提供的，自己不做算术不浮动；\n   标注&quot;内部&quot;的成本价只用于判断价格红线，绝对不可以对客户报出...，永不自动回复（系统级，商家不可关闭）。\n【当前适用红线】数量低于20个的询价转人工；客户要求价格低于出厂价1.2倍的转人工；询底价、账期、质量投诉、能否定制的转人工。\n未命中红线时只输出 &lt;&lt;PASS&gt;&gt;，不要报价或提供任何数字。'">audit/test_round3_gaps.py:21: in test_followup_without_quantity_keeps_product_redline
+    assert '仅本款：不接受月结' in bot.llm.chat_text.call_args.args[0]
+E   assert '仅本款：不接受月结' in '你是义乌档口的智能客服，替商家接待采购员。规则：\n1) 只报商品库中"可观测=开"的商品，按阶梯价回答（¥，人民币），价格数字只用系统提供的，自己不做算术不浮动；\n   标注"内部"的成本价只用于判断价格红线，绝对不可以对客户报出...，永不自动回复（系统级，商家不可关闭）。\n【当前适用红线】数量低于20个的询价转人工；客户要求价格低于出厂价1.2倍的转人工；询底价、账期、质量投诉、能否定制的转人工。\n未命中红线时只输出 &lt;&lt;PASS&gt;&gt;，不要报价或提供任何数字。'</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_explicit_other_product_cannot_reuse_previous_price" time="0.007"><failure message="AssertionError: assert ('MODEL-1' not in 'MODEL-1，60个... ¥11/个（人民币）。'&#10;  &#10;  'MODEL-1' is contained here:&#10;    MODEL-1，60个对应单价 ¥11/个（人民币）。&#10;  ? +++++++)">audit/test_round3_gaps.py:28: in test_explicit_other_product_cannot_reuse_previous_price
+    assert 'MODEL-1' not in answer and '¥11' not in answer
+E   AssertionError: assert ('MODEL-1' not in 'MODEL-1，60个... ¥11/个（人民币）。'
+E     
+E     'MODEL-1' is contained here:
+E       MODEL-1，60个对应单价 ¥11/个（人民币）。
+E     ? +++++++)</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_unknown_goods_go_to_merchant" time="0.007"><failure message="AssertionError: assert ('shop-wx' in '您好，可以告诉我商品型号和采购数量，或发照片整理清单。')">audit/test_round3_gaps.py:36: in test_unknown_goods_go_to_merchant
+    assert 'shop-wx' in answer and '@shop_owner' in answer
+E   AssertionError: assert ('shop-wx' in '您好，可以告诉我商品型号和采购数量，或发照片整理清单。')</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_hidden_known_product_routes_to_owner_without_price" time="0.007"><failure message="AssertionError: assert ('暂不在线' in '还不能确定您要的商品，请提供准确型号和数量。\n这个问题需要老板确认。店铺暂未填写联系方式，请稍后再试。')">audit/test_round3_gaps.py:44: in test_hidden_known_product_routes_to_owner_without_price
+    assert '暂不在线' in answer and '¥' not in answer
+E   AssertionError: assert ('暂不在线' in '还不能确定您要的商品，请提供准确型号和数量。\n这个问题需要老板确认。店铺暂未填写联系方式，请稍后再试。')</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_exact_configured_price_not_rounded_by_output_format" time="0.007"><failure message="AssertionError: assert '12345.67' in 'MODEL-1，60个对应单价 ¥12345.7/个（人民币）。'&#10; +  where 'MODEL-1，60个对应单价 ¥12345.7/个（人民币）。' = _on_text({'id': 'a'}, 'MODEL-1 60个多少钱')&#10; +    where _on_text = &lt;catalog.csbot.CsBot object at 0x10cb52e40&gt;._on_text">audit/test_round3_gaps.py:52: in test_exact_configured_price_not_rounded_by_output_format
+    assert '12345.67' in bot._on_text({'id':'a'}, 'MODEL-1 60个多少钱')
+E   AssertionError: assert '12345.67' in 'MODEL-1，60个对应单价 ¥12345.7/个（人民币）。'
+E    +  where 'MODEL-1，60个对应单价 ¥12345.7/个（人民币）。' = _on_text({'id': 'a'}, 'MODEL-1 60个多少钱')
+E    +    where _on_text = &lt;catalog.csbot.CsBot object at 0x10cb52e40&gt;._on_text</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_model_latency_does_not_quote_product_hidden_during_inference" time="0.007"><failure message="AssertionError: assert '¥' not in 'MODEL-1，60个... ¥11/个（人民币）。'&#10;  &#10;  '¥' is contained here:&#10;    MODEL-1，60个对应单价 ¥11/个（人民币）。&#10;  ?                 +">audit/test_round3_gaps.py:62: in test_model_latency_does_not_quote_product_hidden_during_inference
+    assert '¥' not in bot._on_text({'id':'a'}, 'MODEL-1 60个多少钱')
+E   AssertionError: assert '¥' not in 'MODEL-1，60个... ¥11/个（人民币）。'
+E     
+E     '¥' is contained here:
+E       MODEL-1，60个对应单价 ¥11/个（人民币）。
+E     ?                 +</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_poll_failure_does_not_stop_notification_delivery" time="0.010"><failure message="AssertionError: assert False&#10; +  where False = &lt;Mock name='mock.flush_outbox' id='4494525552'&gt;.called&#10; +    where &lt;Mock name='mock.flush_outbox' id='4494525552'&gt; = &lt;Mock id='4509226032'&gt;.flush_outbox">audit/test_round3_gaps.py:76: in test_poll_failure_does_not_stop_notification_delivery
+    assert bot.flush_outbox.called
+E   AssertionError: assert False
+E    +  where False = &lt;Mock name='mock.flush_outbox' id='4494525552'&gt;.called
+E    +    where &lt;Mock name='mock.flush_outbox' id='4494525552'&gt; = &lt;Mock id='4509226032'&gt;.flush_outbox</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_first_hundred_poison_messages_do_not_starve_other_customer" time="0.008"><failure message="assert 101 in [1, 1]">audit/test_round3_gaps.py:95: in test_first_hundred_poison_messages_do_not_starve_other_customer
+    assert 101 in [c.args[0]['update_id'] for c in bot.handle_update.call_args_list]
+E   assert 101 in [1, 1]</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_failed_image_approval_does_not_consume_ticket" time="0.009"><failure message="AssertionError: assert 'approved' == 'pending'&#10;  &#10;  - pending&#10;  + approved">audit/test_round3_gaps.py:105: in test_failed_image_approval_does_not_consume_ticket
+    assert conn.execute('SELECT status FROM approval_ticket WHERE id=?',(tk['ticket_id'],)).fetchone()[0] == 'pending'
+E   AssertionError: assert 'approved' == 'pending'
+E     
+E     - pending
+E     + approved</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_failed_direct_image_write_rolls_back_other_fields" time="0.020"><failure message="assert not True&#10; +  where True = &lt;sqlite3.Connection object at 0x10cba3b50&gt;.in_transaction">audit/test_round3_gaps.py:116: in test_failed_direct_image_write_rolls_back_other_fields
+    assert not conn.in_transaction
+E   assert not True
+E    +  where True = &lt;sqlite3.Connection object at 0x10cba3b50&gt;.in_transaction</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_two_images_swap_preserves_both_images" time="0.008"><failure message="AssertionError: assert [b'BLUE', b'BLUE'] == [b'BLUE', b'RED']&#10;  &#10;  At index 1 diff: b'BLUE' != b'RED'&#10;  Use -v to get more diff">audit/test_round3_gaps.py:130: in test_two_images_swap_preserves_both_images
+    assert [storage.read(x) for x in rels] == [b'BLUE',b'RED']
+E   AssertionError: assert [b'BLUE', b'BLUE'] == [b'BLUE', b'RED']
+E     
+E     At index 1 diff: b'BLUE' != b'RED'
+E     Use -v to get more diff</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_client_invalid_edit_body_is_rejected_not_server_error" time="0.008"><failure message="AssertionError: assert 500 in (400, 422)&#10; +  where 500 = &lt;Response [500 Internal Server Error]&gt;.status_code&#10; +    where &lt;Response [500 Internal Server Error]&gt; = patch('/cs/link/link-a/note/1', json=[])&#10; +      where patch = &lt;starlette.testclient.TestClient object at 0x10cd02c00&gt;.patch">audit/test_round3_gaps.py:136: in test_client_invalid_edit_body_is_rejected_not_server_error
+    assert api.patch('/cs/link/link-a/note/1',json=[]).status_code in (400,422)
+E   AssertionError: assert 500 in (400, 422)
+E    +  where 500 = &lt;Response [500 Internal Server Error]&gt;.status_code
+E    +    where &lt;Response [500 Internal Server Error]&gt; = patch('/cs/link/link-a/note/1', json=[])
+E    +      where patch = &lt;starlette.testclient.TestClient object at 0x10cd02c00&gt;.patch</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_upload_missing_file_is_rejected_not_server_error" time="0.008"><failure message="AssertionError: assert 500 in (400, 422)&#10; +  where 500 = &lt;Response [500 Internal Server Error]&gt;.status_code&#10; +    where &lt;Response [500 Internal Server Error]&gt; = post('/upload', headers={'X-Service-Token': 'audit-service-secret'}, data={})&#10; +      where post = &lt;starlette.testclient.TestClient object at 0x10cda15e0&gt;.post&#10; +      and   {'X-Service-Token': 'audit-service-secret'} = auth()">audit/test_round3_gaps.py:142: in test_upload_missing_file_is_rejected_not_server_error
+    assert api.post('/upload',headers=auth(),data={}).status_code in (400,422)
+E   AssertionError: assert 500 in (400, 422)
+E    +  where 500 = &lt;Response [500 Internal Server Error]&gt;.status_code
+E    +    where &lt;Response [500 Internal Server Error]&gt; = post('/upload', headers={'X-Service-Token': 'audit-service-secret'}, data={})
+E    +      where post = &lt;starlette.testclient.TestClient object at 0x10cda15e0&gt;.post
+E    +      and   {'X-Service-Token': 'audit-service-secret'} = auth()</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_search_does_not_lose_live_hit_to_delisted_top_hit" time="0.007"><failure message="AssertionError: assert [] == ['p1']&#10;  &#10;  Right contains one more item: 'p1'&#10;  Use -v to get more diff">audit/test_round3_gaps.py:152: in test_search_does_not_lose_live_hit_to_delisted_top_hit
+    assert [h['product_id'] for h in search.query(conn,[1.,0.],top_k=1)] == ['p1']
+E   AssertionError: assert [] == ['p1']
+E     
+E     Right contains one more item: 'p1'
+E     Use -v to get more diff</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_stock_stats_total_respects_requested_category" time="0.007"><failure message="assert 2 == 1">audit/test_round3_gaps.py:159: in test_stock_stats_total_respects_requested_category
+    assert client.get('/stats?category=curler',headers=auth()).json()['total'] == 1
+E   assert 2 == 1</failure></testcase><testcase classname="audit.test_round3_gaps" name="test_import_notification_does_not_persist_service_secret" time="0.007"><failure message="AssertionError: assert 'AUDIT-SECRET-DO-NOT-STORE' not in '📦 导入完成：卷发棒 ...DO-NOT-STORE'&#10;  &#10;  'AUDIT-SECRET-DO-NOT-STORE' is contained here:&#10;    .1:8890/?t=AUDIT-SECRET-DO-NOT-STORE">audit/test_round3_gaps.py:167: in test_import_notification_does_not_persist_service_secret
+    assert 'AUDIT-SECRET-DO-NOT-STORE' not in conn.execute('SELECT body FROM cs_outbox').fetchone()[0]
+E   AssertionError: assert 'AUDIT-SECRET-DO-NOT-STORE' not in '📦 导入完成：卷发棒 ...DO-NOT-STORE'
+E     
+E     'AUDIT-SECRET-DO-NOT-STORE' is contained here:
+E       .1:8890/?t=AUDIT-SECRET-DO-NOT-STORE</failure></testcase></testsuite></testsuites>

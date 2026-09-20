@@ -1,0 +1,20 @@
+[Unit]
+Description=Dangkou merchant notification queue
+Wants=network-online.target dangkou2.service
+After=network-online.target dangkou2.service
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/dangkou-v2
+EnvironmentFile=/home/ubuntu/dangkou-v2/.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/home/ubuntu/dangkou-v2/.venv-unified/bin/python -u scripts/run_notifications.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

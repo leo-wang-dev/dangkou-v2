@@ -8,14 +8,18 @@ class LocalStorage:
 
     def save(self, category, product_id, filename, data: bytes) -> str:
         rel = os.path.join(category, product_id, filename)
-        dest = os.path.join(self.base, rel)
+        dest = self.abs_path(rel)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with open(dest, 'wb') as f:
             f.write(data)
         return rel
 
     def abs_path(self, rel) -> str:
-        return os.path.join(self.base, rel)
+        base = os.path.realpath(self.base)
+        path = os.path.realpath(os.path.join(base, rel))
+        if os.path.commonpath([base, path]) != base:
+            raise FileNotFoundError('outside image storage')
+        return path
 
     def read(self, rel) -> bytes:
         return open(self.abs_path(rel), 'rb').read()

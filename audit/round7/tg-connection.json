@@ -1,0 +1,9 @@
+{
+  "bot_username": "kehu_serve_bot",
+  "token_valid": true,
+  "webhook_configured": false,
+  "env_gitignored": true,
+  "env_mode": "0o600",
+  "real_send_receive": "pending user Start/message",
+  "pending_updates": 0
+}

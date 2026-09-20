@@ -1,0 +1,10 @@
+{
+  "razor_real_image_visible": true,
+  "curler_real_image_visible": true,
+  "exact_images_hit_own_products": true,
+  "four_unrelated_photos_empty": true,
+  "image_http_statuses": [
+    200,
+    200
+  ]
+}

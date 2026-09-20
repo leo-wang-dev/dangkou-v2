@@ -1,0 +1,18 @@
+{
+  "fields": [
+    {
+      "型号或品名": "Miss Wendy ROSEMARY MINT SCALP & HAIR STRENGTHENING OIL",
+      "价格": "模糊（待确认）",
+      "装箱数": "未拍到",
+      "颜色": "绿色包装",
+      "体积或尺寸": "2 fl. oz. (59mL)",
+      "起订量": "未拍到",
+      "其他": "阿拉伯文：روزماري النعناع النفط；含Biotin，用于日常使用/头皮护理/分叉护理；桌面手写数字'725'及'192'，含义待确认"
+    }
+  ],
+  "checks": {
+    "59": true,
+    "Wendy": true
+  },
+  "count_ok": true
+}

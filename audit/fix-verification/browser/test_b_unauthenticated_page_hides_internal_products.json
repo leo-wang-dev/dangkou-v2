@@ -1,0 +1,9 @@
+[
+  {
+    "status": 401,
+    "url": "http://127.0.0.1:51735/tickets"
+  },
+  {
+    "pageerror": "{\"detail\":\"unauthorized\"}"
+  }
+]

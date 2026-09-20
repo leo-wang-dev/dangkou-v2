@@ -1,0 +1,35 @@
+{
+  "http_status": 200,
+  "elapsed": 7.52,
+  "response": {
+    "choices": [
+      {
+        "message": {
+          "content": "[\n  {\n    \"型号或品名\": \"COFFEE SHERBET BODY SCRUB\",\n    \"价格\": \"¥3.8\",\n    \"装箱数\": \"未拍到\",\n    \"颜色\": \"深褐色膏体\",\n    \"体积或尺寸\": \"11.83FL.OZ.(350ml)\",\n    \"起订量\": \"未拍到\",\n    \"其他值得记录的信息\": \"Miss wendy for all skin types；手写标注：350 mL、96（含义待确认）\"\n  },\n  {\n    \"型号或品名\": \"AVOCADO SHERBET BODY SCRUB\",\n    \"价格\": \"未拍到\",\n    \"装箱数\": \"未拍到\",\n    \"颜色\": \"浅绿色膏体\",\n    \"体积或尺寸\": \"17.4FL.OZ.（标签部分可见，数值模糊）\",\n    \"起订量\": \"未拍到\",\n    \"其他值得记录的信息\": \"标签含牛油果图案；背景中仅部分可见\"\n  }\n]",
+          "reasoning_content": "",
+          "role": "assistant"
+        },
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 2328,
+      "completion_tokens": 232,
+      "total_tokens": 2560,
+      "completion_tokens_details": {
+        "text_tokens": 232
+      },
+      "prompt_tokens_details": {
+        "image_tokens": 2122,
+        "text_tokens": 206,
+        "cached_tokens": 0
+      }
+    },
+    "created": 1789674948,
+    "model": "qwen3-vl-plus",
+    "id": "chatcmpl-ceabe2d2-de44-9948-a8ee-c047db1d13b7"
+  }
+}

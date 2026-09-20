@@ -1,0 +1,35 @@
+{
+  "http_status": 200,
+  "elapsed": 8.79,
+  "response": {
+    "choices": [
+      {
+        "message": {
+          "content": "[\n  {\n    \"型号或品名\": \"Sylkin Hair Food Olive Treatment\",\n    \"价格\": \"¥4.8\",\n    \"装箱数\": \"未拍到\",\n    \"颜色\": \"黄色膏体，瓶身为透明黄绿色，盖子黑色\",\n    \"体积或尺寸\": \"未拍到\",\n    \"起订量\": \"未拍到\",\n    \"其他值得记录的信息\": \"标签文字：'For lilyng with styling'；背景有另一罐产品部分可见，标有'HYDROLYZED COLLAGEN'等字样，但无法辨识完整信息\"\n  },\n  {\n    \"型号或品名\": \"未识别商品（背景白色罐）\",\n    \"价格\": \"未拍到\",\n    \"装箱数\": \"未拍到\",\n    \"颜色\": \"白色罐身，紫色标签\",\n    \"体积或尺寸\": \"未拍到\",\n    \"起订量\": \"未拍到\",\n    \"其他值得记录的信息\": \"标签可见文字：'HYDROLYZED COLLAGEN'、'VITAMIN'、女性头像图案；其余模糊，无法确认品名与规格\"\n  }\n]",
+          "reasoning_content": "",
+          "role": "assistant"
+        },
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 2328,
+      "completion_tokens": 257,
+      "total_tokens": 2585,
+      "completion_tokens_details": {
+        "text_tokens": 257
+      },
+      "prompt_tokens_details": {
+        "image_tokens": 2122,
+        "text_tokens": 206,
+        "cached_tokens": 0
+      }
+    },
+    "created": 1789674949,
+    "model": "qwen3-vl-plus",
+    "id": "chatcmpl-8d257a03-876c-9c9a-9577-1422dad61d4b"
+  }
+}

@@ -1,0 +1,96 @@
+F......                                                                  [100%]
+=================================== FAILURES ===================================
+______________ test_merchant_approval_to_customer_shop_and_excel _______________
+
+page = <Page url='http://127.0.0.1:52019/cs/list.html?k=Qmb1Smfd40umF2aJ-ekW8Q'>
+site = {'base': 'http://127.0.0.1:52019', 'conn': <sqlite3.Connection object at 0x1081e14e0>, 'api': <httpx.Client object at ...10>, 'photo': PosixPath('/Users/a1/workSpace/Eryuan/dangkou-v2/data/cs_photos/audit-browser-osqjma5l/sample.jpg'), ...}
+
+    def test_merchant_approval_to_customer_shop_and_excel(page,site):
+        api=site['api'];conn=site['conn']
+        tk=api.patch('/shop',json={'changes':{'shop_name':'联动测试档口','stall_no':'测试A123','tg_bot_id':'12345','owner_wechat':'TEST-OWNER-WX'}}).json()
+        detail=review(page,site,{'id':tk['ticket_id']})
+        expect(detail).to_contain_text('联动测试档口')
+        detail.locator('..').get_by_role('button',name='整单通过',exact=True).click()
+        expect(page.locator('#review')).to_contain_text('没有待办工单')
+        shop_link.verify_bot(conn,{'id':12345,'is_bot':True})
+        # Merchant changes a real catalog tier through approval; C bot sees the same DB.
+        tk=api.patch('/products/curler/c1',json={'changes':{'阶梯价':'20:15;50:13'}}).json()
+        detail=review(page,site,{'id':tk['ticket_id']})
+        detail.locator('..').get_by_role('button',name='整单通过',exact=True).click()
+        expect(page.locator('#review')).to_contain_text('没有待办工单')
+        transport=Mock();transport.download_photo.return_value=site['photo'].read_bytes()
+        llm=Mock();llm.chat_vision.return_value='[{"型号或品名":"CURLER-1","价格":"模糊"}]';llm.chat_text.return_value='<<PASS>>'
+        bot=CsBot(conn,transport,llm=llm,img_dir=str(site['folder']/'buyer-photos'))
+        bot.handle_update({'update_id':90001,'message':{'chat':{'id':901,'type':'private'},'from':{'id':901},'photo':[{'file_id':'test','width':160}]}})
+        customer=conn.execute("SELECT * FROM cs_customer WHERE tg_id='901'").fetchone()
+        assert '¥13/个' in bot._on_text(customer,'询价1 60个')
+        bot._make_link(customer)
+        token=conn.execute('SELECT token FROM cs_link WHERE customer_id=?',(customer['id'],)).fetchone()[0]
+        page.goto(site['base']+'/cs/list.html?k='+token)
+        expect(page.locator('td[data-field="档口名称"]')).to_have_text('联动测试档口')
+        expect(page.locator('td[data-field="供应商联系方式"]')).to_contain_text('TEST-OWNER-WX')
+        cell=page.locator('td[data-field="档口名称"]');cell.fill('外部采购测试档口');cell.blur()
+        expect(page.locator('#tip')).to_have_text('已保存 ✓')
+        expect(page.locator('td[data-field="供应商联系方式"]')).to_have_text('待补充')
+        page.reload();expect(page.locator('td[data-field="档口名称"]')).to_have_text('外部采购测试档口')
+        expect(page.locator('td[data-field="档口归属依据"]')).to_have_text('客户填写')
+        with page.expect_download() as download:
+            page.get_by_role('button',name='⬇️ 导出 Excel').click()
+>       sheet=openpyxl.load_workbook(download.value.path()).active
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/e2e/test_shop_linkage_page.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:346: in load_workbook
+    reader = ExcelReader(filename, read_only, keep_vba,
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:123: in __init__
+    self.archive = _validate_archive(fn)
+                   ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+filename = PosixPath('/var/folders/z_/9jwqqszn5c99z0dvq7bydy0m0000gn/T/playwright-artifacts-DlAFQd/7cc90b15-5f8a-4ff5-bce1-55959a83fad8')
+
+    def _validate_archive(filename):
+        """
+        Does a first check whether filename is a string or a file-like
+        object. If it is a string representing a filename, a check is done
+        for supported formats by checking the given file-extension. If the
+        file-extension is not in SUPPORTED_FORMATS an InvalidFileException
+        will raised. Otherwise the filename (resp. file-like object) will
+        forwarded to zipfile.ZipFile returning a ZipFile-Instance.
+        """
+        is_file_like = hasattr(filename, 'read')
+        if not is_file_like:
+            file_format = os.path.splitext(filename)[-1].lower()
+            if file_format not in SUPPORTED_FORMATS:
+                if file_format == '.xls':
+                    msg = ('openpyxl does not support the old .xls file format, '
+                           'please use xlrd to read this file, or convert it to '
+                           'the more recent .xlsx file format.')
+                elif file_format == '.xlsb':
+                    msg = ('openpyxl does not support binary format .xlsb, '
+                           'please convert this file to .xlsx format if you want '
+                           'to open it with openpyxl')
+                else:
+                    msg = ('openpyxl does not support %s file format, '
+                           'please check you can open '
+                           'it with Excel first. '
+                           'Supported formats are: %s') % (file_format,
+                                                           ','.join(SUPPORTED_FORMATS))
+>               raise InvalidFileException(msg)
+E               openpyxl.utils.exceptions.InvalidFileException: openpyxl does not support  file format, please check you can open it with Excel first. Supported formats are: .xlsx,.xlsm,.xltx,.xltm
+
+.venv/lib/python3.12/site-packages/openpyxl/reader/excel.py:93: InvalidFileException
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv/lib/python3.12/site-packages/starlette/testclient.py:53
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/e2e/test_shop_linkage_page.py::test_merchant_approval_to_customer_shop_and_excel
+1 failed, 6 passed, 2 warnings in 1.89s

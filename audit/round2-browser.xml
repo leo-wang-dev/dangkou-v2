@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="10" skipped="0" tests="26" time="36.301" timestamp="2026-09-18T02:02:58.535094+08:00" hostname="1deMacBook-Pro.local"><testcase classname="audit.test_browser_round2" name="test_b_tabs_search_create_edit_delist" time="1.351" /><testcase classname="audit.test_browser_round2" name="test_b_cancel_edit_does_not_save" time="0.387" /><testcase classname="audit.test_browser_round2" name="test_b_clear_field_persists" time="0.358"><failure message="AssertionError: cleared color remained '黑色'&#10;assert not '黑色'">audit/test_browser_round2.py:218: in test_b_clear_field_persists
+    assert not value, f'cleared color remained {value!r}'
+E   AssertionError: cleared color remained '黑色'
+E   assert not '黑色'</failure></testcase><testcase classname="audit.test_browser_round2" name="test_b_upload_gallery_and_remove_last_image" time="0.612"><failure message="AssertionError: last image deletion did not persist&#10;assert (not 'razor/r1/img0.png')">audit/test_browser_round2.py:240: in test_b_upload_gallery_and_remove_last_image
+    assert not row['image_main'] and json.loads(row['images']) == [], 'last image deletion did not persist'
+E   AssertionError: last image deletion did not persist
+E   assert (not 'razor/r1/img0.png')</failure></testcase><testcase classname="audit.test_browser_round2" name="test_b_import_edit_partial_reject_approve" time="0.384" /><testcase classname="audit.test_browser_round2" name="test_b_single_then_whole_approval_no_duplicates" time="0.339"><failure message="AssertionError: assert [('IMPORT-A',...IMPORT-B', 1)] == [('IMPORT-A',...IMPORT-B', 1)]&#10;  &#10;  At index 0 diff: ('IMPORT-A', 2) != ('IMPORT-A', 1)&#10;  Use -v to get more diff">audit/test_browser_round2.py:267: in test_b_single_then_whole_approval_no_duplicates
+    assert [tuple(r) for r in counts] == [('IMPORT-A', 1), ('IMPORT-B', 1)]
+E   AssertionError: assert [('IMPORT-A',...IMPORT-B', 1)] == [('IMPORT-A',...IMPORT-B', 1)]
+E     
+E     At index 0 diff: ('IMPORT-A', 2) != ('IMPORT-A', 1)
+E     Use -v to get more diff</failure></testcase><testcase classname="audit.test_browser_round2" name="test_b_whole_reject_leaves_products_unchanged" time="0.192" /><testcase classname="audit.test_browser_round2" name="test_b_mutate_card_approve" time="0.242" /><testcase classname="audit.test_browser_round2" name="test_b_redline_ticket_has_readable_detail" time="5.129"><failure message="AssertionError: Locator expected to contain text '数量低于88个转人工'&#10;Actual value: 刷新中… &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; locator(&quot;#detail-5&quot;) with timeout 5000ms&#10;  - waiting for locator(&quot;#detail-5&quot;)&#10;    14 × locator resolved to &lt;div id=&quot;detail-5&quot;&gt;…&lt;/div&gt;&#10;       - unexpected value &quot;刷新中…&quot;&#10;&#10;Aria snapshot:&#10;- text: 刷新中…">audit/test_browser_round2.py:293: in test_b_redline_ticket_has_readable_detail
+    expect(detail).to_contain_text('数量低于88个转人工')
+E   AssertionError: Locator expected to contain text '数量低于88个转人工'
+E   Actual value: 刷新中… 
+E   Call log:
+E     - Expect "to_contain_text" locator("#detail-5") with timeout 5000ms
+E     - waiting for locator("#detail-5")
+E       14 × locator resolved to &lt;div id="detail-5"&gt;…&lt;/div&gt;
+E          - unexpected value "刷新中…"
+E   
+E   Aria snapshot:
+E   - text: 刷新中…</failure></testcase><testcase classname="audit.test_browser_round2" name="test_b_unauthenticated_page_hides_internal_products" time="5.179"><failure message="AssertionError: Locator expected not to contain text '7.35'&#10;Actual value: &#10;      &#10;        无图&#10;        &#10;          RAZOR-1&#10;          AUDIT-R1 · approved&#10;          &#10;            编辑&#10;            下架&#10;          &#10;        &#10;      &#10;      &#10;        &#10;          功能描述—&#10;          颜色黑色&#10;          产品尺寸(mm)—&#10;          彩盒尺寸(mm)—&#10;          单套重量(g)—&#10;          箱规—&#10;          报价7.35&#10;          备注—&#10;      &#10;     &#10;Call log:&#10;  - Expect &quot;not_to_contain_text&quot; locator(&quot;#plist&quot;) with timeout 5000ms&#10;  - waiting for locator(&quot;#plist&quot;)&#10;    14 × locator resolved to &lt;div id=&quot;plist&quot;&gt;…&lt;/div&gt;&#10;       - unexpected value &quot;&#10;      &#10;        无图&#10;        &#10;          RAZOR-1&#10;          AUDIT-R1 · approved&#10;          &#10;            编辑&#10;            下架&#10;          &#10;        &#10;      &#10;      &#10;        &#10;          功能描述—&#10;          颜色黑色&#10;          产品尺寸(mm)—&#10;          彩盒尺寸(mm)—&#10;          单套重量(g)—&#10;          箱规—&#10;          报价7.35&#10;          备注—&#10;      &#10;    &quot;&#10;&#10;Aria snapshot:&#10;- text: 无图 RAZOR-1 AUDIT-R1 · approved&#10;- button &quot;编辑&quot;&#10;- button &quot;下架&quot;&#10;- text: 功能描述 — 颜色 黑色 产品尺寸(mm) — 彩盒尺寸(mm) — 单套重量(g) — 箱规 — 报价 7.35 备注 —">audit/test_browser_round2.py:298: in test_b_unauthenticated_page_hides_internal_products
+    expect(page.locator('#plist')).not_to_contain_text('7.35')
+E   AssertionError: Locator expected not to contain text '7.35'
+E   Actual value: 
+E         
+E           无图
+E           
+E             RAZOR-1
+E             AUDIT-R1 · approved
+E             
+E               编辑
+E               下架
+E             
+E           
+E         
+E         
+E           
+E             功能描述—
+E             颜色黑色
+E             产品尺寸(mm)—
+E             彩盒尺寸(mm)—
+E             单套重量(g)—
+E             箱规—
+E             报价7.35
+E             备注—
+E         
+E        
+E   Call log:
+E     - Expect "not_to_contain_text" locator("#plist") with timeout 5000ms
+E     - waiting for locator("#plist")
+E       14 × locator resolved to &lt;div id="plist"&gt;…&lt;/div&gt;
+E          - unexpected value "
+E         
+E           无图
+E           
+E             RAZOR-1
+E             AUDIT-R1 · approved
+E             
+E               编辑
+E               下架
+E             
+E           
+E         
+E         
+E           
+E             功能描述—
+E             颜色黑色
+E             产品尺寸(mm)—
+E             彩盒尺寸(mm)—
+E             单套重量(g)—
+E             箱规—
+E             报价7.35
+E             备注—
+E         
+E       "
+E   
+E   Aria snapshot:
+E   - text: 无图 RAZOR-1 AUDIT-R1 · approved
+E   - button "编辑"
+E   - button "下架"
+E   - text: 功能描述 — 颜色 黑色 产品尺寸(mm) — 彩盒尺寸(mm) — 单套重量(g) — 箱规 — 报价 7.35 备注 —</failure></testcase><testcase classname="audit.test_browser_round2" name="test_b_tier_visibility_fields_can_be_maintained" time="5.302"><failure message="AssertionError: Locator expected to contain text '阶梯价'&#10;Actual value: 编辑商品（卷发棒）ITEM.NO 型号&#10;      装箱尺寸&#10;      装箱数量&#10;      价格&#10;      电压&#10;      功率&#10;      发热体&#10;      材质&#10;      频率&#10;      备注&#10;      图片（点 × 删除，点 ＋ 上传新图）＋&#10;  &#10;      取消&#10;      提交&#10;    保存后立即生效。 &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; locator(&quot;#modalBox&quot;) with timeout 5000ms&#10;  - waiting for locator(&quot;#modalBox&quot;)&#10;    - locator resolved to &lt;div class=&quot;box&quot; id=&quot;modalBox&quot;&gt;&lt;/div&gt;&#10;    - unexpected value &quot;&quot;&#10;    13 × locator resolved to &lt;div class=&quot;box&quot; id=&quot;modalBox&quot;&gt;…&lt;/div&gt;&#10;       - unexpected value &quot;编辑商品（卷发棒）ITEM.NO 型号&#10;      装箱尺寸&#10;      装箱数量&#10;      价格&#10;      电压&#10;      功率&#10;      发热体&#10;      材质&#10;      频率&#10;      备注&#10;      图片（点 × 删除，点 ＋ 上传新图）＋&#10;  &#10;      取消&#10;      提交&#10;    保存后立即生效。&quot;&#10;&#10;Aria snapshot:&#10;- heading &quot;编辑商品（卷发棒）&quot; [level=3]&#10;- text: ITEM.NO 型号&#10;- textbox: CURLER-1&#10;- text: 装箱尺寸&#10;- textbox&#10;- text: 装箱数量&#10;- textbox&#10;- text: 价格&#10;- textbox: &quot;10&quot;&#10;- text: 电压&#10;- textbox&#10;- text: 功率&#10;- textbox&#10;- text: 发热体&#10;- textbox&#10;- text: 材质&#10;- textbox&#10;- text: 频率&#10;- textbox&#10;- text: 备注&#10;- textbox&#10;- text: 图片（点 × 删除，点 ＋ 上传新图）&#10;- button &quot;＋&quot;&#10;- button &quot;取消&quot;&#10;- button &quot;提交&quot;&#10;- paragraph: 保存后立即生效。">audit/test_browser_round2.py:304: in test_b_tier_visibility_fields_can_be_maintained
+    expect(page.locator('#modalBox')).to_contain_text('阶梯价')
+E   AssertionError: Locator expected to contain text '阶梯价'
+E   Actual value: 编辑商品（卷发棒）ITEM.NO 型号
+E         装箱尺寸
+E         装箱数量
+E         价格
+E         电压
+E         功率
+E         发热体
+E         材质
+E         频率
+E         备注
+E         图片（点 × 删除，点 ＋ 上传新图）＋
+E     
+E         取消
+E         提交
+E       保存后立即生效。 
+E   Call log:
+E     - Expect "to_contain_text" locator("#modalBox") with timeout 5000ms
+E     - waiting for locator("#modalBox")
+E       - locator resolved to &lt;div class="box" id="modalBox"&gt;&lt;/div&gt;
+E       - unexpected value ""
+E       13 × locator resolved to &lt;div class="box" id="modalBox"&gt;…&lt;/div&gt;
+E          - unexpected value "编辑商品（卷发棒）ITEM.NO 型号
+E         装箱尺寸
+E         装箱数量
+E         价格
+E         电压
+E         功率
+E         发热体
+E         材质
+E         频率
+E         备注
+E         图片（点 × 删除，点 ＋ 上传新图）＋
+E     
+E         取消
+E         提交
+E       保存后立即生效。"
+E   
+E   Aria snapshot:
+E   - heading "编辑商品（卷发棒）" [level=3]
+E   - text: ITEM.NO 型号
+E   - textbox: CURLER-1
+E   - text: 装箱尺寸
+E   - textbox
+E   - text: 装箱数量
+E   - textbox
+E   - text: 价格
+E   - textbox: "10"
+E   - text: 电压
+E   - textbox
+E   - text: 功率
+E   - textbox
+E   - text: 发热体
+E   - textbox
+E   - text: 材质
+E   - textbox
+E   - text: 频率
+E   - textbox
+E   - text: 备注
+E   - textbox
+E   - text: 图片（点 × 删除，点 ＋ 上传新图）
+E   - button "＋"
+E   - button "取消"
+E   - button "提交"
+E   - paragraph: 保存后立即生效。</failure></testcase><testcase classname="audit.test_browser_round2" name="test_b_mobile_layout_fits_viewport" time="0.168" /><testcase classname="audit.test_browser_round2" name="test_c_list_edit_refresh_export[desktop]" time="0.293" /><testcase classname="audit.test_browser_round2" name="test_c_list_edit_refresh_export[mobile]" time="0.222" /><testcase classname="audit.test_browser_round2" name="test_c_invalid_or_expired_link_shows_error[missing]" time="0.086" /><testcase classname="audit.test_browser_round2" name="test_c_invalid_or_expired_link_shows_error[expired]" time="5.110"><failure message="AssertionError: Locator expected to contain text '链接无效或已过期'&#10;Actual value: #型号或品名价格颜色1杯子-a12白色提示：直接点击单元格即可修改，改完自动保存 &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; locator(&quot;#list&quot;) with timeout 5000ms&#10;  - waiting for locator(&quot;#list&quot;)&#10;    14 × locator resolved to &lt;div id=&quot;list&quot;&gt;…&lt;/div&gt;&#10;       - unexpected value &quot;#型号或品名价格颜色1杯子-a12白色提示：直接点击单元格即可修改，改完自动保存&quot;&#10;&#10;Aria snapshot:&#10;- table:&#10;  - rowgroup:&#10;    - row &quot;# 型号或品名 价格 颜色&quot;:&#10;      - columnheader &quot;#&quot;&#10;      - columnheader &quot;型号或品名&quot;&#10;      - columnheader &quot;价格&quot;&#10;      - columnheader &quot;颜色&quot;&#10;    - row &quot;1 杯子-a 12 白色&quot;:&#10;      - cell &quot;1&quot;&#10;      - cell &quot;杯子-a&quot;&#10;      - cell &quot;12&quot;&#10;      - cell &quot;白色&quot;&#10;- paragraph: 提示：直接点击单元格即可修改，改完自动保存">audit/test_browser_round2.py:338: in test_c_invalid_or_expired_link_shows_error
+    expect(page.locator('#list')).to_contain_text('链接无效或已过期')
+E   AssertionError: Locator expected to contain text '链接无效或已过期'
+E   Actual value: #型号或品名价格颜色1杯子-a12白色提示：直接点击单元格即可修改，改完自动保存 
+E   Call log:
+E     - Expect "to_contain_text" locator("#list") with timeout 5000ms
+E     - waiting for locator("#list")
+E       14 × locator resolved to &lt;div id="list"&gt;…&lt;/div&gt;
+E          - unexpected value "#型号或品名价格颜色1杯子-a12白色提示：直接点击单元格即可修改，改完自动保存"
+E   
+E   Aria snapshot:
+E   - table:
+E     - rowgroup:
+E       - row "# 型号或品名 价格 颜色":
+E         - columnheader "#"
+E         - columnheader "型号或品名"
+E         - columnheader "价格"
+E         - columnheader "颜色"
+E       - row "1 杯子-a 12 白色":
+E         - cell "1"
+E         - cell "杯子-a"
+E         - cell "12"
+E         - cell "白色"
+E   - paragraph: 提示：直接点击单元格即可修改，改完自动保存</failure></testcase><testcase classname="audit.test_browser_round2" name="test_c_empty_list_has_guidance" time="0.095" /><testcase classname="audit.test_browser_round2" name="test_c_customer_switch_does_not_mix_list" time="0.105" /><testcase classname="audit.test_browser_round2" name="test_c_photo_visible_with_service_auth_enabled[False]" time="4.590"><failure message="playwright._impl._errors.TimeoutError: Page.wait_for_function: Timeout 4500ms exceeded.">audit/test_browser_round2.py:363: in test_c_photo_visible_with_service_auth_enabled
+    page.wait_for_function("!!document.querySelector('#list img') &amp;&amp; document.querySelector('#list img').naturalWidth &gt; 0")
+.venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py:12809: in wait_for_function
+    self._sync(
+.venv/lib/python3.12/site-packages/playwright/_impl/_page.py:1153: in wait_for_function
+    return await self._main_frame.wait_for_function(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/playwright/_impl/_frame.py:941: in wait_for_function
+    await self._channel.send("waitForFunction", self._timeout, params)
+.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:632: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.wait_for_function: Timeout 4500ms exceeded.</failure></testcase><testcase classname="audit.test_browser_round2" name="test_c_photo_visible_with_service_auth_enabled[True]" time="4.625"><failure message="playwright._impl._errors.TimeoutError: Page.wait_for_function: Timeout 4500ms exceeded.">audit/test_browser_round2.py:363: in test_c_photo_visible_with_service_auth_enabled
+    page.wait_for_function("!!document.querySelector('#list img') &amp;&amp; document.querySelector('#list img').naturalWidth &gt; 0")
+.venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py:12809: in wait_for_function
+    self._sync(
+.venv/lib/python3.12/site-packages/playwright/_impl/_page.py:1153: in wait_for_function
+    return await self._main_frame.wait_for_function(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/playwright/_impl/_frame.py:941: in wait_for_function
+    await self._channel.send("waitForFunction", self._timeout, params)
+.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:632: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.wait_for_function: Timeout 4500ms exceeded.</failure></testcase><testcase classname="audit.test_browser_round2" name="test_c_download_contains_photo" time="0.127"><failure message="assert 0 == 1&#10; +  where 0 = len([])&#10; +    where [] = &lt;Worksheet &quot;Sheet&quot;&gt;._images&#10; +      where &lt;Worksheet &quot;Sheet&quot;&gt; = &lt;openpyxl.workbook.workbook.Workbook object at 0x109f3eae0&gt;.active">audit/test_browser_round2.py:372: in test_c_download_contains_photo
+    assert len(wb.active._images) == 1
+E   assert 0 == 1
+E    +  where 0 = len([])
+E    +    where [] = &lt;Worksheet "Sheet"&gt;._images
+E    +      where &lt;Worksheet "Sheet"&gt; = &lt;openpyxl.workbook.workbook.Workbook object at 0x109f3eae0&gt;.active</failure></testcase><testcase classname="audit.test_browser_round2" name="test_redline_card_decision_click[True]" time="0.160" /><testcase classname="audit.test_browser_round2" name="test_redline_card_decision_click[False]" time="0.159" /><testcase classname="audit.test_browser_round2" name="test_redline_card_wrong_token_cannot_approve" time="0.160" /><testcase classname="audit.test_browser_round2" name="test_redline_card_repeated_approval_denied" time="0.227" /><testcase classname="audit.test_browser_round2" name="test_redline_missing_ticket_has_error" time="0.315" /></testsuite></testsuites>

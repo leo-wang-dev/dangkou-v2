@@ -17,10 +17,10 @@ def client(tmp_path, monkeypatch):
     conn.row_factory = sqlite3.Row
     db.init_db(conn)
     app.state.conn = conn
-    app.state.token = ''
+    app.state.token = 'test-service-token'
     app.state.storage = None
     app.state.callback = None
-    return TestClient(app)
+    return TestClient(app, headers={'X-Service-Token': 'test-service-token'})
 
 
 def _seed_customer_note(conn):
@@ -35,7 +35,7 @@ def _seed_customer_note(conn):
 def test_get_redline_default(client):
     r = client.get('/cs/redline')
     assert r.status_code == 200
-    assert '20' in r.json()['text_raw']            # 默认预置
+    assert '账期' in r.json()['text_raw']            # 默认预置
 
 
 def test_set_redline_via_approval(client):
@@ -68,7 +68,7 @@ def test_set_product_redline(client):
     t = [x for x in client.get('/tickets').json()['tickets'] if x['id'] == tid][0]
     client.post(f"/tickets/{t['id']}/decision", json={'token': t['token'], 'approved': True})
     assert client.get('/cs/redline?product_id=p1').json()['text_raw'] == '这款50个起'
-    assert '20' in client.get('/cs/redline?product_id=p2').json()['text_raw']  # 其他商品继承店级
+    assert '账期' in client.get('/cs/redline?product_id=p2').json()['text_raw']  # 其他商品继承店级
 
 
 # ---------- 清单链接 ----------
@@ -108,3 +108,39 @@ def test_link_export_excel(client):
     heads = [c.value for c in ws[1]]
     assert '价格' in heads and '颜色' in heads          # 动态字段列
     assert ws.cell(2, heads.index('价格') + 1).value == '80R'
+
+
+def test_draft_list_photo_edit_and_export_without_confirmation(client, tmp_path):
+    import json
+    import openpyxl
+    from PIL import Image
+    conn = app.state.conn
+    _seed_customer_note(conn)
+    photo = tmp_path / 'draft.jpg'
+    Image.new('RGB', (64, 64), 'blue').save(photo)
+    conn.execute("UPDATE cs_note SET status='draft',photo=?", (str(photo),))
+    conn.execute("INSERT INTO cs_link(token,customer_id) VALUES('draft-link','c1')")
+    conn.execute("INSERT INTO cs_customer(id,tg_id) VALUES('c2','200')")
+    conn.execute("INSERT INTO cs_note(customer_id,fields_json,status) VALUES('c2','{\"其他客户\":\"secret\"}','draft')")
+    conn.execute("INSERT INTO cs_note(customer_id,fields_json,status) VALUES('c1','{\"已删除\":\"deleted\"}','discarded')")
+    conn.commit()
+    notes = client.get('/cs/link/draft-link').json()['notes']
+    assert len(notes) == 1 and notes[0]['status'] == 'draft'
+    assert client.get(notes[0]['photo']).content == photo.read_bytes()
+    assert client.patch(f"/cs/link/draft-link/note/{notes[0]['id']}",json={'field':'颜色','value':'蓝色'}).status_code == 200
+    response = client.get('/cs/link/draft-link/export.xlsx')
+    sheet = openpyxl.load_workbook(io.BytesIO(response.content)).active
+    assert sheet.max_row == 2 and len(sheet._images) == 1
+    values = str(list(sheet.values))
+    assert '蓝色' in values and '待确认' in values
+    assert 'secret' not in values and 'deleted' not in values
+    assert conn.execute('SELECT status FROM cs_note WHERE id=?',(notes[0]['id'],)).fetchone()[0] == 'draft'
+
+
+def test_empty_export_returns_actionable_error(client):
+    conn = app.state.conn
+    conn.execute("INSERT INTO cs_customer(id,tg_id) VALUES('empty','300')")
+    conn.execute("INSERT INTO cs_link(token,customer_id) VALUES('empty-link','empty')")
+    conn.commit()
+    response = client.get('/cs/link/empty-link/export.xlsx')
+    assert response.status_code == 409 and '暂无可导出' in response.json()['detail']

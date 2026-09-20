@@ -1,0 +1,32 @@
+........................................................................ [ 19%]
+............sss......................................................... [ 38%]
+........................................................................ [ 58%]
+....F................................................................... [ 77%]
+........................................................................ [ 97%]
+...........                                                              [100%]
+=================================== FAILURES ===================================
+________ test_platform_rule_readonly_on_api_and_candidate_context_kept _________
+
+env = (<sqlite3.Connection object at 0x109defb50>, <starlette.testclient.TestClient object at 0x10c0bf080>, <catalog.csbot.CsBot object at 0x10c0bf0b0>)
+
+    def test_platform_rule_readonly_on_api_and_candidate_context_kept(env):
+        conn,client,bot=env
+        result=client.get('/cs/redline').json()
+>       assert result['platform_editable'] is False and '所有涉及价格' in result['platform_rule']
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'platform_editable'
+
+tests/test_platform_price_policy.py:61: KeyError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv/lib/python3.12/site-packages/starlette/testclient.py:53
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_platform_price_policy.py::test_platform_rule_readonly_on_api_and_candidate_context_kept
+1 failed, 367 passed, 3 skipped, 2 warnings in 19.77s

@@ -1,0 +1,236 @@
+..FF.F..FFF....F..FFF.....                                               [100%]
+=================================== FAILURES ===================================
+_________________________ test_b_clear_field_persists __________________________
+audit/test_browser_round2.py:218: in test_b_clear_field_persists
+    assert not value, f'cleared color remained {value!r}'
+E   AssertionError: cleared color remained '黑色'
+E   assert not '黑色'
+_________________ test_b_upload_gallery_and_remove_last_image __________________
+audit/test_browser_round2.py:240: in test_b_upload_gallery_and_remove_last_image
+    assert not row['image_main'] and json.loads(row['images']) == [], 'last image deletion did not persist'
+E   AssertionError: last image deletion did not persist
+E   assert (not 'razor/r1/img0.png')
+_______________ test_b_single_then_whole_approval_no_duplicates ________________
+audit/test_browser_round2.py:267: in test_b_single_then_whole_approval_no_duplicates
+    assert [tuple(r) for r in counts] == [('IMPORT-A', 1), ('IMPORT-B', 1)]
+E   AssertionError: assert [('IMPORT-A',...IMPORT-B', 1)] == [('IMPORT-A',...IMPORT-B', 1)]
+E     
+E     At index 0 diff: ('IMPORT-A', 2) != ('IMPORT-A', 1)
+E     Use -v to get more diff
+__________________ test_b_redline_ticket_has_readable_detail ___________________
+audit/test_browser_round2.py:293: in test_b_redline_ticket_has_readable_detail
+    expect(detail).to_contain_text('数量低于88个转人工')
+E   AssertionError: Locator expected to contain text '数量低于88个转人工'
+E   Actual value: 刷新中… 
+E   Call log:
+E     - Expect "to_contain_text" locator("#detail-5") with timeout 5000ms
+E     - waiting for locator("#detail-5")
+E       14 × locator resolved to <div id="detail-5">…</div>
+E          - unexpected value "刷新中…"
+E   
+E   Aria snapshot:
+E   - text: 刷新中…
+_____________ test_b_unauthenticated_page_hides_internal_products ______________
+audit/test_browser_round2.py:298: in test_b_unauthenticated_page_hides_internal_products
+    expect(page.locator('#plist')).not_to_contain_text('7.35')
+E   AssertionError: Locator expected not to contain text '7.35'
+E   Actual value: 
+E         
+E           无图
+E           
+E             RAZOR-1
+E             AUDIT-R1 · approved
+E             
+E               编辑
+E               下架
+E             
+E           
+E         
+E         
+E           
+E             功能描述—
+E             颜色黑色
+E             产品尺寸(mm)—
+E             彩盒尺寸(mm)—
+E             单套重量(g)—
+E             箱规—
+E             报价7.35
+E             备注—
+E         
+E        
+E   Call log:
+E     - Expect "not_to_contain_text" locator("#plist") with timeout 5000ms
+E     - waiting for locator("#plist")
+E       14 × locator resolved to <div id="plist">…</div>
+E          - unexpected value "
+E         
+E           无图
+E           
+E             RAZOR-1
+E             AUDIT-R1 · approved
+E             
+E               编辑
+E               下架
+E             
+E           
+E         
+E         
+E           
+E             功能描述—
+E             颜色黑色
+E             产品尺寸(mm)—
+E             彩盒尺寸(mm)—
+E             单套重量(g)—
+E             箱规—
+E             报价7.35
+E             备注—
+E         
+E       "
+E   
+E   Aria snapshot:
+E   - text: 无图 RAZOR-1 AUDIT-R1 · approved
+E   - button "编辑"
+E   - button "下架"
+E   - text: 功能描述 — 颜色 黑色 产品尺寸(mm) — 彩盒尺寸(mm) — 单套重量(g) — 箱规 — 报价 7.35 备注 —
+_______________ test_b_tier_visibility_fields_can_be_maintained ________________
+audit/test_browser_round2.py:304: in test_b_tier_visibility_fields_can_be_maintained
+    expect(page.locator('#modalBox')).to_contain_text('阶梯价')
+E   AssertionError: Locator expected to contain text '阶梯价'
+E   Actual value: 编辑商品（卷发棒）ITEM.NO 型号
+E         装箱尺寸
+E         装箱数量
+E         价格
+E         电压
+E         功率
+E         发热体
+E         材质
+E         频率
+E         备注
+E         图片（点 × 删除，点 ＋ 上传新图）＋
+E     
+E         取消
+E         提交
+E       保存后立即生效。 
+E   Call log:
+E     - Expect "to_contain_text" locator("#modalBox") with timeout 5000ms
+E     - waiting for locator("#modalBox")
+E       - locator resolved to <div class="box" id="modalBox"></div>
+E       - unexpected value ""
+E       13 × locator resolved to <div class="box" id="modalBox">…</div>
+E          - unexpected value "编辑商品（卷发棒）ITEM.NO 型号
+E         装箱尺寸
+E         装箱数量
+E         价格
+E         电压
+E         功率
+E         发热体
+E         材质
+E         频率
+E         备注
+E         图片（点 × 删除，点 ＋ 上传新图）＋
+E     
+E         取消
+E         提交
+E       保存后立即生效。"
+E   
+E   Aria snapshot:
+E   - heading "编辑商品（卷发棒）" [level=3]
+E   - text: ITEM.NO 型号
+E   - textbox: CURLER-1
+E   - text: 装箱尺寸
+E   - textbox
+E   - text: 装箱数量
+E   - textbox
+E   - text: 价格
+E   - textbox: "10"
+E   - text: 电压
+E   - textbox
+E   - text: 功率
+E   - textbox
+E   - text: 发热体
+E   - textbox
+E   - text: 材质
+E   - textbox
+E   - text: 频率
+E   - textbox
+E   - text: 备注
+E   - textbox
+E   - text: 图片（点 × 删除，点 ＋ 上传新图）
+E   - button "＋"
+E   - button "取消"
+E   - button "提交"
+E   - paragraph: 保存后立即生效。
+_____________ test_c_invalid_or_expired_link_shows_error[expired] ______________
+audit/test_browser_round2.py:338: in test_c_invalid_or_expired_link_shows_error
+    expect(page.locator('#list')).to_contain_text('链接无效或已过期')
+E   AssertionError: Locator expected to contain text '链接无效或已过期'
+E   Actual value: #型号或品名价格颜色1杯子-a12白色提示：直接点击单元格即可修改，改完自动保存 
+E   Call log:
+E     - Expect "to_contain_text" locator("#list") with timeout 5000ms
+E     - waiting for locator("#list")
+E       14 × locator resolved to <div id="list">…</div>
+E          - unexpected value "#型号或品名价格颜色1杯子-a12白色提示：直接点击单元格即可修改，改完自动保存"
+E   
+E   Aria snapshot:
+E   - table:
+E     - rowgroup:
+E       - row "# 型号或品名 价格 颜色":
+E         - columnheader "#"
+E         - columnheader "型号或品名"
+E         - columnheader "价格"
+E         - columnheader "颜色"
+E       - row "1 杯子-a 12 白色":
+E         - cell "1"
+E         - cell "杯子-a"
+E         - cell "12"
+E         - cell "白色"
+E   - paragraph: 提示：直接点击单元格即可修改，改完自动保存
+____________ test_c_photo_visible_with_service_auth_enabled[False] _____________
+audit/test_browser_round2.py:363: in test_c_photo_visible_with_service_auth_enabled
+    page.wait_for_function("!!document.querySelector('#list img') && document.querySelector('#list img').naturalWidth > 0")
+.venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py:12809: in wait_for_function
+    self._sync(
+.venv/lib/python3.12/site-packages/playwright/_impl/_page.py:1153: in wait_for_function
+    return await self._main_frame.wait_for_function(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/playwright/_impl/_frame.py:941: in wait_for_function
+    await self._channel.send("waitForFunction", self._timeout, params)
+.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:632: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.wait_for_function: Timeout 4500ms exceeded.
+_____________ test_c_photo_visible_with_service_auth_enabled[True] _____________
+audit/test_browser_round2.py:363: in test_c_photo_visible_with_service_auth_enabled
+    page.wait_for_function("!!document.querySelector('#list img') && document.querySelector('#list img').naturalWidth > 0")
+.venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py:12809: in wait_for_function
+    self._sync(
+.venv/lib/python3.12/site-packages/playwright/_impl/_page.py:1153: in wait_for_function
+    return await self._main_frame.wait_for_function(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/playwright/_impl/_frame.py:941: in wait_for_function
+    await self._channel.send("waitForFunction", self._timeout, params)
+.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:632: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.wait_for_function: Timeout 4500ms exceeded.
+________________________ test_c_download_contains_photo ________________________
+audit/test_browser_round2.py:372: in test_c_download_contains_photo
+    assert len(wb.active._images) == 1
+E   assert 0 == 1
+E    +  where 0 = len([])
+E    +    where [] = <Worksheet "Sheet">._images
+E    +      where <Worksheet "Sheet"> = <openpyxl.workbook.workbook.Workbook object at 0x109f3eae0>.active
+=========================== short test summary info ============================
+FAILED audit/test_browser_round2.py::test_b_clear_field_persists - AssertionE...
+FAILED audit/test_browser_round2.py::test_b_upload_gallery_and_remove_last_image
+FAILED audit/test_browser_round2.py::test_b_single_then_whole_approval_no_duplicates
+FAILED audit/test_browser_round2.py::test_b_redline_ticket_has_readable_detail
+FAILED audit/test_browser_round2.py::test_b_unauthenticated_page_hides_internal_products
+FAILED audit/test_browser_round2.py::test_b_tier_visibility_fields_can_be_maintained
+FAILED audit/test_browser_round2.py::test_c_invalid_or_expired_link_shows_error[expired]
+FAILED audit/test_browser_round2.py::test_c_photo_visible_with_service_auth_enabled[False]
+FAILED audit/test_browser_round2.py::test_c_photo_visible_with_service_auth_enabled[True]
+FAILED audit/test_browser_round2.py::test_c_download_contains_photo - assert ...
+10 failed, 16 passed in 36.30s

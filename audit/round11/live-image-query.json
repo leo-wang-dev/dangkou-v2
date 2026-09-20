@@ -1,0 +1,32 @@
+{
+  "passed": true,
+  "candidates": [
+    {
+      "category": "curler",
+      "product_id": "bac552caa8c241c4",
+      "name": "8226"
+    },
+    {
+      "category": "curler",
+      "product_id": "8003237ef26fe83a",
+      "name": "8227"
+    },
+    {
+      "category": "curler",
+      "product_id": "7a085f59d587ea83",
+      "name": "8210"
+    },
+    {
+      "category": "curler",
+      "product_id": "f68273b3171e5ac4",
+      "name": "8225"
+    },
+    {
+      "category": "curler",
+      "product_id": "ab5ed1e1cdf28c59",
+      "name": "8237"
+    }
+  ],
+  "seconds": 0.5,
+  "method": "actual image retrieval through shared customer API; no model name supplied"
+}

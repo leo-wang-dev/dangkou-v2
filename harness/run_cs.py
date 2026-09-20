@@ -18,12 +18,12 @@ QUICK = '--quick' in sys.argv
 
 # ---- 用例冻结（跑前定死；改用例=改这份清单，不接受临时口头调整）----
 CASES = [
-    ('unit-core',   ['python3', '-m', 'pytest', 'tests/test_cs_core.py', '-q']),
-    ('unit-bot',    ['python3', '-m', 'pytest', 'tests/test_csbot.py', '-q']),
-    ('unit-api',    ['python3', '-m', 'pytest', 'tests/test_cs_api.py', '-q']),
-    ('regression',  ['python3', '-m', 'pytest', 'tests/', '-q', '--ignore=tests/e2e']),
-    ('e2e-pages',   ['python3', '-m', 'pytest', 'tests/e2e/test_pages.py', '-q']),
-    ('e2e-real',    ['python3', '-m', 'pytest', 'tests/e2e/test_real_chain.py', '-q', '-rs']),
+    ('unit-core',   [sys.executable, '-m', 'pytest', 'tests/test_cs_core.py', '-q']),
+    ('unit-bot',    [sys.executable, '-m', 'pytest', 'tests/test_csbot.py', '-q']),
+    ('unit-api',    [sys.executable, '-m', 'pytest', 'tests/test_cs_api.py', '-q']),
+    ('regression',  [sys.executable, '-m', 'pytest', 'tests/', '-q', '--ignore=tests/e2e']),
+    ('e2e-pages',   [sys.executable, '-m', 'pytest', 'tests/e2e/test_pages.py', '-q']),
+    ('e2e-real',    [sys.executable, '-m', 'pytest', 'tests/e2e/test_real_chain.py', '-q', '-rs']),
 ]
 if QUICK:
     CASES = [c for c in CASES if not c[0].startswith('e2e-real')]
@@ -69,11 +69,11 @@ def main():
               ensure_ascii=False, indent=1)
     fails = [s for s in summary if s['status'] == 'fail']
     blocks = [s for s in summary if s['status'] == 'blocked']
-    print(f"\n结果：{len(summary)-1-len(blocks)} pass / {len(fails)} fail / {len(blocks)} blocked"
+    print(f"\n结果：{sum(s['status'] == 'pass' for s in summary if s['case'] != '_cleanup')} pass / {len(fails)} fail / {len(blocks)} blocked"
           f"  →  {run_dir}/summary.json", flush=True)
     for s in blocks:
         print(f"  BLOCKED: {s['case']}", flush=True)
-    sys.exit(1 if fails else 0)
+    sys.exit(1 if fails else 2 if blocks else 0)
 
 
 if __name__ == '__main__':

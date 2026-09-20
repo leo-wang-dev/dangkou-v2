@@ -1,0 +1,16 @@
+{
+  "registered": [
+    "catalog_import",
+    "catalog_check",
+    "catalog_search",
+    "catalog_stats",
+    "catalog_quote",
+    "catalog_mutate"
+  ],
+  "error": "ReferenceError: registry is not defined",
+  "expected": [
+    "cs_redline_get",
+    "cs_redline_set"
+  ],
+  "pass": false
+}

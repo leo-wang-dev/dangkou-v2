@@ -1,0 +1,72 @@
+{
+  "merchant_id": "caa0d647d631a356e7f5be33",
+  "shop_id": "shop_2afbe9e504054827a23679ca64fce6c4",
+  "health": {
+    "status": "ready",
+    "version": "v2.0"
+  },
+  "catalog_names": [
+    "TEST-CURL-2026",
+    "TEST-RZ-8226"
+  ],
+  "crud": {
+    "create_update_visible": true,
+    "delist_hidden": true
+  },
+  "imports": {
+    "docs": {
+      "1": {
+        "id": 1,
+        "status": "ticketed",
+        "stats": {
+          "new": 2,
+          "update": 0,
+          "category": "curler",
+          "delist": 0,
+          "vendor": null
+        },
+        "error": null
+      },
+      "2": {
+        "id": 2,
+        "status": "ticketed",
+        "stats": {
+          "new": 2,
+          "update": 0,
+          "category": "curler",
+          "delist": 0,
+          "vendor": null
+        },
+        "error": null
+      }
+    },
+    "decisions": [
+      {
+        "ticket": 1,
+        "doc_id": 1,
+        "approved": true
+      },
+      {
+        "ticket": 2,
+        "doc_id": 2,
+        "approved": false
+      }
+    ],
+    "reused": true
+  },
+  "photo_count": 4,
+  "confirmed_items": 5,
+  "excel_rows": 6,
+  "excel_images": 5,
+  "customer_flows": {
+    "catalog": true,
+    "merchant_quote_text": true,
+    "configured_handoff": true,
+    "condition_not_overmatched": true,
+    "explicit_owner_contact": true,
+    "exact_catalog_image_hit": true,
+    "unrelated_photos_not_hit": true
+  },
+  "telegram_transport": "captured local transport; no real second merchant bot was available",
+  "elapsed_sec": 123.08
+}

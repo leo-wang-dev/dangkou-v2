@@ -1,0 +1,4 @@
+.s                                                                       [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/e2e/test_real_chain.py:64: BLOCKED: 需 TG_BOT_TOKEN、TG_TEST_CHAT_ID、RUN_REAL_TG=1 显式开启真实发送
+1 passed, 1 skipped, 1 deselected in 12.25s

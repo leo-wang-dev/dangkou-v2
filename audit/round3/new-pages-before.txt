@@ -1,0 +1,42 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+________________ test_import_edit_retains_tiers_and_visibility _________________
+audit/test_round3_pages.py:20: in test_import_edit_retains_tiers_and_visibility
+    expect(page.locator('#fg-tier_price')).to_have_value('20:12;50:11')
+E   AssertionError: Locator expected to have Value '20:12;50:11'
+E   Actual value:  
+E   Call log:
+E     - Expect "to_have_value" locator("#fg-tier_price") with timeout 5000ms
+E     - waiting for locator("#fg-tier_price")
+E       14 × locator resolved to <input value="" id="fg-tier_price"/>
+E          - unexpected value ""
+E   
+E   Aria snapshot:
+E   - textbox
+______________ test_update_import_shows_new_photo_before_approval ______________
+audit/test_round3_pages.py:32: in test_update_import_shows_new_photo_before_approval
+    expect(detail.locator('img.p')).to_have_attribute('src',f'/ticketimg/{tk["id"]}/{site["photo"].name}?t={tk["token"]}')
+E   AssertionError: Locator expected to have attribute '/ticketimg/2/sample.jpg?t=0LQQxBrDOtvphqkkJALWafivCaGLA16Q'
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_have_attribute" locator("#detail-2").locator("img.p") with timeout 5000ms
+E     - waiting for locator("#detail-2").locator("img.p")
+E   
+E   Aria snapshot:
+E   - banner:
+E     - button "审核"
+E     - button "商品"
+E   - main:
+E     - text: "#2 整批导入 · 卷发棒 · 2026-09-17 18:51:01"
+E     - button "展开明细 ▾"
+E     - button "整单通过"
+E     - button "整单驳回"
+E     - text: 可展开明细逐行编辑（含图片）/驳回 更新 ITEM.NO 型号：CURLER-1 价格：12
+E     - button "✓通过"
+E     - button "编辑"
+E     - button "驳回"
+=========================== short test summary info ============================
+FAILED audit/test_round3_pages.py::test_import_edit_retains_tiers_and_visibility
+FAILED audit/test_round3_pages.py::test_update_import_shows_new_photo_before_approval
+2 failed in 11.45s

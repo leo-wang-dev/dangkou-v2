@@ -17,11 +17,11 @@ def client(tmp_path, monkeypatch):
     conn.row_factory = sqlite3.Row
     db.init_db(conn)
     app.state.conn = conn
-    app.state.token = ''
+    app.state.token = 'test-service-token'
     st = LocalStorage(str(tmp_path))
     app.state.storage = st
     app.state.callback = None
-    return TestClient(app)
+    return TestClient(app, headers={'X-Service-Token': 'test-service-token'})
 
 
 def _import_and_approve(client):

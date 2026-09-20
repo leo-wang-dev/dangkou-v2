@@ -1,0 +1,24 @@
+[Unit]
+Description=Telegram outbound proxy for Dangkou test bot
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/home/ubuntu/.local/share/dangkou-vpn/config.yaml
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+UMask=0077
+ExecStartPre=/usr/local/bin/dangkou-mihomo -t -d /home/ubuntu/.local/share/dangkou-vpn
+ExecStart=/usr/local/bin/dangkou-mihomo -d /home/ubuntu/.local/share/dangkou-vpn
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/.local/share/dangkou-vpn
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

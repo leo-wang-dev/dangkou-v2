@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="13" skipped="0" tests="16" time="0.317" timestamp="2026-09-18T02:05:33.261289+08:00" hostname="1deMacBook-Pro.local"><testcase classname="audit.test_boundaries_round2" name="test_invalid_tier_table_not_accepted[20:12;20:11]" time="0.041"><failure message="AssertionError: invalid or partial tier table accepted: 20:12;20:11&#10;assert 200 == 400&#10; +  where 200 = &lt;Response [200 OK]&gt;.status_code">audit/test_boundaries_round2.py:18: in test_invalid_tier_table_not_accepted
+    assert response.status_code == 400, f'invalid or partial tier table accepted: {tiers}'
+E   AssertionError: invalid or partial tier table accepted: 20:12;20:11
+E   assert 200 == 400
+E    +  where 200 = &lt;Response [200 OK]&gt;.status_code</failure></testcase><testcase classname="audit.test_boundaries_round2" name="test_invalid_tier_table_not_accepted[-20:12]" time="0.007"><failure message="AssertionError: invalid or partial tier table accepted: -20:12&#10;assert 200 == 400&#10; +  where 200 = &lt;Response [200 OK]&gt;.status_code">audit/test_boundaries_round2.py:18: in test_invalid_tier_table_not_accepted
+    assert response.status_code == 400, f'invalid or partial tier table accepted: {tiers}'
+E   AssertionError: invalid or partial tier table accepted: -20:12
+E   assert 200 == 400
+E    +  where 200 = &lt;Response [200 OK]&gt;.status_code</failure></testcase><testcase classname="audit.test_boundaries_round2" name="test_invalid_tier_table_not_accepted[0.5:12]" time="0.007"><failure message="AssertionError: invalid or partial tier table accepted: 0.5:12&#10;assert 200 == 400&#10; +  where 200 = &lt;Response [200 OK]&gt;.status_code">audit/test_boundaries_round2.py:18: in test_invalid_tier_table_not_accepted
+    assert response.status_code == 400, f'invalid or partial tier table accepted: {tiers}'
+E   AssertionError: invalid or partial tier table accepted: 0.5:12
+E   assert 200 == 400
+E    +  where 200 = &lt;Response [200 OK]&gt;.status_code</failure></testcase><testcase classname="audit.test_boundaries_round2" name="test_invalid_tier_table_not_accepted[20:12;50:-11]" time="0.007"><failure message="AssertionError: invalid or partial tier table accepted: 20:12;50:-11&#10;assert 200 == 400&#10; +  where 200 = &lt;Response [200 OK]&gt;.status_code">audit/test_boundaries_round2.py:18: in test_invalid_tier_table_not_accepted
+    assert response.status_code == 400, f'invalid or partial tier table accepted: {tiers}'
+E   AssertionError: invalid or partial tier table accepted: 20:12;50:-11
+E   assert 200 == 400
+E    +  where 200 = &lt;Response [200 OK]&gt;.status_code</failure></testcase><testcase classname="audit.test_boundaries_round2" name="test_boolean_visibility_really_makes_product_visible" time="0.007"><failure message="AssertionError: accepted true value silently removes product from visible catalog&#10;assert 'MODEL-1' in '\n\n当前没有可观测商品，任何询价都请客户等商家。'&#10; +  where '\n\n当前没有可观测商品，任何询价都请客户等商家。' = _catalog_brief()&#10; +    where _catalog_brief = &lt;catalog.csbot.CsBot object at 0x10d2839e0&gt;._catalog_brief">audit/test_boundaries_round2.py:30: in test_boolean_visibility_really_makes_product_visible
+    assert 'MODEL-1' in bot._catalog_brief(), 'accepted true value silently removes product from visible catalog'
+E   AssertionError: accepted true value silently removes product from visible catalog
+E   assert 'MODEL-1' in '\n\n当前没有可观测商品，任何询价都请客户等商家。'
+E    +  where '\n\n当前没有可观测商品，任何询价都请客户等商家。' = _catalog_brief()
+E    +    where _catalog_brief = &lt;catalog.csbot.CsBot object at 0x10d2839e0&gt;._catalog_brief</failure></testcase><testcase classname="audit.test_boundaries_round2" name="test_customer_export_treats_user_text_as_literal" time="0.010"><failure message="AssertionError: user-controlled note exported as executable Excel formula&#10;assert False&#10; +  where False = all(&lt;generator object test_customer_export_treats_user_text_as_literal.&lt;locals&gt;.&lt;genexpr&gt; at 0x10d312c20&gt;)">audit/test_boundaries_round2.py:40: in test_customer_export_treats_user_text_as_literal
+    assert all(c.data_type != 'f' for c in cells), 'user-controlled note exported as executable Excel formula'
+E   AssertionError: user-controlled note exported as executable Excel formula
+E   assert False
+E    +  where False = all(&lt;generator object test_customer_export_treats_user_text_as_literal.&lt;locals&gt;.&lt;genexpr&gt; at 0x10d312c20&gt;)</failure></testcase><testcase classname="audit.test_boundaries_round2" name="test_bad_model_edit_output_has_safe_fallback[[]]" time="0.007"><failure message="AttributeError: 'list' object has no attribute 'get'">audit/test_boundaries_round2.py:49: in test_bad_model_edit_output_has_safe_fallback
+    bot.handle_update(update)
+catalog/csbot.py:67: in handle_update
+    self._reply(chat_id, self._on_text(cust, text))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+catalog/csbot.py:117: in _on_text
+    edited = self._try_edit_draft(cust, text)      # 有草稿时先判是不是补改指令
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+catalog/csbot.py:174: in _try_edit_draft
+    action = cmd.get('action')
+             ^^^^^^^
+E   AttributeError: 'list' object has no attribute 'get'</failure></testcase><testcase classname="audit.test_boundaries_round2" name="test_bad_model_edit_output_has_safe_fallback[null]" time="0.006"><failure message="AttributeError: 'NoneType' object has no attribute 'get'">audit/test_boundaries_round2.py:49: in test_bad_model_edit_output_has_safe_fallback
+    bot.handle_update(update)
+catalog/csbot.py:67: in handle_update
+    self._reply(chat_id, self._on_text(cust, text))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+catalog/csbot.py:117: in _on_text
+    edited = self._try_edit_draft(cust, text)      # 有草稿时先判是不是补改指令
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+catalog/csbot.py:174: in _try_edit_draft
+    action = cmd.get('action')
+             ^^^^^^^
+E   AttributeError: 'NoneType' object has no attribute 'get'</failure></testcase><testcase classname="audit.test_boundaries_round2" name="test_bad_model_edit_output_has_safe_fallback[{&quot;action&quot;:&quot;edit&quot;,&quot;index&quot;:&quot;\u7b2c\u4e00\u4e2a&quot;,&quot;field&quot;:&quot;\u4ef7\u683c&quot;,&quot;value&quot;:&quot;5&quot;}]" time="0.006"><failure message="ValueError: invalid literal for int() with base 10: '第一个'">audit/test_boundaries_round2.py:49: in test_bad_model_edit_output_has_safe_fallback
+    bot.handle_update(update)
+catalog/csbot.py:67: in handle_update
+    self._reply(chat_id, self._on_text(cust, text))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+catalog/csbot.py:117: in _on_text
+    edited = self._try_edit_draft(cust, text)      # 有草稿时先判是不是补改指令
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+catalog/csbot.py:175: in _try_edit_draft
+    idx = int(cmd.get('index') or len(drafts))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ValueError: invalid literal for int() with base 10: '第一个'</failure></testcase><testcase classname="audit.test_boundaries_round2" name="test_same_customer_text_not_duplicated_in_llm_history" time="0.016"><failure message="assert 2 == 1&#10; +  where 2 = sum(&lt;generator object test_same_customer_text_not_duplicated_in_llm_history.&lt;locals&gt;.&lt;genexpr&gt; at 0x10d3f92f0&gt;)">audit/test_boundaries_round2.py:58: in test_same_customer_text_not_duplicated_in_llm_history
+    assert sum(m['content'] == 'MODEL-1 60个多少钱' for m in messages) == 1
+E   assert 2 == 1
+E    +  where 2 = sum(&lt;generator object test_same_customer_text_not_duplicated_in_llm_history.&lt;locals&gt;.&lt;genexpr&gt; at 0x10d3f92f0&gt;)</failure></testcase><testcase classname="audit.test_boundaries_round2" name="test_bot_two_buyers_photo_confirmation_stays_separate" time="0.006" /><testcase classname="audit.test_boundaries_round2" name="test_customer_photo_does_not_write_merchant_catalog" time="0.006" /><testcase classname="audit.test_boundaries_round2" name="test_hidden_and_delisted_products_not_in_brief" time="0.006" /><testcase classname="audit.test_boundaries_round2" name="test_row_approval_retry_does_not_duplicate_product" time="0.007"><failure message="assert 2 == 1">audit/test_boundaries_round2.py:101: in test_row_approval_retry_does_not_duplicate_product
+    assert conn.execute("SELECT COUNT(*) FROM product_razor WHERE model_no='R-A'").fetchone()[0] == 1
+E   assert 2 == 1</failure></testcase><testcase classname="audit.test_boundaries_round2" name="test_import_preview_does_not_disclose_service_token" time="0.009"><failure message="AssertionError: anonymous preview reveals service-wide write credential&#10;assert 'audit-service-secret' not in '{&quot;ticket&quot;:{...elist&quot;:[]}}}'&#10;  &#10;  'audit-service-secret' is contained here:&#10;    jpg?token=audit-service-secret&quot;],&quot;_img&quot;:&quot;/ticketimg/1/a.jpg?token=audit-service-secret&quot;}],&quot;update&quot;:[],&quot;delist&quot;:[]}}}&#10;  ?           ++++++++++++++++++++">audit/test_boundaries_round2.py:110: in test_import_preview_does_not_disclose_service_token
+    assert 'audit-service-secret' not in response.text, 'anonymous preview reveals service-wide write credential'
+E   AssertionError: anonymous preview reveals service-wide write credential
+E   assert 'audit-service-secret' not in '{"ticket":{...elist":[]}}}'
+E     
+E     'audit-service-secret' is contained here:
+E       jpg?token=audit-service-secret"],"_img":"/ticketimg/1/a.jpg?token=audit-service-secret"}],"update":[],"delist":[]}}}
+E     ?           ++++++++++++++++++++</failure></testcase><testcase classname="audit.test_boundaries_round2" name="test_import_keeps_separate_rows_with_same_model" time="0.000"><failure message="AssertionError: per-row extraction contract loses same-model color variant at classification&#10;assert 1 == 2&#10; +  where 1 = len([{'model_no': 'SAME', 'color': '白色', 'price': '11'}])">audit/test_boundaries_round2.py:118: in test_import_keeps_separate_rows_with_same_model
+    assert len(result['new']) == 2, 'per-row extraction contract loses same-model color variant at classification'
+E   AssertionError: per-row extraction contract loses same-model color variant at classification
+E   assert 1 == 2
+E    +  where 1 = len([{'model_no': 'SAME', 'color': '白色', 'price': '11'}])</failure></testcase></testsuite></testsuites>

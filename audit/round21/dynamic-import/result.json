@@ -1,0 +1,26 @@
+{
+  "workbook": "/Users/a1/workSpace/Eryuan/dangkou-v2/audit/round21/wechat-manual-kit/微信正向-吹风机.xlsx",
+  "sheet_count": 1,
+  "category": "微信验收吹风机",
+  "category_key": "cat_424b3b10db9c",
+  "header_row": 2,
+  "field_count": 8,
+  "image_count": 4,
+  "product_count": 4,
+  "blank_model_count": 1,
+  "duplicate_model": "WX-HD15",
+  "duplicate_model_count": 2,
+  "public_product_count": 4,
+  "embedding_count": 4,
+  "photo_candidate_count": 3,
+  "photo_hit_product_id": "053f16ff60035443",
+  "tg_reply": "本店可介绍以下在线商品（展示部分）：\n1. 【微信验收吹风机】WX-HD15\n颜色：红色\n功率：1600W\n装箱数量：20台/箱\n\n2. 【微信验收吹风机】WX-HD15\n颜色：蓝色\n功率：1600W\n装箱数量：20台/箱\n\n3. 【微信验收吹风机】WX-HD16\n颜色：银色\n功率：1800W\n装箱数量：12台/箱",
+  "tg_photo_count": 3,
+  "tg_photo_bytes": [
+    11635,
+    11831,
+    10347
+  ],
+  "template_download": "audit/round21/dynamic-import/微信验收吹风机-标准导入模板.xlsx",
+  "passed": true
+}

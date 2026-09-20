@@ -1,0 +1,2 @@
+PASS: non-root, read-only input/root, writable scoped output, openpyxl available, no service secrets
+2.1.236 (Claude Code)

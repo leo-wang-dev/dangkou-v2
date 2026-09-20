@@ -1,0 +1,30 @@
+/Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+Traceback (most recent call last):
+  File "/Users/a1/workSpace/Eryuan/dangkou-v2/scripts/verify_customer_photos.py", line 161, in <module>
+    try:run(args.out,args.real_model)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a1/workSpace/Eryuan/dangkou-v2/scripts/verify_customer_photos.py", line 113, in run
+    bot.handle_update(polled[0]);api._offset=i+1
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a1/workSpace/Eryuan/dangkou-v2/catalog/csbot.py", line 105, in handle_update
+    prepared = self._prepare_photo(cust, msg)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a1/workSpace/Eryuan/dangkou-v2/catalog/csbot.py", line 190, in _prepare_photo
+    reviewed = self.llm.chat_vision(REVIEW_PHOTO_PROMPT + json.dumps(items, ensure_ascii=False), data)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a1/workSpace/Eryuan/dangkou-v2/scripts/verify_customer_photos.py", line 63, in chat_vision
+    return self._record('vision',lambda:llm.chat_vision(prompt,data),prompt)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a1/workSpace/Eryuan/dangkou-v2/scripts/verify_customer_photos.py", line 56, in _record
+    response=invoke()
+             ^^^^^^^^
+  File "/Users/a1/workSpace/Eryuan/dangkou-v2/scripts/verify_customer_photos.py", line 63, in <lambda>
+    return self._record('vision',lambda:llm.chat_vision(prompt,data),prompt)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a1/workSpace/Eryuan/dangkou-v2/catalog/llm.py", line 39, in chat_vision
+    return _chat({'model': model, 'temperature': 0.1, 'messages': [{'role': 'user', 'content': [
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a1/workSpace/Eryuan/dangkou-v2/catalog/llm.py", line 28, in _chat
+    raise ValueError('模型连续返回空内容，请稍后重试')
+ValueError: 模型连续返回空内容，请稍后重试

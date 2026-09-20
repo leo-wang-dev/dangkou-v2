@@ -1,0 +1,5 @@
+Collecting qrcode==8.2
+  Downloading qrcode-8.2-py3-none-any.whl.metadata (17 kB)
+Downloading qrcode-8.2-py3-none-any.whl (45 kB)
+Installing collected packages: qrcode
+Successfully installed qrcode-8.2

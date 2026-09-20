@@ -1,0 +1,127 @@
+FFFFFFFFFF...FFF                                                         [100%]
+=================================== FAILURES ===================================
+______________ test_invalid_tier_table_not_accepted[20:12;20:11] _______________
+audit/test_boundaries_round2.py:18: in test_invalid_tier_table_not_accepted
+    assert response.status_code == 400, f'invalid or partial tier table accepted: {tiers}'
+E   AssertionError: invalid or partial tier table accepted: 20:12;20:11
+E   assert 200 == 400
+E    +  where 200 = <Response [200 OK]>.status_code
+_________________ test_invalid_tier_table_not_accepted[-20:12] _________________
+audit/test_boundaries_round2.py:18: in test_invalid_tier_table_not_accepted
+    assert response.status_code == 400, f'invalid or partial tier table accepted: {tiers}'
+E   AssertionError: invalid or partial tier table accepted: -20:12
+E   assert 200 == 400
+E    +  where 200 = <Response [200 OK]>.status_code
+_________________ test_invalid_tier_table_not_accepted[0.5:12] _________________
+audit/test_boundaries_round2.py:18: in test_invalid_tier_table_not_accepted
+    assert response.status_code == 400, f'invalid or partial tier table accepted: {tiers}'
+E   AssertionError: invalid or partial tier table accepted: 0.5:12
+E   assert 200 == 400
+E    +  where 200 = <Response [200 OK]>.status_code
+______________ test_invalid_tier_table_not_accepted[20:12;50:-11] ______________
+audit/test_boundaries_round2.py:18: in test_invalid_tier_table_not_accepted
+    assert response.status_code == 400, f'invalid or partial tier table accepted: {tiers}'
+E   AssertionError: invalid or partial tier table accepted: 20:12;50:-11
+E   assert 200 == 400
+E    +  where 200 = <Response [200 OK]>.status_code
+_____________ test_boolean_visibility_really_makes_product_visible _____________
+audit/test_boundaries_round2.py:30: in test_boolean_visibility_really_makes_product_visible
+    assert 'MODEL-1' in bot._catalog_brief(), 'accepted true value silently removes product from visible catalog'
+E   AssertionError: accepted true value silently removes product from visible catalog
+E   assert 'MODEL-1' in '\n\n当前没有可观测商品，任何询价都请客户等商家。'
+E    +  where '\n\n当前没有可观测商品，任何询价都请客户等商家。' = _catalog_brief()
+E    +    where _catalog_brief = <catalog.csbot.CsBot object at 0x10d2839e0>._catalog_brief
+_______________ test_customer_export_treats_user_text_as_literal _______________
+audit/test_boundaries_round2.py:40: in test_customer_export_treats_user_text_as_literal
+    assert all(c.data_type != 'f' for c in cells), 'user-controlled note exported as executable Excel formula'
+E   AssertionError: user-controlled note exported as executable Excel formula
+E   assert False
+E    +  where False = all(<generator object test_customer_export_treats_user_text_as_literal.<locals>.<genexpr> at 0x10d312c20>)
+_______________ test_bad_model_edit_output_has_safe_fallback[[]] _______________
+audit/test_boundaries_round2.py:49: in test_bad_model_edit_output_has_safe_fallback
+    bot.handle_update(update)
+catalog/csbot.py:67: in handle_update
+    self._reply(chat_id, self._on_text(cust, text))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+catalog/csbot.py:117: in _on_text
+    edited = self._try_edit_draft(cust, text)      # 有草稿时先判是不是补改指令
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+catalog/csbot.py:174: in _try_edit_draft
+    action = cmd.get('action')
+             ^^^^^^^
+E   AttributeError: 'list' object has no attribute 'get'
+______________ test_bad_model_edit_output_has_safe_fallback[null] ______________
+audit/test_boundaries_round2.py:49: in test_bad_model_edit_output_has_safe_fallback
+    bot.handle_update(update)
+catalog/csbot.py:67: in handle_update
+    self._reply(chat_id, self._on_text(cust, text))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+catalog/csbot.py:117: in _on_text
+    edited = self._try_edit_draft(cust, text)      # 有草稿时先判是不是补改指令
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+catalog/csbot.py:174: in _try_edit_draft
+    action = cmd.get('action')
+             ^^^^^^^
+E   AttributeError: 'NoneType' object has no attribute 'get'
+_ test_bad_model_edit_output_has_safe_fallback[{"action":"edit","index":"\u7b2c\u4e00\u4e2a","field":"\u4ef7\u683c","value":"5"}] _
+audit/test_boundaries_round2.py:49: in test_bad_model_edit_output_has_safe_fallback
+    bot.handle_update(update)
+catalog/csbot.py:67: in handle_update
+    self._reply(chat_id, self._on_text(cust, text))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+catalog/csbot.py:117: in _on_text
+    edited = self._try_edit_draft(cust, text)      # 有草稿时先判是不是补改指令
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+catalog/csbot.py:175: in _try_edit_draft
+    idx = int(cmd.get('index') or len(drafts))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ValueError: invalid literal for int() with base 10: '第一个'
+____________ test_same_customer_text_not_duplicated_in_llm_history _____________
+audit/test_boundaries_round2.py:58: in test_same_customer_text_not_duplicated_in_llm_history
+    assert sum(m['content'] == 'MODEL-1 60个多少钱' for m in messages) == 1
+E   assert 2 == 1
+E    +  where 2 = sum(<generator object test_same_customer_text_not_duplicated_in_llm_history.<locals>.<genexpr> at 0x10d3f92f0>)
+______________ test_row_approval_retry_does_not_duplicate_product ______________
+audit/test_boundaries_round2.py:101: in test_row_approval_retry_does_not_duplicate_product
+    assert conn.execute("SELECT COUNT(*) FROM product_razor WHERE model_no='R-A'").fetchone()[0] == 1
+E   assert 2 == 1
+_____________ test_import_preview_does_not_disclose_service_token ______________
+audit/test_boundaries_round2.py:110: in test_import_preview_does_not_disclose_service_token
+    assert 'audit-service-secret' not in response.text, 'anonymous preview reveals service-wide write credential'
+E   AssertionError: anonymous preview reveals service-wide write credential
+E   assert 'audit-service-secret' not in '{"ticket":{...elist":[]}}}'
+E     
+E     'audit-service-secret' is contained here:
+E       jpg?token=audit-service-secret"],"_img":"/ticketimg/1/a.jpg?token=audit-service-secret"}],"update":[],"delist":[]}}}
+E     ?           ++++++++++++++++++++
+_______________ test_import_keeps_separate_rows_with_same_model ________________
+audit/test_boundaries_round2.py:118: in test_import_keeps_separate_rows_with_same_model
+    assert len(result['new']) == 2, 'per-row extraction contract loses same-model color variant at classification'
+E   AssertionError: per-row extraction contract loses same-model color variant at classification
+E   assert 1 == 2
+E    +  where 1 = len([{'model_no': 'SAME', 'color': '白色', 'price': '11'}])
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv/lib/python3.12/site-packages/starlette/testclient.py:53
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED audit/test_boundaries_round2.py::test_invalid_tier_table_not_accepted[20:12;20:11]
+FAILED audit/test_boundaries_round2.py::test_invalid_tier_table_not_accepted[-20:12]
+FAILED audit/test_boundaries_round2.py::test_invalid_tier_table_not_accepted[0.5:12]
+FAILED audit/test_boundaries_round2.py::test_invalid_tier_table_not_accepted[20:12;50:-11]
+FAILED audit/test_boundaries_round2.py::test_boolean_visibility_really_makes_product_visible
+FAILED audit/test_boundaries_round2.py::test_customer_export_treats_user_text_as_literal
+FAILED audit/test_boundaries_round2.py::test_bad_model_edit_output_has_safe_fallback[[]]
+FAILED audit/test_boundaries_round2.py::test_bad_model_edit_output_has_safe_fallback[null]
+FAILED audit/test_boundaries_round2.py::test_bad_model_edit_output_has_safe_fallback[{"action":"edit","index":"\u7b2c\u4e00\u4e2a","field":"\u4ef7\u683c","value":"5"}]
+FAILED audit/test_boundaries_round2.py::test_same_customer_text_not_duplicated_in_llm_history
+FAILED audit/test_boundaries_round2.py::test_row_approval_retry_does_not_duplicate_product
+FAILED audit/test_boundaries_round2.py::test_import_preview_does_not_disclose_service_token
+FAILED audit/test_boundaries_round2.py::test_import_keeps_separate_rows_with_same_model
+13 failed, 3 passed, 2 warnings in 0.32s

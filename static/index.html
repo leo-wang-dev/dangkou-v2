@@ -75,22 +75,67 @@ img.big{width:86px;height:86px}
 .imgman .add{width:72px;height:72px;border:1.5px dashed #bbb;border-radius:8px;background:none;
   font-size:22px;color:#999;cursor:pointer}
 .empty{text-align:center;color:#aaa;padding:40px 0}
+.tg-setup{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px;overflow-wrap:anywhere}
+.tg-setup summary{cursor:pointer;font-weight:600;color:var(--blue)}
+.tg-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:16px 0}
+.tg-step{border:1px solid var(--line);border-radius:10px;padding:12px}
+.tg-step figure{margin:12px 0}
+.tg-step figure img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px;cursor:zoom-in}
+.tg-step figcaption{font-size:13px;color:#666;line-height:1.6;margin-top:6px}
+.tg-step strong{display:block;margin-bottom:10px}
+.tg-chat{background:#edf5fb;border-radius:10px;padding:12px;line-height:1.7;font-size:14px}
+.tg-chat code{display:block;background:#fff;border-radius:8px;padding:8px;margin-top:8px;white-space:normal}
+.tg-step p{font-size:14px;line-height:1.6;margin-bottom:0}
+.tg-setup .tg-status{font-size:14px;margin:0 0 10px}
 </style>
 </head>
 <body>
 <header>
   <button id="v-review" class="on" onclick="show('review')">审核</button>
   <button id="v-products" onclick="show('products')">商品</button>
+  <button id="v-wechat" onclick="show('wechat')">微信绑定</button>
 </header>
 <main>
   <div id="review"></div>
   <div id="products" style="display:none">
+    <section class="tg-setup" aria-label="客户 Telegram Bot">
+      <p class="tg-status"><span id="tg-bot-status" role="status">客户 Bot 状态：待查询</span> <a id="tg-bot-link" hidden target="_blank" rel="noopener noreferrer"></a>
+        <button type="button" class="btn" onclick="loadCustomerBotStatus()">刷新状态</button></p>
+      <details>
+        <summary>开通客户 Telegram Bot</summary>
+        <div id="tg-guide">
+          <p>档口已由人工确认并开通服务。您继续在微信 Bot 管理商品和红线；客户通过您自己的 Telegram Bot 咨询。</p>
+          <p>开通前，请先在微信告诉助手老板的微信号或 Telegram 用户名，并按提示审批确认。至少设置一种联系方式后才能开通，客户触及红线时才能联系到老板。</p>
+          <div class="tg-steps">
+            <article class="tg-step"><strong>① 打开官方 BotFather</strong>
+              <figure><a href="guide/botfather-profile.png" target="_blank" rel="noopener noreferrer" aria-label="放大查看官方 BotFather 截图"><img src="guide/botfather-profile.png" alt="官方 BotFather 资料页：蓝色认证标识、用户名 @BotFather 和 Message 按钮" loading="lazy" width="848" height="1338"></a><figcaption>图 1 · 核对 @BotFather 和蓝色认证标识，点击 Message 进入聊天。点击图片可放大。</figcaption></figure>
+              <p>在 Telegram 打开 <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a>，点击 <b>Message（发消息）</b>，进入聊天后发送 <code>/newbot</code>。微信内打不开时，请复制官方用户名到 Telegram 搜索。</p>
+            </article>
+            <article class="tg-step"><strong>② 设置名称并复制 Token</strong>
+              <figure><a href="guide/botfather-create.png" target="_blank" rel="noopener noreferrer" aria-label="放大查看创建机器人对话截图"><img src="guide/botfather-create.png" alt="BotFather 创建流程：发送 /newbot，填写名称和用户名，收到 Done 及 API Token" loading="lazy" width="940" height="1310"></a><figcaption>图 2 · 按对话完成创建，看到 Done 即创建成功。截图中的 Token 已打码，不能用于绑定。点击图片可放大。</figcaption></figure>
+              <p>先填写机器人显示名称（例如“我的档口客服”），再填写您自己的用户名（例如 <code>MyShopExample_bot</code>，需未被占用并以 bot 结尾）。不要照抄截图中已注册的用户名。<br>看到 <b>Done!</b> 后，复制 <b>Use this token to access the HTTP API:</b> 下方的完整 Token；即使显示换行也要复制全，不要复制 t.me 链接。</p>
+            </article>
+            <article class="tg-step"><strong>③ 回到商家微信 Bot 开通</strong>
+              <div class="tg-chat" role="img" aria-label="示意：在已核验的商家微信会话中发送绑定客户Bot和Token">微信 · 您的档口助手<code>绑定客户Bot [粘贴完整 Token]</code></div>
+              <p>只发送到您管理档口的微信 Bot 私聊。系统验证并绑定本档口，开通后返回客户访问链接。此页面无需填写 Token。</p>
+            </article>
+          </div>
+          <p>开通后，先打开客户 Bot 发送一张商品照片和规格数量，检查回复、采购笔记与 Excel，再将该 Bot 的链接或二维码提供给客户。</p>
+          <p>店铺联系方式、商品和红线仍在微信 Bot 补充。例如发送“客户问加急交货时转人工”，按提示确认规则后生效；触及已设置的红线时，客户 Bot 会发送档口联系方式。</p>
+          <p><a href="https://core.telegram.org/bots/features#creating-a-new-bot" target="_blank" rel="noopener noreferrer">Telegram 官方创建说明</a> · 前两步为实际操作截图，第三步为微信发送示例；界面语言可能不同。</p>
+        </div>
+      </details>
+    </section>
     <div class="tabs" id="catTabs"></div>
     <div class="row" style="margin-bottom:10px">
       <button class="btn p" onclick="openForm()">＋ 新增商品</button>
+      <button class="btn o" id="download-template" onclick="downloadTemplate()">下载当前分类模板</button>
       <input id="q" placeholder="搜索型号 / 内部货号 / 字段…" oninput="renderProducts()" style="max-width:320px">
     </div>
     <div id="plist"></div>
+  </div>
+  <div id="wechat" style="display:none;height:calc(100vh - 92px);min-height:620px">
+    <iframe id="wechat-frame" title="微信扫码绑定" style="width:100%;height:100%;border:0;border-radius:14px;background:#f5f6f8"></iframe>
   </div>
 </main>
 <div id="lightbox" onclick="if(event.target===this)this.style.display='none'">
@@ -100,19 +145,38 @@ img.big{width:86px;height:86px}
 </div>
 <div id="modal"><div class="box" id="modalBox"></div></div>
 <script>
-const TOKEN = new URLSearchParams(location.search).get('t') || '';
+const MANAGE_PREFIX = location.pathname.match(/^\/merchant\/manage\/[a-f0-9]{24}/)?.[0] || '';
+const QUERY_TOKEN = new URLSearchParams(location.search).get('t') || '';
+const TOKEN_STORE = 'catalog-service-token:' + (MANAGE_PREFIX || '/');
+const TOKEN = QUERY_TOKEN || sessionStorage.getItem(TOKEN_STORE) || '';
+if(QUERY_TOKEN){
+  sessionStorage.setItem(TOKEN_STORE, QUERY_TOKEN);
+  history.replaceState(null,'',location.pathname);
+}
 const H = {'X-Service-Token': TOKEN, 'Content-Type': 'application/json'};
-const CAT_NAMES = {razor:'剃须刀', curler:'卷发棒'};
-let cur = {cat:'razor', tpl:null, prods:[], detailCat:null};
+function openWechatBinding(){
+  const u=MANAGE_PREFIX+'/wechat-bind.html'+(TOKEN?'?t='+encodeURIComponent(TOKEN):'');
+  window.open(u,'_blank','noopener');
+}
+let CAT_NAMES = {razor:'剃须刀', curler:'卷发棒'};
+let cur = {cat:'razor', tpl:null, prods:[]};
 const rej = new Set();
 const edits = {};
 let draftRows = {};
+let templateDrafts = {};
+let dynamicImportRows = {};
 
 const str = v => v===null||v===undefined?'':String(v);
 const esc = s => str(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 const api = async (p, opt={}) => {
-  const r = await fetch(p, {...opt, headers:H});
-  if(!r.ok) throw new Error(await r.text());
+  const r = await fetch(MANAGE_PREFIX+p, {...opt, headers:H});
+  if(!r.ok){
+    if(r.status===401 || r.status===503){
+      document.getElementById('review').textContent='管理链接无效或服务未配置，请使用商家专属链接。';
+      document.getElementById('plist').textContent='管理链接无效，无法读取商品。';
+    }
+    throw new Error(await r.text());
+  }
   return r.json();
 };
 function show(v){
@@ -120,8 +184,32 @@ function show(v){
   document.getElementById('v-'+v).classList.add('on');
   document.getElementById('review').style.display = v==='review'?'':'none';
   document.getElementById('products').style.display = v==='products'?'':'none';
+  document.getElementById('wechat').style.display = v==='wechat'?'':'none';
   if(v==='review') loadTickets();
-  if(v==='products') loadCats();
+  if(v==='products') { loadCats(); loadCustomerBotStatus(); }
+  if(v==='wechat'){
+    const frame=document.getElementById('wechat-frame');
+    if(!frame.src) frame.src=MANAGE_PREFIX+'/wechat-bind.html'+(TOKEN?'?t='+encodeURIComponent(TOKEN):'');
+  }
+}
+
+async function loadCustomerBotStatus(){
+  const status=document.getElementById('tg-bot-status'), link=document.getElementById('tg-bot-link');
+  link.hidden=true; link.removeAttribute('href'); link.textContent='';
+  status.textContent='正在查询客户 Bot 状态…';
+  try {
+    const response=await fetch(MANAGE_PREFIX+'/wechat/customer-bot/status', {headers:H, cache:'no-store'});
+    if(!response.ok) throw new Error('status unavailable');
+    const data=await response.json();
+    const states={running:'运行中',starting:'启动中',stopped:'已停止',error:'启动异常',failed:'启动异常',pending:'待启动'};
+    status.textContent=data.bot_username
+      ? '客户 Bot：@'+data.bot_username+' · '+(states[data.runtime_status]||'状态待确认')
+      : (data.enabled ? '客户 Bot：尚未绑定，请按下方教程开通' : '客户 Bot：服务尚未启用，请联系开通人员');
+    // Build the public link from a validated username, never from a returned arbitrary URL.
+    if(/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(data.bot_username||'')) {
+      link.href='https://t.me/'+data.bot_username; link.textContent='打开客户 Bot'; link.hidden=false;
+    }
+  } catch(e) { status.textContent='暂无法读取客户 Bot 状态，可查看教程或回微信 Bot 查询'; }
 }
 
 /* ---------- 灯箱 ---------- */
@@ -140,8 +228,8 @@ async function loadTickets(){
   for(const t of pend){
     const c = document.createElement('div'); c.className='card';
     c.innerHTML = `<div class="row" style="justify-content:space-between">
-      <div><b>#${t.id}</b> ${t.ticket_type==='import'?'整批导入':(t.category==='razor'?'剃须刀':'卷发棒')+'操作'}
-        <span class="muted">· ${CAT_NAMES[t.category]||t.category} · ${t.created_at}</span></div>
+      <div><b>#${t.id}</b> ${t.ticket_type==='template_import'?'分类模板与商品导入':t.ticket_type==='import'?'整批导入':t.ticket_type==='redline'?'转人工红线':t.ticket_type==='shop'?'店铺资料与老板联系方式':(CAT_NAMES[t.category]||'商品')+'操作'}
+        <span class="muted">· ${CAT_NAMES[t.category]||'店铺设置'} · ${t.created_at}</span></div>
       <button class="btn o" onclick="loadDetail(${t.id})">展开明细 ▾</button></div>
       <div class="row" style="margin-top:10px">
         <button class="btn p" onclick="submitDecision(${t.id},false)">整单通过</button>
@@ -168,9 +256,17 @@ async function refreshDetail(tid){
   const box = document.getElementById('detail-'+tid);
   box.innerHTML = '<div class="muted">刷新中…</div>';
   const d = await api('/tickets/'+tid);
-  cur.detailCat = d.ticket.category;
+  const detailCat = d.ticket.category;
   const p = d.payload, drafts = p.drafts||{};
-  const fields = await tplFields(cur.detailCat);
+  if(p.kind === 'redline' || p.kind === 'shop'){
+    box.innerHTML = '<div class="kv"><b>审批内容</b><pre style="white-space:pre-wrap">'+esc(p.text_raw || JSON.stringify(p.changes,null,2))+'</pre></div>';
+    return;
+  }
+  if(p.kind === 'template_import'){
+    renderTemplateImport(tid, p, box);
+    return;
+  }
+  const fields = await tplFields(detailCat);
   let html = '';
   const rowHtml = (tag, imgs, kv, key, done) => `
     <div class="draft ${done?'done':''}" id="row-${tid}-${key}">
@@ -181,17 +277,18 @@ async function refreshDetail(tid){
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;flex:none">
         <button class="btn p s" onclick="rowApprove(${tid},'${key}')">✓通过</button>
-        <button class="btn o s" onclick="editDraft('${key}')">编辑</button>
+        <button class="btn o s" onclick="editDraft(${tid},'${key}')">编辑</button>
         <button class="btn d s" onclick="toggleRej(${tid},'${key}',this)">驳回</button>
       </div>
     </div>`;
-  draftRows = {};
+  const ticketRows = {};
+  draftRows[tid] = {cat: detailCat, rows: ticketRows};
   const doneRows = (p.done_rows || {});
   const modelCount = {};
   (drafts.new||[]).forEach(d2=>{ const m=str(d2.model_no||d2.item_no); modelCount[m]=(modelCount[m]||0)+1; });
   (drafts.new||[]).forEach((d2,i)=>{
     const key = d2._rid||('n'+i);
-    draftRows[key] = d2;
+    ticketRows[key] = d2;
     const m = str(d2.model_no||d2.item_no);
     const dup = modelCount[m] > 1 ? ' ⚠️重复' : '';
     const done = doneRows[key];
@@ -201,12 +298,15 @@ async function refreshDetail(tid){
   (drafts.update||[]).forEach((pair,i)=>{
     const [row,d2] = Array.isArray(pair)?pair:[pair,pair];
     const key = row.id||('u'+i);
-    draftRows[key] = {...d2, _imgs:d2._imgs||['/img/'+row.image_main+'?token='+TOKEN].filter(u=>!u.includes('null'))};
-    const imgs = draftRows[key]._imgs;
-    html += rowHtml({txt:'更新',cls:'upd'}, imgs, d2, key); });
+    const oldImages = Array.isArray(row.images)?row.images:JSON.parse(row.images||'[]');
+    ticketRows[key] = {...d2, cs_visible:d2.cs_visible??row.cs_visible??0,
+      images:d2.images??oldImages, image_main:d2.image_main??row.image_main,
+      _imgs:d2._imgs||(row.image_main?[MANAGE_PREFIX+'/img/'+row.image_main+'?token='+TOKEN]:[])};
+    const imgs = ticketRows[key]._imgs;
+    html += rowHtml({txt:doneRows[key]?'已处理':'更新',cls:'upd'}, imgs, ticketRows[key], key, doneRows[key]); });
   (drafts.delist||[]).forEach((r,i)=>{
     const key = (r&&r.id)||('d'+i);
-    const imgs = (r&&r.image_main)?['/img/'+r.image_main+'?token='+TOKEN]:[];
+    const imgs = (r&&r.image_main)?[MANAGE_PREFIX+'/img/'+r.image_main+'?token='+TOKEN]:[];
     html += rowHtml({txt:'下架',cls:'del'}, imgs, r||{}, key); });
   if(d.ticket.ticket_type==='mutate'){
     const act = p.action || 'update';
@@ -220,9 +320,10 @@ async function refreshDetail(tid){
           <span class="tag upd">${actName}</span>
           <div class="kv"><b>${esc(str(p.before[cur.tpl?.fields?.[0]?.label] || p.before['产品型号'] || p.before['ITEM.NO 型号'] || p.product_id))}</b></div>
           ${Object.keys(p.changes||{}).map(k=>{
-            const oldV = str(p.before[k] ?? '(空)');
+            const label = fields.find(f=>f.col===k)?.label || k;
+            const oldV = str(p.before[label] ?? p.before[k] ?? '(空)');
             const newV = str(p.changes[k]);
-            return `<div class="kv"><b>${esc(k)}</b>：<span style="color:#999;text-decoration:line-through">${esc(oldV)}</span> → <b style="color:var(--blue)">${esc(newV)}</b></div>`;
+            return `<div class="kv"><b>${esc(label)}</b>：<span style="color:#999;text-decoration:line-through">${esc(oldV)}</span> → <b style="color:var(--blue)">${esc(newV)}</b></div>`;
           }).join('')}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;flex:none">
@@ -266,6 +367,72 @@ async function refreshDetail(tid){
   }
   box.innerHTML = html || '<div class="muted">（无明细行）</div>';
 }
+function selectOptions(values, current){
+  return values.map(([value,label])=>`<option value="${esc(value)}" ${value===current?'selected':''}>${esc(label)}</option>`).join('');
+}
+function renderTemplateImport(tid, payload, box){
+  templateDrafts[tid] = {};
+  dynamicImportRows[tid] = {};
+  let html = '';
+  for(const section of payload.sheets||[]){
+    const tpl = section.template;
+    templateDrafts[tid][tpl.key] = tpl;
+    const counts = section.drafts||{};
+    html += `<section class="card template-section" data-ticket-id="${tid}" data-template-key="${esc(tpl.key)}">
+      <div class="row" style="justify-content:space-between"><div>
+        <span class="tag ${section.template_action==='create'?'new':'upd'}">${section.template_action==='create'?'新建分类':section.template_action==='update'?'更新模板':'沿用模板'}</span>
+        <b>Sheet：${esc(section.source_sheet||tpl.source_sheet||tpl.name)}</b>
+      </div><span class="muted">表头第 ${section.header_row||'-'} 行 · ${section.image_count||0} 张图</span></div>
+      <div class="fg" style="margin-top:12px"><label>分类名称</label>
+        <input data-template-name value="${esc(tpl.name)}"></div>
+      <div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>
+        <th style="text-align:left;padding:7px">表头字段</th><th>类型</th><th>用途</th><th>客户可见</th></tr></thead><tbody>
+        ${(tpl.fields||[]).map(field=>`<tr data-template-field="${esc(field.key)}">
+          <td style="padding:7px"><input data-field-label value="${esc(field.label)}" aria-label="${esc(field.label)}字段名称"></td>
+          <td style="padding:7px"><select data-field-type>${selectOptions([['text','文本'],['number','数字'],['money','金额'],['image','图片']],field.type)}</select></td>
+          <td style="padding:7px"><select data-field-role>${selectOptions([['model','型号/品名'],['spec','规格'],['image','图片'],['stock','库存'],['cost','成本'],['price','价格'],['note','备注'],['sequence','序号']],field.role)}</select></td>
+          <td style="padding:7px"><select data-template-visibility="${esc(field.key)}" data-field-label-name="${esc(field.label)}">${selectOptions([['public','公开'],['internal','内部']],field.visibility)}</select></td>
+        </tr>`).join('')}
+      </tbody></table></div>
+      <p class="muted">默认把成本、价格、备注和序号设为内部字段；客户 Bot 不会返回金额字段。</p>
+      <div class="row"><span class="tag new">新增 ${counts.new?.length||0}</span><span class="tag upd">更新 ${counts.update?.length||0}</span><span class="tag del">疑似下架 ${counts.delist?.length||0}</span></div>
+      <div style="margin-top:10px">
+        ${(counts.new||[]).map((row,index)=>templateRowHtml(tid,tpl,row,row._rid||('n'+index),'新增')).join('')}
+        ${(counts.update||[]).map((pair,index)=>{const row=Array.isArray(pair)?pair[1]:pair;const old=Array.isArray(pair)?pair[0]:pair;return templateRowHtml(tid,tpl,row,old.id||row._rid||('u'+index),'更新')}).join('')}
+        ${(counts.delist||[]).map((row,index)=>templateRowHtml(tid,tpl,row,row.id||('d'+index),'疑似下架')).join('')}
+      </div>
+    </section>`;
+  }
+  box.innerHTML = html || '<div class="muted">没有识别到可审批的分类。</div>';
+}
+function templateRowHtml(tid,tpl,row,key,state){
+  dynamicImportRows[tid][key] = {tpl,row};
+  const imgs=row._imgs||[];
+  const values=row.data||{};
+  return `<div class="draft" id="row-${tid}-${esc(key)}">
+    ${imgs.length?`<div class="imgwrap"><img class="p" src="${imgs[0]}" onclick='lbGallery(${JSON.stringify(imgs)})'>${imgs.length>1?`<span class="badge">${imgs.length}图</span>`:''}</div>`:''}
+    <div class="f"><span class="tag ${state==='新增'?'new':state==='更新'?'upd':'del'}">${state}</span>
+      ${(tpl.fields||[]).filter(field=>field.role!=='image'&&values[field.key]!==''&&values[field.key]!=null).map(field=>`<div class="kv"><b>${esc(field.label)}</b>：${esc(values[field.key])}</div>`).join('')}
+    </div><div style="display:flex;flex-direction:column;gap:6px;flex:none">
+      ${state!=='疑似下架'?`<button class="btn o s" onclick="editTemplateDraft(${tid},'${esc(key)}')">编辑</button>`:''}
+      <button class="btn d s" onclick="toggleRej(${tid},'${esc(key)}',this)">驳回</button></div></div>`;
+}
+function collectTemplateDecisions(tid){
+  const result = {};
+  document.querySelectorAll(`.template-section[data-ticket-id="${tid}"]`).forEach(section=>{
+    const key=section.dataset.templateKey, original=templateDrafts[tid]?.[key];
+    if(!original) return;
+    const fields=(original.fields||[]).map(field=>{
+      const row=section.querySelector(`[data-template-field="${CSS.escape(field.key)}"]`);
+      return {...field, label:row.querySelector('[data-field-label]').value.trim(),
+        type:row.querySelector('[data-field-type]').value,
+        role:row.querySelector('[data-field-role]').value,
+        visibility:row.querySelector('[data-template-visibility]').value};
+    });
+    result[key]={...original,name:section.querySelector('[data-template-name]').value.trim(),fields};
+  });
+  return result;
+}
 async function rowApprove(tid, key){
   if(!confirm('确认通过此行？将立即落库（含已做的编辑和图片）。')) return;
   const t = (await api('/tickets')).tickets.find(x=>x.id===tid);
@@ -289,8 +456,9 @@ async function submitDecision(tid, wholeReject){
   if(!wholeReject && !confirm(`通过本单：${reject.length} 行驳回、${Object.keys(rowEdits).length} 行带修改，确认？`)) return;
   const t = (await api('/tickets')).tickets.find(x=>x.id===tid);
   try{
+    const templates = collectTemplateDecisions(tid);
     const r = await api(`/tickets/${tid}/decision`, {method:'POST', body:JSON.stringify(
-      {token:t.token, approved:!wholeReject, decisions:{reject, edits: rowEdits}})});
+      {token:t.token, approved:!wholeReject, decisions:{reject, edits: rowEdits, templates}})});
     if(r.mutated){
       alert(r.mutated === 'delete' ? '✅ 已下架' : r.mutated === 'create' ? '✅ 已新增' : '✅ 已修改');
     } else {
@@ -316,10 +484,10 @@ async function addImgs(input){
   const files=[...input.files]; input.value='';
   for(const f of files){
     const fd=new FormData(); fd.append('file',f);
-    const r=await fetch('/upload',{method:'POST',headers:{'X-Service-Token':TOKEN},body:fd});
+    const r=await fetch(MANAGE_PREFIX+'/upload',{method:'POST',headers:{'X-Service-Token':TOKEN},body:fd});
     if(!r.ok){ alert('上传失败:'+await r.text()); return; }
     const rel=(await r.json()).path;
-    formCtx.images.push({rel, url:`/img/${rel}?token=${TOKEN}`});
+    formCtx.images.push({rel, url:`${MANAGE_PREFIX}/img/${rel}?token=${TOKEN}`});
   }
   renderImgMan();
 }
@@ -330,7 +498,7 @@ function renderImgMan(){
 function formHtml(title, kv, fields){
   return `<h3>${title}</h3>` +
     fields.map(f=>`<div class="fg"><label>${f.label}</label>
-      <input id="fg-${f.col}" value="${esc(str(kv[f.col] ?? kv[f.label] ?? ''))}"></div>`).join('') +
+      <input id="fg-${f.col}" value="${esc(str(kv[f.col] ?? kv[f.label] ?? (f.col==='cs_visible'?'0':'')))}"></div>`).join('') +
     `<div class="fg"><label>图片（点 × 删除，点 ＋ 上传新图）</label><div id="imgManArea">${imgManHtml()}</div></div>` +
     `<div class="row" style="justify-content:flex-end;margin-top:6px">
       <button class="btn o" onclick="closeForm()">取消</button>
@@ -339,44 +507,63 @@ function formHtml(title, kv, fields){
 }
 function closeForm(){ document.getElementById('modal').style.display='none'; formCtx=null; }
 
-async function editDraft(key){
-  const cat = cur.detailCat || cur.cat;
+async function editDraft(tid, key){
+  const ticket = draftRows[tid];
+  if(!ticket || !ticket.rows[key]) return;
+  const cat = ticket.cat;
   const fields = await tplFields(cat);
-  const d = draftRows[key] || {};
+  const d = ticket.rows[key];
   const srcImgs = d._imgs||[];
   const srcRels = d.images||(d.image_main?[d.image_main]:[]);
-  formCtx = {mode:'draft', tid:_curTid, key, cat,
+  formCtx = {mode:'draft', tid, key, cat,
     images: srcImgs.map((u,i)=>({rel:srcRels[i]||null, url:u}))};
   document.getElementById('modalBox').innerHTML =
     formHtml('编辑草稿（审核修正）', d, fields).replace('{{FORM_NOTE}}','提交后需整单通过或单行✓通过才生效。');
   document.getElementById('modal').style.display='flex';
 }
-let _curTid = null;
-const _origLoadDetail = loadDetail;
-loadDetail = async function(tid){ _curTid = tid; return _origLoadDetail(tid); };
+
+async function editTemplateDraft(tid, key){
+  const item=dynamicImportRows[tid]?.[key];
+  if(!item) return;
+  const fields=(item.tpl.fields||[]).filter(field=>field.role!=='image').map(field=>({...field,col:field.key}));
+  const row=item.row, srcImgs=row._imgs||[], srcRels=row.images||[];
+  formCtx={mode:'template-draft',tid,key,cat:item.tpl.key,fields,
+    images:srcImgs.map((url,index)=>({rel:srcRels[index]||null,url}))};
+  document.getElementById('modalBox').innerHTML=
+    formHtml('编辑导入商品',row.data||{},fields).replace('{{FORM_NOTE}}','修改会保存到本工单，通过整单后才生效。');
+  document.getElementById('modal').style.display='flex';
+}
 
 async function openForm(pid){
   const fields = await tplFields(cur.cat);
   const p = pid ? cur.prods.find(x=>x['id']===pid) : null;
   formCtx = {mode: p?'product':'create', pid,
-    images: (p?(p['图集']||[p['主图']].filter(Boolean)):[]).map(rel=>({rel, url:`/img/${rel}?token=${TOKEN}`}))};
+    images: (p?(p['图集']||[p['主图']].filter(Boolean)):[]).map(rel=>({rel, url:`${MANAGE_PREFIX}/img/${rel}?token=${TOKEN}`}))};
   document.getElementById('modalBox').innerHTML =
-    formHtml(`${p?'编辑':'新增'}商品（${CAT_NAMES[cur.cat]}）`, p||{}, fields).replace('{{FORM_NOTE}}','保存后立即生效。');
+    formHtml(`${p?'编辑':'新增'}商品（${CAT_NAMES[cur.cat]||cur.tpl?.name||cur.cat}）`, p||{}, fields).replace('{{FORM_NOTE}}','保存后立即生效。');
   document.getElementById('modal').style.display='flex';
 }
 async function submitForm(){
-  const fields = await tplFields(formCtx.mode==='draft'?formCtx.cat:cur.cat);
+  const fields = formCtx.fields || await tplFields(formCtx.mode==='draft'?formCtx.cat:cur.cat);
   const changes = {};
   for(const f of fields){
     const el=document.getElementById('fg-'+f.col);
-    if(el){ const v=el.value.trim(); if(v) changes[f.col]=v; }
+    if(el){ const v=el.value.trim(); changes[f.col]=v; }
   }
   try{
-    if(formCtx.mode==='draft'){
+    if(formCtx.mode==='template-draft'){
+      const {tid,key}=formCtx;
+      const rels=formCtx.images.map(x=>x.rel).filter(Boolean);
+      const allEdits={...changes,__images:rels};
+      const t=(await api('/tickets')).tickets.find(x=>x.id===tid);
+      await api(`/tickets/${tid}/draft`,{method:'PATCH',body:JSON.stringify(
+        {token:t.token,row_key:key,edits:allEdits})});
+      closeForm(); refreshDetail(tid);
+    }else if(formCtx.mode==='draft'){
       const {tid,key}=formCtx;
       const allEdits={...changes};
       const rels=formCtx.images.map(x=>x.rel).filter(Boolean);
-      if(rels.length) allEdits['__images']=rels;
+      allEdits['__images']=rels;
       if(Object.keys(allEdits).length){
         const t=(await api('/tickets')).tickets.find(x=>x.id===tid);
         await api(`/tickets/${tid}/draft`, {method:'PATCH', body:JSON.stringify(
@@ -398,6 +585,9 @@ async function submitForm(){
 
 /* ---------- 商品页 ---------- */
 async function loadCats(){
+  const categories = await api('/categories');
+  CAT_NAMES = Object.fromEntries(categories.categories.map(value=>[value.key,value.name]));
+  if(!CAT_NAMES[cur.cat]) cur.cat = categories.categories[0]?.key || '';
   const tabs = document.getElementById('catTabs');
   tabs.innerHTML = '';
   for(const [key,name] of Object.entries(CAT_NAMES)){
@@ -407,18 +597,26 @@ async function loadCats(){
     tabs.appendChild(b);
   }
   const d = await api('/products/'+cur.cat);
-  cur.tpl = d.template; cur.prods = d.products;
+  cur.tpl = d.template;
+  cur.prods = d.products.filter(p=>p['状态']!=='delisted');
+  document.getElementById('download-template').textContent = `下载${CAT_NAMES[cur.cat]||cur.tpl.name}模板`;
   renderProducts();
+}
+function downloadTemplate(){
+  if(!cur.cat) return;
+  const a=document.createElement('a');
+  a.href=MANAGE_PREFIX+'/categories/'+encodeURIComponent(cur.cat)+'/template.xlsx'+(TOKEN?'?token='+encodeURIComponent(TOKEN):'');
+  a.download=''; document.body.appendChild(a); a.click(); a.remove();
 }
 function renderProducts(){
   const q = document.getElementById('q').value.toLowerCase();
   const rows = cur.prods.filter(p=>!q||JSON.stringify(p).toLowerCase().includes(q));
   const el = document.getElementById('plist');
   if(!rows.length){ el.innerHTML = '<div class="card empty" style="grid-column:1/-1">暂无商品</div>'; return; }
-  const first = cur.tpl.fields[0];
+  const first = cur.tpl.fields.find(field=>field.role==='model') || cur.tpl.fields.find(field=>field.role!=='sequence'&&field.role!=='image') || cur.tpl.fields[0];
   el.innerHTML = rows.map(p=>{
     const imgs=(p['图集']&&p['图集'].length?p['图集']:[p['主图']].filter(Boolean))
-      .map(r=>`/img/${r}?token=${TOKEN}`);
+      .map(r=>`${MANAGE_PREFIX}/img/${r}?token=${TOKEN}`);
     return `<div class="card pcard">
       <div class="phead">
         ${imgs.length?`<div class="imgwrap"><img class="p big" src="${imgs[0]}" onclick='lbGallery(${JSON.stringify(imgs)})'>
@@ -434,7 +632,7 @@ function renderProducts(){
         </div>
       </div>
       <div class="pfields">
-        ${cur.tpl.fields.slice(1).map(f=>`
+        ${cur.tpl.fields.filter(f=>f!==first&&f.role!=='image').map(f=>`
           <div class="pf"><span class="pl">${f.label}</span><span class="pv">${esc(str(p[f.label]))||'—'}</span></div>`).join('')}
       </div>
     </div>`;}).join('');

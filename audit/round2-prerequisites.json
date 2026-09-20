@@ -1,0 +1,15 @@
+{
+  "python": "3.12.14",
+  "branch": "leo-c-tg-cs-20260917",
+  "commit": "1b9db4c",
+  "has_repo_env_file": false,
+  "has_bailian_key": false,
+  "has_agent_key": false,
+  "has_tg_token": false,
+  "has_tg_test_chat_id": false,
+  "has_notify_token": false,
+  "has_quote_template": false,
+  "has_original_vision_fixture": false,
+  "has_claude_cli": true,
+  "has_soffice_cli": true
+}

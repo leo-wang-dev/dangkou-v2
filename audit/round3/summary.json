@@ -1,0 +1,59 @@
+{
+  "date": "2026-09-18",
+  "full_suite": {
+    "passed": 203,
+    "failed": 8,
+    "skipped_blocked": 3
+  },
+  "new_backend_regressions_included_in_full": 24,
+  "extra_browser_cases": 30,
+  "original_browser_cases_included_in_full": 2,
+  "distinct_browser_cases_total": 32,
+  "c_harness": {
+    "pass": 4,
+    "fail": 1,
+    "blocked": 1
+  },
+  "b_harness": "BLOCKED",
+  "search_quality": "BLOCKED",
+  "deployment_preflight": "BLOCKED",
+  "real_external_messages_sent": false,
+  "deployment_performed": false,
+  "release_ready": false,
+  "full-final_junit": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "8",
+      "skipped": "3",
+      "tests": "214",
+      "time": "5.576",
+      "timestamp": "2026-09-18T02:57:20.944995+08:00",
+      "hostname": "1deMacBook-Pro.local"
+    }
+  ],
+  "gaps-final_junit": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "24",
+      "time": "0.350",
+      "timestamp": "2026-09-18T02:56:17.450662+08:00",
+      "hostname": "1deMacBook-Pro.local"
+    }
+  ],
+  "browser-final_junit": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "30",
+      "time": "8.374",
+      "timestamp": "2026-09-18T02:57:22.100544+08:00",
+      "hostname": "1deMacBook-Pro.local"
+    }
+  ]
+}

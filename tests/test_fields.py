@@ -24,10 +24,10 @@ def client(tmp_path, monkeypatch):
     conn.row_factory = sqlite3.Row
     db.init_db(conn)
     app.state.conn = conn
-    app.state.token = ''
+    app.state.token = 'test-service-token'
     app.state.storage = LocalStorage(str(tmp_path))
     app.state.callback = None
-    return TestClient(app)
+    return TestClient(app, headers={'X-Service-Token': 'test-service-token'})
 
 
 # ---------- P2-1 数据库 + 模板 + 导入 ----------

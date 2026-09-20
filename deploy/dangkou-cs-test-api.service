@@ -1,0 +1,20 @@
+[Unit]
+Description=Dangkou isolated test API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/dangkou-cs-test-20260918
+EnvironmentFile=/home/ubuntu/dangkou-cs-test-20260918/.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/home/ubuntu/dangkou-cs-test-20260918/.venv/bin/python -m uvicorn catalog.main:app --host 127.0.0.1 --port 18920 --no-access-log
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

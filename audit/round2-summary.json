@@ -1,0 +1,389 @@
+{
+  "browser": {
+    "counts": {
+      "pass": 16,
+      "fail": 10,
+      "error": 0,
+      "blocked": 0
+    },
+    "cases": [
+      {
+        "case": "test_b_tabs_search_create_edit_delist",
+        "status": "pass",
+        "seconds": 1.351
+      },
+      {
+        "case": "test_b_cancel_edit_does_not_save",
+        "status": "pass",
+        "seconds": 0.387
+      },
+      {
+        "case": "test_b_clear_field_persists",
+        "status": "fail",
+        "seconds": 0.358
+      },
+      {
+        "case": "test_b_upload_gallery_and_remove_last_image",
+        "status": "fail",
+        "seconds": 0.612
+      },
+      {
+        "case": "test_b_import_edit_partial_reject_approve",
+        "status": "pass",
+        "seconds": 0.384
+      },
+      {
+        "case": "test_b_single_then_whole_approval_no_duplicates",
+        "status": "fail",
+        "seconds": 0.339
+      },
+      {
+        "case": "test_b_whole_reject_leaves_products_unchanged",
+        "status": "pass",
+        "seconds": 0.192
+      },
+      {
+        "case": "test_b_mutate_card_approve",
+        "status": "pass",
+        "seconds": 0.242
+      },
+      {
+        "case": "test_b_redline_ticket_has_readable_detail",
+        "status": "fail",
+        "seconds": 5.129
+      },
+      {
+        "case": "test_b_unauthenticated_page_hides_internal_products",
+        "status": "fail",
+        "seconds": 5.179
+      },
+      {
+        "case": "test_b_tier_visibility_fields_can_be_maintained",
+        "status": "fail",
+        "seconds": 5.302
+      },
+      {
+        "case": "test_b_mobile_layout_fits_viewport",
+        "status": "pass",
+        "seconds": 0.168
+      },
+      {
+        "case": "test_c_list_edit_refresh_export[desktop]",
+        "status": "pass",
+        "seconds": 0.293
+      },
+      {
+        "case": "test_c_list_edit_refresh_export[mobile]",
+        "status": "pass",
+        "seconds": 0.222
+      },
+      {
+        "case": "test_c_invalid_or_expired_link_shows_error[missing]",
+        "status": "pass",
+        "seconds": 0.086
+      },
+      {
+        "case": "test_c_invalid_or_expired_link_shows_error[expired]",
+        "status": "fail",
+        "seconds": 5.11
+      },
+      {
+        "case": "test_c_empty_list_has_guidance",
+        "status": "pass",
+        "seconds": 0.095
+      },
+      {
+        "case": "test_c_customer_switch_does_not_mix_list",
+        "status": "pass",
+        "seconds": 0.105
+      },
+      {
+        "case": "test_c_photo_visible_with_service_auth_enabled[False]",
+        "status": "fail",
+        "seconds": 4.59
+      },
+      {
+        "case": "test_c_photo_visible_with_service_auth_enabled[True]",
+        "status": "fail",
+        "seconds": 4.625
+      },
+      {
+        "case": "test_c_download_contains_photo",
+        "status": "fail",
+        "seconds": 0.127
+      },
+      {
+        "case": "test_redline_card_decision_click[True]",
+        "status": "pass",
+        "seconds": 0.16
+      },
+      {
+        "case": "test_redline_card_decision_click[False]",
+        "status": "pass",
+        "seconds": 0.159
+      },
+      {
+        "case": "test_redline_card_wrong_token_cannot_approve",
+        "status": "pass",
+        "seconds": 0.16
+      },
+      {
+        "case": "test_redline_card_repeated_approval_denied",
+        "status": "pass",
+        "seconds": 0.227
+      },
+      {
+        "case": "test_redline_missing_ticket_has_error",
+        "status": "pass",
+        "seconds": 0.315
+      }
+    ]
+  },
+  "release": {
+    "counts": {
+      "pass": 2,
+      "fail": 16,
+      "error": 0,
+      "blocked": 0
+    },
+    "cases": [
+      {
+        "case": "test_unauthenticated_ticket_cannot_be_approved",
+        "status": "fail",
+        "seconds": 0.055
+      },
+      {
+        "case": "test_internal_cost_not_public[/products/curler]",
+        "status": "fail",
+        "seconds": 0.008
+      },
+      {
+        "case": "test_internal_cost_not_public[/stats?full=true]",
+        "status": "fail",
+        "seconds": 0.008
+      },
+      {
+        "case": "test_link_cannot_edit_another_customer_note",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_expired_link_denied[read]",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_expired_link_denied[edit]",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_expired_link_denied[export]",
+        "status": "fail",
+        "seconds": 0.01
+      },
+      {
+        "case": "test_export_contains_real_photo",
+        "status": "fail",
+        "seconds": 0.01
+      },
+      {
+        "case": "test_product_redline_reaches_persona",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_persona_quote_uses_code_tier_selection",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_visible_product_cannot_lose_valid_tiers",
+        "status": "fail",
+        "seconds": 0.008
+      },
+      {
+        "case": "test_long_redline_is_compressed_through_api",
+        "status": "fail",
+        "seconds": 0.008
+      },
+      {
+        "case": "test_second_photo_receipt_indexes_all_drafts",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_duplicate_update_is_idempotent",
+        "status": "fail",
+        "seconds": 0.006
+      },
+      {
+        "case": "test_customer_links_still_read_own_notes",
+        "status": "pass",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_service_write_auth_is_enabled",
+        "status": "pass",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_failed_update_does_not_discard_rest_of_batch",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_wechat_http_failure_is_detected",
+        "status": "fail",
+        "seconds": 0.007
+      }
+    ]
+  },
+  "boundaries": {
+    "counts": {
+      "pass": 3,
+      "fail": 13,
+      "error": 0,
+      "blocked": 0
+    },
+    "cases": [
+      {
+        "case": "test_invalid_tier_table_not_accepted[20:12;20:11]",
+        "status": "fail",
+        "seconds": 0.041
+      },
+      {
+        "case": "test_invalid_tier_table_not_accepted[-20:12]",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_invalid_tier_table_not_accepted[0.5:12]",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_invalid_tier_table_not_accepted[20:12;50:-11]",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_boolean_visibility_really_makes_product_visible",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_customer_export_treats_user_text_as_literal",
+        "status": "fail",
+        "seconds": 0.01
+      },
+      {
+        "case": "test_bad_model_edit_output_has_safe_fallback[[]]",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_bad_model_edit_output_has_safe_fallback[null]",
+        "status": "fail",
+        "seconds": 0.006
+      },
+      {
+        "case": "test_bad_model_edit_output_has_safe_fallback[{\"action\":\"edit\",\"index\":\"\\u7b2c\\u4e00\\u4e2a\",\"field\":\"\\u4ef7\\u683c\",\"value\":\"5\"}]",
+        "status": "fail",
+        "seconds": 0.006
+      },
+      {
+        "case": "test_same_customer_text_not_duplicated_in_llm_history",
+        "status": "fail",
+        "seconds": 0.016
+      },
+      {
+        "case": "test_bot_two_buyers_photo_confirmation_stays_separate",
+        "status": "pass",
+        "seconds": 0.006
+      },
+      {
+        "case": "test_customer_photo_does_not_write_merchant_catalog",
+        "status": "pass",
+        "seconds": 0.006
+      },
+      {
+        "case": "test_hidden_and_delisted_products_not_in_brief",
+        "status": "pass",
+        "seconds": 0.006
+      },
+      {
+        "case": "test_row_approval_retry_does_not_duplicate_product",
+        "status": "fail",
+        "seconds": 0.007
+      },
+      {
+        "case": "test_import_preview_does_not_disclose_service_token",
+        "status": "fail",
+        "seconds": 0.009
+      },
+      {
+        "case": "test_import_keeps_separate_rows_with_same_model",
+        "status": "fail",
+        "seconds": 0.0
+      }
+    ]
+  },
+  "real-chain": {
+    "counts": {
+      "pass": 0,
+      "fail": 0,
+      "error": 0,
+      "blocked": 3
+    },
+    "cases": [
+      {
+        "case": "test_real_vision_extraction_matches_foreknown",
+        "status": "blocked",
+        "seconds": 0.0
+      },
+      {
+        "case": "test_real_persona_transfer_and_pass",
+        "status": "blocked",
+        "seconds": 0.0
+      },
+      {
+        "case": "test_real_tg_send_and_poll",
+        "status": "blocked",
+        "seconds": 0.0
+      }
+    ]
+  },
+  "existing": {
+    "counts": {
+      "pass": 127,
+      "fail": 8,
+      "blocked": 0
+    },
+    "source": "round2-existing-tests.txt"
+  },
+  "original-pages": {
+    "counts": {
+      "pass": 2,
+      "fail": 0,
+      "blocked": 0
+    },
+    "source": "round2-original-pages.txt"
+  },
+  "plugin": {
+    "registered": [
+      "catalog_import",
+      "catalog_check",
+      "catalog_search",
+      "catalog_stats",
+      "catalog_quote",
+      "catalog_mutate"
+    ],
+    "error": "ReferenceError: registry is not defined",
+    "expected": [
+      "cs_redline_get",
+      "cs_redline_set"
+    ],
+    "pass": false
+  }
+}

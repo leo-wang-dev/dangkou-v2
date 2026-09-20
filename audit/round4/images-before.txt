@@ -1,0 +1,23 @@
+..F                                                                      [100%]
+=================================== FAILURES ===================================
+_____________ test_image_only_changes_and_identical_renamed_images _____________
+
+tmp_path = PosixPath('/private/var/folders/z_/9jwqqszn5c99z0dvq7bydy0m0000gn/T/pytest-of-a1/pytest-57/test_image_only_changes_and_id0')
+
+    def test_image_only_changes_and_identical_renamed_images(tmp_path):
+        import json
+        old = tmp_path/'old'; new = tmp_path/'new'
+        old.mkdir(); new.mkdir()
+        (old/'original.jpg').write_bytes(b'old-image')
+        (new/'renamed.jpg').write_bytes(b'old-image')
+        row={'id':'a','model_no':'8225','price':'20','images':json.dumps(['original.jpg'])}
+        draft={'model_no':'8225','price':'20','images':['renamed.jpg']}
+        args={'draft_image_root':str(new),'existing_image_root':str(old)}
+>       assert not classify.classify('razor',[draft],[row],**args)['update']
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: classify() got an unexpected keyword argument 'draft_image_root'
+
+tests/test_classify.py:35: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_classify.py::test_image_only_changes_and_identical_renamed_images
+1 failed, 2 passed in 0.08s

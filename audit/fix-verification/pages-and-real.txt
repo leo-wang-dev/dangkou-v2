@@ -1,0 +1,6 @@
+..............................sss                                        [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/e2e/test_real_chain.py:34: BLOCKED: 缺 BAILIAN_API_KEY 或 CS_TEST_PHOTO 原始已知照片
+SKIPPED [1] tests/e2e/test_real_chain.py:49: BLOCKED: 缺 BAILIAN_API_KEY
+SKIPPED [1] tests/e2e/test_real_chain.py:63: BLOCKED: 需 TG_BOT_TOKEN、TG_TEST_CHAT_ID、RUN_REAL_TG=1 显式开启真实发送
+30 passed, 3 skipped in 8.80s

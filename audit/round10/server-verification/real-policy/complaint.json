@@ -1,0 +1,8 @@
+{
+  "case": "complaint",
+  "input": "TEST-01 买的货质量差，要求退货",
+  "reply": "这个问题请直接联系老板：\nTelegram：@test_owner（https://t.me/test_owner）\n微信：TEST-WECHAT",
+  "expected_transfer": true,
+  "passed": true,
+  "elapsed_sec": 4.93
+}

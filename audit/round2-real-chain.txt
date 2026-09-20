@@ -1,0 +1,6 @@
+sss                                                                      [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/e2e/test_real_chain.py: BLOCKED: BAILIAN_API_KEY missing; original real-photo fixture missing
+SKIPPED [1] tests/e2e/test_real_chain.py: BLOCKED: BAILIAN_API_KEY missing; WeChat notification channel not configured
+SKIPPED [1] tests/e2e/test_real_chain.py:61: BLOCKED: TG_TEST_CHAT_ID 未设（商家未发过消息，bot 不能主动发起）
+3 skipped in 0.01s

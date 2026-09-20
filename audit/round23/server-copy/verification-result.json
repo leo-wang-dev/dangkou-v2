@@ -1,0 +1,26 @@
+{
+  "database_integrity": "ok",
+  "duplicate_model_reply": "找到多个符合该型号的商品，请按颜色或规格确认：\n1. 【微信验收吹风机】WX-HD15\n颜色：红色\n功率：1600W\n装箱数量：20台/箱\n\n2. 【微信验收吹风机】WX-HD15\n颜色：蓝色\n功率：1600W\n装箱数量：20台/箱",
+  "excel_rows": 2,
+  "excel_headers": [
+    "序号",
+    "档口名称",
+    "档口号/地址",
+    "供应商联系人",
+    "供应商联系方式",
+    "型号或品名",
+    "数量",
+    "产品型号",
+    "颜色",
+    "功率",
+    "装箱数量",
+    "档口归属依据",
+    "确认状态",
+    "商品照片"
+  ],
+  "excel_images": 1,
+  "export_refreshed_latest_catalog_value": true,
+  "unmatched_item_preserved": true,
+  "customer_link_internal_fields_hidden": true,
+  "passed": true
+}

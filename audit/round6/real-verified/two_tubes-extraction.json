@@ -1,0 +1,28 @@
+{
+  "fields": [
+    {
+      "型号或品名": "Magic Moon KERATIN Body Lotion",
+      "价格": "模糊（待确认）",
+      "装箱数": "未拍到",
+      "颜色": "紫白渐变花纹管身+金色盖子",
+      "体积或尺寸": "260g/9.15oz",
+      "起订量": "未拍到",
+      "其他": "包装标注'CUSTOMIZED BEAUTY NOURISHMENT'、'SUITABLE FOR ANY SKIN'；品牌标'SINCE 1986'"
+    },
+    {
+      "型号或品名": "Magic Moon 24K GOLD WHITENING CREAM",
+      "价格": "3.5（照片识别，待确认）",
+      "装箱数": "未拍到",
+      "颜色": "金色管身+透明标签",
+      "体积或尺寸": "100g",
+      "起订量": "未拍到",
+      "其他": "包装含阿拉伯文'تَفتيح البشرة كريم'；英文说明'BRIGHTEN AND WHITEN THE SKIN'；标注'Before Use'"
+    }
+  ],
+  "checks": {
+    "100": true,
+    "260": true,
+    "cropped_price_not_invented": true
+  },
+  "count_ok": true
+}

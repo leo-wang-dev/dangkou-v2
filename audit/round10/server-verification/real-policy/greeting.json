@@ -1,0 +1,8 @@
+{
+  "case": "greeting",
+  "input": "你好",
+  "reply": "您好，可以发照片整理采购清单；价格及采购报价请联系老板。",
+  "expected_transfer": false,
+  "passed": true,
+  "elapsed_sec": 0.0
+}

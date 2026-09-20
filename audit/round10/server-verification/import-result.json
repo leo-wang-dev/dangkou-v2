@@ -1,0 +1,14 @@
+[
+  {
+    "id": 3,
+    "status": "ticketed",
+    "error": null,
+    "stats_json": "{\"new\": 2, \"update\": 0, \"category\": \"razor\", \"delist\": 0, \"vendor\": null}"
+  },
+  {
+    "id": 4,
+    "status": "ticketed",
+    "error": null,
+    "stats_json": "{\"new\": 2, \"update\": 0, \"category\": \"razor\", \"delist\": 0, \"vendor\": null}"
+  }
+]

@@ -6,8 +6,11 @@ import sqlite3
 import sys
 import urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from catalog import config
+
 BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:8890'
-TOKEN = os.environ.get('CATALOG_V2_SERVICE_TOKEN', '')
+TOKEN = config.SERVICE_TOKEN
 DB = os.environ.get('CATALOG_V2_DB', os.path.join(
     os.path.dirname(__file__), '..', 'data', 'catalog.db'))
 IMG = os.path.join(os.path.dirname(DB), 'images')
@@ -22,6 +25,9 @@ def search(image_path):
         return json.loads(r.read())['hits']
 
 
+if not TOKEN or not os.path.isfile(DB):
+    print('BLOCKED: 缺服务认证或真实商品数据库')
+    sys.exit(2)
 conn = sqlite3.connect(DB, check_same_thread=False)
 conn.row_factory = sqlite3.Row
 pools = {'razor': conn.execute("SELECT id, image_main FROM product_razor "
@@ -48,3 +54,8 @@ r3 = top3 * 100 // max(total, 1)
 print(f'\nTop1 {top1}/{total} = {r1}%  |  Top3 {top3}/{total} = {r3}%')
 print('达标' if (r1 >= 80 and r3 >= 95)
       else '不达标 → 优化路线：text_vec 融合 / LLM rerank')
+
+if not total:
+    print("BLOCKED: 没有可测商品主图")
+    sys.exit(2)
+sys.exit(0 if r1 >= 80 and r3 >= 95 else 1)

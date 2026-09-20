@@ -54,3 +54,26 @@ def test_reindex_embeds_missing(conn, tmp_path, monkeypatch):
     assert n == 1
     assert conn.execute('SELECT COUNT(*) c FROM embedding').fetchone()['c'] == 1
     assert search.reindex(conn, st, 'razor') == 0  # 幂等
+
+
+def test_dynamic_category_images_are_indexed_and_queryable(conn, tmp_path, monkeypatch):
+    from catalog import dynamic_catalog
+    from catalog.storage import LocalStorage
+    category = 'cat_hairdryer'
+    dynamic_catalog.approve_template(conn, {
+        'key': category, 'name': '吹风机', 'source_sheet': '吹风机',
+        'fields': [{'key': 'model', 'label': '型号', 'role': 'model', 'visibility': 'public'}],
+    }, expected_version=0)
+    storage = LocalStorage(str(tmp_path))
+    photo = storage.save(category, 'dryer-1', 'main.png', b'IMG')
+    dynamic_catalog.upsert_approved_products(conn, category, [{
+        'id': 'dryer-1', 'inner_code': 'INNER-X', 'cs_visible': 1,
+        'data': {'model': 'HD15'}, 'images': [photo],
+    }])
+    conn.commit()
+    monkeypatch.setattr(search, 'embed_image', lambda data: [1.0, 0.0])
+
+    assert search.reindex(conn, storage, category) == 1
+    hits = search.query(conn, [1.0, 0.0], category=category)
+    assert hits[0]['product_id'] == 'dryer-1'
+    assert hits[0]['fields'] == {'型号': 'HD15'}

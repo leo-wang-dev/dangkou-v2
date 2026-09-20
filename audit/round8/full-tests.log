@@ -1,0 +1,269 @@
+..........................................F.................F.......FF.. [ 21%]
+............sss......................................................... [ 43%]
+........................................................................ [ 64%]
+............................................F.......................FF.. [ 86%]
+.............................................                            [100%]
+=================================== FAILURES ===================================
+_______________________ test_shop_contact_approval_click _______________________
+
+page = <Page url='http://127.0.0.1:51676/?t=round2-isolated-service-token'>
+site = {'base': 'http://127.0.0.1:51676', 'conn': <sqlite3.Connection object at 0x10d1dfd30>, 'api': <httpx.Client object at ...e0>, 'photo': PosixPath('/Users/a1/workSpace/Eryuan/dangkou-v2/data/cs_photos/audit-browser-jnxgpk6s/sample.jpg'), ...}
+
+    def test_shop_contact_approval_click(page, site):
+        response = site['api'].patch('/shop', json={'changes': {
+            'owner_tg_username': 'owner_test', 'owner_wechat': 'wx-owner-test', 'address': '测试路18号'}})
+        assert response.status_code == 200
+        tid = response.json()['ticket_id']
+        detail = review(page, site, {'id':tid})
+        expect(page.locator('#review')).to_contain_text('老板联系方式')
+        expect(detail).to_contain_text('wx-owner-test')
+        detail.locator('..').get_by_role('button', name='整单通过', exact=True).click()
+        expect(page.locator('#review')).to_contain_text('没有待办工单')
+>       assert site['api'].get('/shop').json() == {
+            'owner_tg_username':'owner_test', 'owner_wechat':'wx-owner-test', 'address':'测试路18号',
+            'business_hours':'', 'shipping_info':'', 'faq':''}
+E       AssertionError: assert {'shop_id': '...ame': '', ...} == {'owner_tg_us...urs': '', ...}
+E         
+E         Omitting 6 identical items, use -vv to show
+E         Left contains 6 more items:
+E         {'contact_name': '',
+E          'shop_id': 'shop_5892676e83f0430d918ce21e49ce180b',
+E          'shop_name': '',
+E          'stall_no': '',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+audit/test_browser_round2.py:421: AssertionError
+______________ test_failed_update_does_not_discard_rest_of_batch _______________
+
+env = (<sqlite3.Connection object at 0x10d1dfb50>, <starlette.testclient.TestClient object at 0x10e0c9520>, <catalog.csbot.CsBot object at 0x10e0c9670>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10df8a840>
+
+    def test_failed_update_does_not_discard_rest_of_batch(env, monkeypatch):
+        from scripts import run_cs_bot
+        from catalog.tg import TgApi
+        conn, _, _ = env
+        api = TgApi(token='offline-audit')
+        first, second = {'update_id': 1}, {'update_id': 2}
+        api._call = Mock(side_effect=[[first, second], KeyboardInterrupt()])
+        bot = Mock()
+        bot.handle_update.side_effect = [RuntimeError('simulated model timeout'), None]
+        monkeypatch.setattr(run_cs_bot.db, 'connect', lambda: conn)
+        monkeypatch.setattr(run_cs_bot, 'TgApi', lambda: api)
+        monkeypatch.setattr(run_cs_bot, 'CsBot', lambda *a: bot)
+        monkeypatch.setattr(run_cs_bot.time, 'sleep', lambda _: None)
+>       run_cs_bot.main()
+
+audit/test_release_gates.py:202: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/run_cs_bot.py:48: in main
+    verify_bot(conn, api._call('getMe'))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x10d1dfb50>
+identity = [{'update_id': 1}, {'update_id': 2}]
+
+    def verify_bot(conn, identity):
+        p = profile(conn)
+        if not p['shop_name'] or not p['tg_bot_id']:
+>           raise ValueError('未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批')
+E           ValueError: 未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批
+
+catalog/shop_link.py:61: ValueError
+____________ test_poll_failure_does_not_stop_notification_delivery _____________
+
+env = (<sqlite3.Connection object at 0x10d065a80>, <starlette.testclient.TestClient object at 0x10e36a090>, <catalog.csbot.CsBot object at 0x10e36a180>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e12b5c0>
+
+    def test_poll_failure_does_not_stop_notification_delivery(env, monkeypatch):
+        from scripts import run_cs_bot
+        conn, _, _ = env
+        api = Mock()
+        api.poll.side_effect = [RuntimeError('TG offline'), KeyboardInterrupt()]
+        bot = Mock()
+        monkeypatch.setattr(run_cs_bot.db,'connect',lambda:conn)
+        monkeypatch.setattr(run_cs_bot,'TgApi',lambda:api)
+        monkeypatch.setattr(run_cs_bot,'CsBot',lambda *args:bot)
+        monkeypatch.setattr(run_cs_bot.time,'sleep',lambda _:None)
+>       run_cs_bot.main()
+
+audit/test_round3_gaps.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/run_cs_bot.py:48: in main
+    verify_bot(conn, api._call('getMe'))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x10d065a80>
+identity = <Mock name='mock._call()' id='4533500480'>
+
+    def verify_bot(conn, identity):
+        p = profile(conn)
+        if not p['shop_name'] or not p['tg_bot_id']:
+>           raise ValueError('未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批')
+E           ValueError: 未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批
+
+catalog/shop_link.py:61: ValueError
+_______ test_first_hundred_poison_messages_do_not_starve_other_customer ________
+
+env = (<sqlite3.Connection object at 0x10d1df100>, <starlette.testclient.TestClient object at 0x10e435910>, <catalog.csbot.CsBot object at 0x10e435a60>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e2ffb30>
+
+    def test_first_hundred_poison_messages_do_not_starve_other_customer(env, monkeypatch):
+        from scripts import run_cs_bot
+        conn, _, _ = env
+        for uid in range(1,102):
+            payload = {'update_id':uid,'message':{'chat':{'id':1 if uid<=100 else 2}}}
+            conn.execute('INSERT INTO cs_inbox(update_id,payload) VALUES(?,?)',(uid,json.dumps(payload)))
+        conn.commit()
+        api = Mock()
+        api.poll.side_effect = [[], [], KeyboardInterrupt()]
+        bot = Mock()
+        bot.handle_update.side_effect = RuntimeError('poison')
+        monkeypatch.setattr(run_cs_bot.db,'connect',lambda:conn)
+        monkeypatch.setattr(run_cs_bot,'TgApi',lambda:api)
+        monkeypatch.setattr(run_cs_bot,'CsBot',lambda *args:bot)
+        monkeypatch.setattr(run_cs_bot.time,'sleep',lambda _:None)
+>       run_cs_bot.main()
+
+audit/test_round3_gaps.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/run_cs_bot.py:48: in main
+    verify_bot(conn, api._call('getMe'))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x10d1df100>
+identity = <Mock name='mock._call()' id='4534350720'>
+
+    def verify_bot(conn, identity):
+        p = profile(conn)
+        if not p['shop_name'] or not p['tg_bot_id']:
+>           raise ValueError('未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批')
+E           ValueError: 未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批
+
+catalog/shop_link.py:61: ValueError
+______________ test_failed_update_does_not_discard_rest_of_batch _______________
+
+env = (<sqlite3.Connection object at 0x10e07e980>, <starlette.testclient.TestClient object at 0x10fbb2450>, <catalog.csbot.CsBot object at 0x10fbb24b0>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fb52cf0>
+
+    def test_failed_update_does_not_discard_rest_of_batch(env, monkeypatch):
+        from scripts import run_cs_bot
+        from catalog.tg import TgApi
+        conn, _, _ = env
+        api = TgApi(token='offline-audit')
+        first, second = {'update_id': 1}, {'update_id': 2}
+        api._call = Mock(side_effect=[[first, second], KeyboardInterrupt()])
+        bot = Mock()
+        bot.handle_update.side_effect = [RuntimeError('simulated model timeout'), None]
+        monkeypatch.setattr(run_cs_bot.db, 'connect', lambda: conn)
+        monkeypatch.setattr(run_cs_bot, 'TgApi', lambda: api)
+        monkeypatch.setattr(run_cs_bot, 'CsBot', lambda *a: bot)
+        monkeypatch.setattr(run_cs_bot.time, 'sleep', lambda _: None)
+>       run_cs_bot.main()
+
+tests/test_release_gates.py:202: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/run_cs_bot.py:48: in main
+    verify_bot(conn, api._call('getMe'))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x10e07e980>
+identity = [{'update_id': 1}, {'update_id': 2}]
+
+    def verify_bot(conn, identity):
+        p = profile(conn)
+        if not p['shop_name'] or not p['tg_bot_id']:
+>           raise ValueError('未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批')
+E           ValueError: 未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批
+
+catalog/shop_link.py:61: ValueError
+____________ test_poll_failure_does_not_stop_notification_delivery _____________
+
+env = (<sqlite3.Connection object at 0x10e8df880>, <starlette.testclient.TestClient object at 0x1103f89b0>, <catalog.csbot.CsBot object at 0x10ff6bf80>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11025f830>
+
+    def test_poll_failure_does_not_stop_notification_delivery(env, monkeypatch):
+        from scripts import run_cs_bot
+        conn, _, _ = env
+        api = Mock()
+        api.poll.side_effect = [RuntimeError('TG offline'), KeyboardInterrupt()]
+        bot = Mock()
+        monkeypatch.setattr(run_cs_bot.db,'connect',lambda:conn)
+        monkeypatch.setattr(run_cs_bot,'TgApi',lambda:api)
+        monkeypatch.setattr(run_cs_bot,'CsBot',lambda *args:bot)
+        monkeypatch.setattr(run_cs_bot.time,'sleep',lambda _:None)
+>       run_cs_bot.main()
+
+tests/test_round3_regressions.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/run_cs_bot.py:48: in main
+    verify_bot(conn, api._call('getMe'))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x10e8df880>
+identity = <Mock name='mock._call()' id='4567656272'>
+
+    def verify_bot(conn, identity):
+        p = profile(conn)
+        if not p['shop_name'] or not p['tg_bot_id']:
+>           raise ValueError('未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批')
+E           ValueError: 未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批
+
+catalog/shop_link.py:61: ValueError
+_______ test_first_hundred_poison_messages_do_not_starve_other_customer ________
+
+env = (<sqlite3.Connection object at 0x10e8df010>, <starlette.testclient.TestClient object at 0x1104e8170>, <catalog.csbot.CsBot object at 0x1104e80e0>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110039100>
+
+    def test_first_hundred_poison_messages_do_not_starve_other_customer(env, monkeypatch):
+        from scripts import run_cs_bot
+        conn, _, _ = env
+        for uid in range(1,102):
+            payload = {'update_id':uid,'message':{'chat':{'id':1 if uid<=100 else 2}}}
+            conn.execute('INSERT INTO cs_inbox(update_id,payload) VALUES(?,?)',(uid,json.dumps(payload)))
+        conn.commit()
+        api = Mock()
+        api.poll.side_effect = [[], [], KeyboardInterrupt()]
+        bot = Mock()
+        bot.handle_update.side_effect = RuntimeError('poison')
+        monkeypatch.setattr(run_cs_bot.db,'connect',lambda:conn)
+        monkeypatch.setattr(run_cs_bot,'TgApi',lambda:api)
+        monkeypatch.setattr(run_cs_bot,'CsBot',lambda *args:bot)
+        monkeypatch.setattr(run_cs_bot.time,'sleep',lambda _:None)
+>       run_cs_bot.main()
+
+tests/test_round3_regressions.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/run_cs_bot.py:48: in main
+    verify_bot(conn, api._call('getMe'))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x10e8df010>
+identity = <Mock name='mock._call()' id='4568621248'>
+
+    def verify_bot(conn, identity):
+        p = profile(conn)
+        if not p['shop_name'] or not p['tg_bot_id']:
+>           raise ValueError('未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批')
+E           ValueError: 未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批
+
+catalog/shop_link.py:61: ValueError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv/lib/python3.12/site-packages/starlette/testclient.py:53
+  /Users/a1/workSpace/Eryuan/dangkou-v2/.venv/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED audit/test_browser_round2.py::test_shop_contact_approval_click - Asser...
+FAILED audit/test_release_gates.py::test_failed_update_does_not_discard_rest_of_batch
+FAILED audit/test_round3_gaps.py::test_poll_failure_does_not_stop_notification_delivery
+FAILED audit/test_round3_gaps.py::test_first_hundred_poison_messages_do_not_starve_other_customer
+FAILED tests/test_release_gates.py::test_failed_update_does_not_discard_rest_of_batch
+FAILED tests/test_round3_regressions.py::test_poll_failure_does_not_stop_notification_delivery
+FAILED tests/test_round3_regressions.py::test_first_hundred_poison_messages_do_not_starve_other_customer
+7 failed, 323 passed, 3 skipped, 2 warnings in 18.70s
