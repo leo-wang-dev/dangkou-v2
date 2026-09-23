@@ -5,7 +5,7 @@ import json
 import hashlib
 import secrets
 
-from . import dynamic_catalog, inner_code, workbook_templates
+from . import ai_extract, dynamic_catalog, inner_code, workbook_templates
 
 
 def _clean_template(draft: dict) -> dict:
@@ -68,6 +68,43 @@ def _classify_rows(existing: list[dict], incoming: list[dict], model_keys: list[
 
 def _label_key(value: str) -> str:
     return ''.join(str(value or '').split()).casefold()
+
+
+def _map_rows(found: dict, template: dict) -> list[dict]:
+    """商品行对号入座：AI 语义映射为主（容忍列名对不上、规格跨列），
+
+    模型故障或明确禁用时回落代码标签精确匹配，导入不硬失败。
+    """
+    try:
+        mapped = ai_extract.map_rows(found, template)
+        if mapped is not None:
+            return mapped
+    except Exception:
+        pass
+    return _map_rows_to_template(found, template)
+
+
+def manual_template_payload(name: str, fields_in: list[dict]) -> dict:
+    """手工建分类（不经 Excel）：字段 key 生成与 Excel 导入同源，身份稳定。"""
+    used: set[str] = set()
+    fields = []
+    for item in fields_in:
+        role, field_type, visibility, searchable = workbook_templates._role(item['label'])
+        fields.append({'key': workbook_templates._field_key(item['label'], role, used),
+                       'label': item['label'], 'type': field_type, 'required': False,
+                       'visibility': item.get('visibility') or visibility,
+                       'searchable': searchable, 'role': role})
+    key = workbook_templates._category_key(name)
+    template = {'key': key, 'name': name, 'source_sheet': name,
+                'storage': 'dynamic', 'fields': fields}
+    return {'kind': 'template_import', 'phase': 'template', 'manual': True,
+            'doc_id': None, 'source_key': f'manual:{key}', 'mode': 'new',
+            'category_key': None, 'work_dir': '',
+            'sheets': [{'template': template, 'template_action': 'create',
+                        'expected_version': 0, 'title': name, 'header_row': None,
+                        'image_count': 0, 'source_sheet': name,
+                        'source_discovered_sheet': '', 'source_snapshot': '',
+                        'drafts': {'new': [], 'update': [], 'delist': []}}]}
 
 
 def _map_rows_to_template(discovered: dict, template: dict) -> list[dict]:
@@ -197,6 +234,8 @@ def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
         raise ValueError('只有 existing 模式可以提供 category_key')
     discovered = workbook_templates.discover_workbook(
         xlsx_path, None, include_rows=False, include_images=False)
+    # 模板阶段字段属性（类型/角色/可见性）由 AI 推断，代码推断保留为回落。
+    ai_extract.apply_field_attributes(discovered, ai_extract.infer_field_attributes(discovered))
     sections = _template_sections(conn, discovered, source_key=source_key,
                                   doc_id=doc_id, mode=mode, category_key=category_key)
     if not sections:
@@ -252,7 +291,7 @@ def build_product_payload(conn, xlsx_path, work_dir, *, source_key: str,
             raise ValueError('第二次上传没有识别到有效 Sheet，请上传同一份商品 Excel')
         incoming = []
         for found in discovered:
-            incoming.extend(_map_rows_to_template(found, template))
+            incoming.extend(_map_rows(found, template))
         source_rows = _source_rows(conn, template['key'], source_key, template['source_sheet'])
         existing = [row for row in source_rows if row['status'] != 'delisted']
         model_keys = [field['key'] for field in template['fields'] if field['role'] == 'model']
@@ -284,7 +323,7 @@ def build_product_payload(conn, xlsx_path, work_dir, *, source_key: str,
         expected = int(item.get('version') or 0)
         if template['version'] != expected:
             raise ValueError('分类模板已经更新，请重新导入并审批模板后再上传商品 Excel')
-        incoming = _map_rows_to_template(found, template)
+        incoming = _map_rows(found, template)
         source_rows = _source_rows(conn, template['key'], source_key, template['source_sheet'])
         existing = [row for row in source_rows if row['status'] != 'delisted']
         model_keys = [field['key'] for field in template['fields'] if field['role'] == 'model']
@@ -320,7 +359,7 @@ def build_ticket_payload(conn, xlsx_path, work_dir, *, source_key: str,
             raise ValueError(f'分类 {target["name"]} 是预置分类，请继续使用原品类导入入口')
         incoming = []
         for discovered in discovered_sheets:
-            incoming.extend(_map_rows_to_template(discovered, target))
+            incoming.extend(_map_rows(discovered, target))
         source_rows = _source_rows(conn, target['key'], source_key, target['source_sheet'])
         existing = [row for row in source_rows if row['status'] != 'delisted']
         model_keys = [field['key'] for field in target['fields'] if field['role'] == 'model']

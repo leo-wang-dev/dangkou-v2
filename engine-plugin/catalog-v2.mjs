@@ -84,14 +84,17 @@ export async function apply(ctx, _config = {}) {
       if (categoryKey) body.category_key = categoryKey
       if (templateDocId !== undefined) body.template_doc_id = templateDocId
       if (category) body.category = category
-      // 模板阶段几秒可完成：原地等结果，一条回复把分类、字段和审批入口说清，
-      // 避免“完成推送”抢在对话回复前落地造成消息倒序。
-      if (phase === 'template') body.wait = true
+      // 两阶段解析实测都只要几秒：原地等结果，一条回复把结果和审批入口
+      // 说清，避免“完成推送”抢在对话回复前落地造成消息倒序。
+      body.wait = true
       const r = await call('/import', 'POST', body)
       let note
-      if (r.status === 'ticketed') {
+      if (r.status === 'ticketed' && r.phase === 'template') {
         const cats = ((r.stats && r.stats.categories) || []).join('、') || '新分类'
         note = `模板识别完成：${cats}。把审批入口发给商家，请商家确认字段和客户可见性；模板审批通过后必须提醒商家再次上传同一份商品 Excel（用 templateDocId=${r.doc_id} 进入 products 阶段导入商品）。审批入口：${MANAGE}/?t=${TOKEN}`
+      } else if (r.status === 'ticketed') {
+        const s = r.stats || {}
+        note = `商品解析完成：新增${s.new || 0} / 更新${s.update || 0} / 下架${s.delist || 0}。把审批入口发给商家核对，批准后商品才入库。审批入口：${MANAGE}/?t=${TOKEN}`
       } else if (r.status === 'failed') {
         note = `模板识别失败：${r.error || '未知错误'}；如实告知商家，不要编造原因`
       } else {
@@ -316,6 +319,46 @@ export async function apply(ctx, _config = {}) {
       requiredText(newName, 'newName')
       const r = await call(`/categories/${encodeURIComponent(categoryKey)}`, 'PATCH', { name: newName })
       return JSON.stringify({ key: r.key, name: r.name, note: '分类已改名' })
+    },
+  })
+
+  ctx.tools.register({
+    name: 'category_create',
+    description: '手工创建商品分类（不经过 Excel 导入）。商家说"帮我建个分类/品类叫X，字段有A、B、C"或'
+      + '不想导 Excel 想直接加商品时使用。fields 每项 {label, visibility}，visibility 可选 public（客户可见）/internal（仅商家可见），默认 public。'
+      + '创建后生成模板审批工单，商家在审批入口批准后分类即上商品管理页；之后可在页面"新增商品"、对话里自然语言加商品（catalog_mutate），'
+      + '再传 Excel 也会按该分类模板由 AI 解析入库。字段名要从商家原话提取，不要自作主张增删字段。',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: '分类名，如：吹风机现货' },
+        fields: {
+          type: 'array',
+          description: '字段清单',
+          items: {
+            type: 'object',
+            properties: {
+              label: { type: 'string', description: '字段名（表头），如：型号' },
+              visibility: { type: 'string', enum: ['public', 'internal'] },
+            },
+            required: ['label'],
+          },
+        },
+      },
+      required: ['name', 'fields'],
+    },
+    output: OUT,
+    async execute({ name, fields }) {
+      requiredText(name, '分类名称')
+      if (!Array.isArray(fields) || !fields.length) throw new Error('fields 必须是至少一项的字段数组')
+      if (fields.length > 40) throw new Error('字段数超过 40，请和商家确认精简')
+      const clean = fields.map(f => ({ label: String(f?.label || '').trim().slice(0, 40),
+        visibility: f?.visibility === 'internal' ? 'internal' : 'public' }))
+        .filter(f => f.label)
+      if (!clean.length) throw new Error('fields 里没有有效字段名')
+      const r = await call('/categories', 'POST', { name: name.trim(), fields: clean })
+      return JSON.stringify({ ticketId: r.ticket_id, name: r.name, fields: r.fields,
+        note: `分类「${r.name}」创建工单已生成（${r.fields} 个字段）。请商家打开审批入口批准，批准后分类即上商品管理页，然后就能在页面或对话里加商品。审批入口：${MANAGE}/?t=${TOKEN}` })
     },
   })
 

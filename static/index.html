@@ -128,6 +128,7 @@ img.big{width:86px;height:86px}
     </section>
     <div class="tabs" id="catTabs"></div>
     <div class="row" style="margin-bottom:10px">
+      <button class="btn p" onclick="openCatForm()">＋ 新建分类</button>
       <button class="btn p" onclick="openForm()">＋ 新增商品</button>
       <button class="btn o" id="rename-cat" onclick="renameCat()" hidden>✏️ 分类改名</button>
       <button class="btn o" id="toggle-visible" onclick="toggleCategoryVisible()" hidden>👁 整体可见性</button>
@@ -580,8 +581,47 @@ async function editTemplateDraft(tid, key){
   document.getElementById('modal').style.display='flex';
 }
 
+function openCatForm(){
+  document.getElementById('modalBox').innerHTML =
+    '<h3>新建分类（不用 Excel）</h3>'
+    + '<div class="fg"><label>分类名称</label><input id="cat-name" placeholder="如：吹风机现货"></div>'
+    + '<div class="fg"><label>字段（表头）——客户会看到「公开」字段</label><div id="cat-fields"></div></div>'
+    + '<div class="row" style="justify-content:flex-end;margin-top:6px">'
+    + '<button class="btn o" onclick="addCatFieldRow()">＋ 加字段</button>'
+    + '<button class="btn o" onclick="closeForm()">取消</button>'
+    + '<button class="btn p" onclick="submitCatForm()">提交审批</button></div>'
+    + '<p class="muted" style="margin:10px 0 0">提交后生成模板审批工单，在「审核」页批准，分类即上页面；之后可在这里新增商品、在微信里自然语言加商品，也可以再传 Excel 让 AI 按这个分类解析入库。</p>';
+  document.getElementById('modal').style.display='flex';
+  addCatFieldRow(); addCatFieldRow();
+}
+function addCatFieldRow(){
+  const wrap = document.getElementById('cat-fields'); if(!wrap) return;
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.cssText = 'margin:4px 0;gap:6px';
+  row.innerHTML = '<input data-cat-label placeholder="字段名，如：型号" style="flex:1">'
+    + '<select data-cat-visibility><option value="public">公开</option><option value="internal">内部</option></select>'
+    + '<button class="btn d s" onclick="this.closest(\'div.row\').remove()">✕</button>';
+  wrap.appendChild(row);
+  row.querySelector('[data-cat-label]').focus();
+}
+async function submitCatForm(){
+  const name = (document.getElementById('cat-name').value||'').trim();
+  if(!name) return alert('请填写分类名称');
+  const fields = [...document.querySelectorAll('#cat-fields [data-cat-label]')]
+    .map(el=>({label: el.value.trim(),
+               visibility: el.closest('div.row').querySelector('[data-cat-visibility]').value}))
+    .filter(f=>f.label);
+  if(!fields.length) return alert('至少填写一个字段');
+  try{
+    const r = await api('/categories', {method:'POST', body:JSON.stringify({name, fields})});
+    closeForm(); show('review'); loadTickets();
+    alert(`分类「${r.name}」已提交审批（${r.fields} 个字段）。请在审核页批准，批准后分类会出现在列表里。`);
+  }catch(e){ alert('提交失败：'+e.message); }
+}
+
 async function openForm(pid){
-  if(!cur.cat){ alert('还没有分类。请先把商品 Excel 发给微信 Bot，导入审批通过后再新增商品。'); return; }
+  if(!cur.cat){ alert('还没有分类。先点「＋ 新建分类」或把 Excel 发给微信 Bot，审批通过后再新增商品。'); return; }
   const fields = await tplFields(cur.cat);
   const p = pid ? cur.prods.find(x=>x['id']===pid) : null;
   formCtx = {mode: p?'product':'create', pid,
@@ -654,7 +694,7 @@ async function loadCats(){
   if(!cur.cat){
     document.getElementById('download-template').textContent = '下载分类模板';
     document.getElementById('plist').innerHTML =
-      '<div class="card empty" style="grid-column:1/-1">还没有分类。把商品 Excel 发给微信 Bot，或等导入审批通过后，分类会出现在这里。</div>';
+      '<div class="card empty" style="grid-column:1/-1">还没有分类。点上面的「＋ 新建分类」手工建，或把商品 Excel 发给微信 Bot 由 AI 解析生成。</div>';
     cur.tpl = null; cur.prods = [];
     return;
   }

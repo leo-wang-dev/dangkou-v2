@@ -154,8 +154,55 @@ def register_routes(app: FastAPI):
         dyn = conn.execute("SELECT category_key, COUNT(*) c FROM product_dynamic "
                            "WHERE status != 'delisted' GROUP BY category_key").fetchall()
         counts.update({row['category_key']: row['c'] for row in dyn})
-        templates = [value for value in templates if counts.get(value['key'], 0) > 0]
+        # 空分类不上列表只针对预置剃须刀/卷发棒；动态分类（含手工新建的空分类）
+        # 始终上列表——商家先建分类、再手工/自然语言加商品是正式流程。
+        templates = [value for value in templates
+                     if value.get('storage') == 'dynamic' or counts.get(value['key'], 0) > 0]
         return {'categories': templates}
+
+    class CategoryCreateIn(BaseModel):
+        name: str = Field(min_length=1, max_length=40)
+        fields: list[dict]
+
+    @app.post('/categories')
+    def create_category(body: CategoryCreateIn, request: Request):
+        """手工建分类（不经 Excel）：生成模板审批工单，批准后分类上页面。"""
+        _auth(request, app.state.token)
+        from . import dynamic_catalog, dynamic_import
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(400, '分类名不能为空')
+        seen, fields_in = set(), []
+        for item in body.fields or []:
+            label = str((item or {}).get('label') or '').strip()
+            if not label:
+                continue
+            if label in seen:
+                raise HTTPException(400, f'字段名重复：{label}')
+            seen.add(label)
+            visibility = item.get('visibility')
+            fields_in.append({'label': label[:40],
+                              'visibility': visibility if visibility in ('public', 'internal') else 'public'})
+        if not fields_in:
+            raise HTTPException(400, '至少提供一个字段')
+        if len(fields_in) > 40:
+            raise HTTPException(400, '字段数超过 40，请精简')
+        payload = dynamic_import.manual_template_payload(name, fields_in)
+        key = payload['sheets'][0]['template']['key']
+        try:
+            dynamic_catalog.get_template(request_conn(), key)
+            exists = True
+        except KeyError:
+            exists = False
+        # 同名在途工单也要挡：两张 create 工单先后批准会在第二张上报“已过期”。
+        pending = request_conn().execute(
+            "SELECT 1 FROM approval_ticket WHERE status='pending' AND ticket_type='template_import' "
+            "AND json_extract(payload,'$.sheets[0].template.key')=?", (key,)).fetchone()
+        if exists or pending:
+            raise HTTPException(409, f'同名分类已存在或在审批中：{name}（可改名或让商家换名字）')
+        tk = tickets.create(request_conn(), 'template_import', None, payload)
+        return {'ticket_id': tk['id'], 'token': tk['token'],
+                'name': name, 'fields': len(fields_in)}
 
     class CategoryRenameIn(BaseModel):
         name: str = Field(min_length=1, max_length=64)
@@ -392,10 +439,10 @@ def register_routes(app: FastAPI):
         # for older callers that do not know the new field.  Fixed legacy
         # callers keep their old path unless the bot explicitly sends a phase.
         phase = body.phase or ('template' if body.category is None else 'legacy')
-        # 模板阶段通常几秒内完成：wait 模式原地等结果，让调用方（bot）一条
-        # 消息把字段模板和审批入口说清。否则后台完成推送可能抢在对话回复
-        # 前面落地，商家会先看到“已识别”再看到“开始解析”的倒序消息。
-        want_wait = body.wait and phase == 'template'
+        # 模板/商品解析实测都只要几秒：wait 模式原地等结果，让调用方（bot）
+        # 一条消息把结果和审批入口说清。否则后台完成推送可能抢在对话回复
+        # 前面落地，商家会先看到“已完成”再看到“开始解析”的倒序消息。
+        want_wait = body.wait and phase in ('template', 'products')
         real_callback = app.state.callback
         inline_mode = {'on': want_wait}
 
