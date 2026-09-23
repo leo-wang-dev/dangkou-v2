@@ -38,7 +38,18 @@ def local_candidates(conn, fields, photo):
     from . import customer_catalog
     for value in customer_catalog.local_catalog(conn)['products']:
         name = str(value.get('name') or '')
-        if name and any(re.search(r'(?<![A-Za-z0-9_-])'+re.escape(name)+r'(?![A-Za-z0-9_-])', n, re.I) for n in names):
+        # Dynamic imports commonly store a model and variant/specification on
+        # separate lines (for example ``KS-0276\n铝合金``).  Vision usually
+        # extracts only the model line, so matching only the full display name
+        # silently loses an otherwise valid catalog hit.
+        terms = [name]
+        base = name.split('\n', 1)[0].strip()
+        if base and base != name:
+            terms.append(base)
+        if name and any(
+            term and re.search(r'(?<![A-Za-z0-9_-])' + re.escape(term) + r'(?![A-Za-z0-9_-])', n, re.I)
+            for term in terms for n in names
+        ):
             found.append({'category': value['_category'], 'product_id': value['id'], 'name': name})
     # Image similarity supplies candidates, never proof that two products are identical.
     if not found and config.BAILIAN_API_KEY and conn.execute('SELECT 1 FROM embedding LIMIT 1').fetchone():

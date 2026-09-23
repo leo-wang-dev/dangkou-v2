@@ -33,6 +33,74 @@ def test_first_workbook_builds_one_template_import_section(conn, tmp_path):
     assert sheet['drafts']['update'] == [] and sheet['drafts']['delist'] == []
 
 
+def test_explicit_new_mode_never_reuses_an_existing_sheet_category(conn, tmp_path):
+    from catalog import dynamic_catalog
+    from catalog.dynamic_import import build_ticket_payload
+
+    first = build_ticket_payload(conn, blowdryer_fixture(tmp_path), tmp_path / 'first',
+                                 source_key='vendor-a')
+    ticket = tickets.create(conn, 'template_import', None, first)
+    tickets.decide(conn, ticket['id'], ticket['token'], True)
+    category = first['sheets'][0]['template']['key']
+
+    second = build_ticket_payload(conn, blowdryer_fixture(tmp_path), tmp_path / 'second',
+                                  source_key='vendor-a', mode='new')
+    sheet = second['sheets'][0]
+    assert sheet['template_action'] == 'create'
+    assert sheet['template']['key'] != category
+    assert sheet['template']['name'].startswith('吹风机 (')
+    created = tickets.create(conn, 'template_import', None, second)
+    tickets.decide(conn, created['id'], created['token'], True)
+    assert len(dynamic_catalog.list_templates(conn)) == 4
+
+
+def test_explicit_existing_mode_maps_multiple_sheets_to_target_template(conn, tmp_path):
+    from openpyxl import load_workbook
+    from catalog import dynamic_catalog
+    from catalog.dynamic_import import build_ticket_payload
+
+    first = build_ticket_payload(conn, blowdryer_fixture(tmp_path), tmp_path / 'first',
+                                 source_key='vendor-a')
+    ticket = tickets.create(conn, 'template_import', None, first)
+    tickets.decide(conn, ticket['id'], ticket['token'], True)
+    category = first['sheets'][0]['template']['key']
+    workbook_path = blowdryer_fixture(tmp_path)
+    workbook = load_workbook(workbook_path)
+    workbook['吹风机'].title = '供应商别名'
+    headers = [cell.value for cell in workbook['供应商别名'][2]]
+    headers[-1] = '供应商附加说明'
+    for column, value in enumerate(headers, 1):
+        workbook['供应商别名'].cell(2, column, value)
+    workbook['供应商别名']['K3'] = '额外说明'
+    workbook.save(workbook_path)
+
+    payload = build_ticket_payload(conn, workbook_path, tmp_path / 'existing',
+                                   source_key='vendor-a', mode='existing', category_key=category)
+    section = payload['sheets'][0]
+    assert section['template']['key'] == category
+    assert section['template_action'] == 'reuse'
+    assert len(section['drafts']['update']) >= 1
+    note_key = next(field['key'] for field in section['template']['fields'] if field['role'] == 'note')
+    assert any('供应商附加说明' in incoming['data'].get(note_key, '')
+               for _, incoming in section['drafts']['update'])
+
+
+def test_repeated_dynamic_import_of_same_file_is_idempotent(conn, tmp_path):
+    from catalog import ingest
+
+    path = blowdryer_fixture(tmp_path)
+    storage = LocalStorage(str(tmp_path / 'storage'))
+    first = ingest.start(conn, storage, str(path), None, source_key='vendor-a', mode='new')
+    second = ingest.start(conn, storage, str(path), None, source_key='vendor-a', mode='new')
+    assert second == first
+    for _ in range(100):
+        status = ingest.status(conn, first)
+        if status['status'] != 'parsing':
+            break
+        time.sleep(.02)
+    assert conn.execute('SELECT COUNT(*) FROM import_doc').fetchone()[0] == 1
+
+
 def test_one_approval_atomically_creates_template_and_all_rows(conn, tmp_path):
     from catalog import dynamic_catalog
     from catalog.dynamic_import import build_ticket_payload
@@ -79,7 +147,7 @@ def test_stale_template_approval_cannot_overwrite_new_version(conn, tmp_path):
         'visibility': 'public', 'searchable': True, 'role': 'spec'}]}
     dynamic_catalog.approve_template(conn, changed, expected_version=template['version'])
     conn.commit()
-    with pytest.raises(tickets.TicketConflict, match='模板已经变化'):
+    with pytest.raises(tickets.TicketConflict, match='工单已过期|模板已经变化'):
         tickets.decide(conn, second['id'], second['token'], True)
 
 
@@ -386,3 +454,64 @@ def test_dynamic_reimport_update_row_can_be_edited_before_approval(conn, tmp_pat
         row = next(value for value in client.get(f'/products/{category}').json()['products']
                    if value['id'] == old['id'])
     assert row['颜色'] == '人工确认红色'
+
+
+def _plain_sheet_xlsx(tmp_path, filename, headers, rows, sheet='Sheet1'):
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet
+    ws.append(headers)
+    for row in rows:
+        ws.append(row)
+    wb.save(tmp_path / filename)
+    return str(tmp_path / filename)
+
+
+RAZOR_HEADERS = ['产品型号', '颜色', '报价（不含税不含运）']
+CURLER_HEADERS = ['ITEM.NO', '装箱尺寸', '装箱数量', '价格']
+
+
+def test_same_named_sheets_same_headers_merge_incrementally(conn, tmp_path):
+    """同名 Sheet、同表头的两个文件先后导入：两张工单都应批准成功，
+    行按增量并入同一分类（不撞版本锁）。"""
+    from catalog import dynamic_catalog
+    from catalog.dynamic_import import build_ticket_payload
+
+    a = _plain_sheet_xlsx(tmp_path, 'a.xlsx', RAZOR_HEADERS, [['M1', '红', '10']])
+    b = _plain_sheet_xlsx(tmp_path, 'b.xlsx', RAZOR_HEADERS, [['M2', '蓝', '20']])
+    pa = build_ticket_payload(conn, a, tmp_path / 'wa', source_key='a.xlsx', mode='new')
+    ta = tickets.create(conn, 'template_import', None, pa)
+    pb = build_ticket_payload(conn, b, tmp_path / 'wb', source_key='b.xlsx', mode='new')
+    tb = tickets.create(conn, 'template_import', None, pb)
+    assert pb['sheets'][0]['template']['key'] == pa['sheets'][0]['template']['key']
+
+    tickets.decide(conn, ta['id'], ta['token'], True)
+    tickets.decide(conn, tb['id'], tb['token'], True)   # 此前在这里报“此工单已过期”
+
+    key = pa['sheets'][0]['template']['key']
+    assert dynamic_catalog.get_template(conn, key)['version'] == 1
+    assert len(dynamic_catalog.list_products(conn, key)) == 2
+
+
+def test_same_named_sheets_different_headers_split_categories(conn, tmp_path):
+    """同名 Sheet、不同表头：第二个文件在解析时就开独立分类，
+    不再生成与第一张工单撞 key 的必死工单。"""
+    from catalog import dynamic_catalog
+    from catalog.dynamic_import import build_ticket_payload
+
+    a = _plain_sheet_xlsx(tmp_path, 'a.xlsx', RAZOR_HEADERS, [['M1', '红', '10']])
+    b = _plain_sheet_xlsx(tmp_path, 'b.xlsx', CURLER_HEADERS, [['C1', '60*40*40', '40', '21.5']])
+    pa = build_ticket_payload(conn, a, tmp_path / 'wa', source_key='a.xlsx', mode='new')
+    ta = tickets.create(conn, 'template_import', None, pa)      # 在途
+    pb = build_ticket_payload(conn, b, tmp_path / 'wb', source_key='b.xlsx', mode='new')
+    tb = tickets.create(conn, 'template_import', None, pb)
+
+    key_a = pa['sheets'][0]['template']['key']
+    section_b = pb['sheets'][0]
+    assert section_b['template']['key'] != key_a
+    assert section_b['template']['name'].startswith('Sheet1 (')
+
+    tickets.decide(conn, ta['id'], ta['token'], True)
+    tickets.decide(conn, tb['id'], tb['token'], True)
+    assert len(dynamic_catalog.list_templates(conn)) == 2 + 2    # razor/curler 预置 + 两个动态

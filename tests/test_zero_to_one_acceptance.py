@@ -15,6 +15,7 @@ def _app():
     conn = sqlite3.connect(':memory:', check_same_thread=False)
     conn.row_factory = sqlite3.Row
     db.init_db(conn)
+    conn.execute("INSERT OR IGNORE INTO cs_customer(id,tg_id,tg_name,lang) VALUES('t100','100','buyer','中文')")
     app = FastAPI()
     app.state.conn = conn
     app.state.token = 'zero-test-token'
@@ -95,7 +96,7 @@ def test_zero_to_one_shop_dynamic_catalog_and_redline():
             bot = SimpleNamespace(
                 conn=conn,
                 llm=SimpleNamespace(chat_text=lambda prompt, *a, **k: calls.append(prompt) or 'TRANSFER'),
-                _resolve_product=lambda *a: (None, None),
+                _resolve_product=lambda *a, **kw: (None, None),
                 _handoff=lambda *a: '联系老板',
             )
             assert '联系老板' not in merchant_policy.answer(bot, {'id': 'buyer'}, '可以安排货代吗？', False)

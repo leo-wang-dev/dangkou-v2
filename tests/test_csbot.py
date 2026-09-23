@@ -15,6 +15,7 @@ def conn():
     c = sqlite3.connect(':memory:', check_same_thread=False)
     c.row_factory = sqlite3.Row
     db.init_db(c)
+    c.execute("INSERT OR IGNORE INTO cs_customer(id,tg_id,tg_name,lang) VALUES('t100','100','buyer','中文')")
     return c
 
 
@@ -94,6 +95,22 @@ def test_photo_creates_draft_and_receipt(bot, conn):
     receipt = bot.api.sent[-1][1]
     assert '直发夹板' in receipt and '80R' in receipt
     assert '没拍到' in receipt                         # 没抽到的字段明说
+
+
+def test_photo_caption_what_is_this_resolves_single_pending_product(bot, conn):
+    from catalog import photo_inquiry
+    conn.execute(
+        "INSERT INTO product_curler(id,inner_code,item_no,price,tier_price,cs_visible) "
+        "VALUES('p1','KS-X','MODEL-1','10','20:12',1)")
+    photo_inquiry.save(conn, 't100', [{
+        'category': 'curler', 'product_id': 'p1', 'name': 'MODEL-1',
+    }])
+    conn.commit()
+
+    customer = dict(conn.execute("SELECT * FROM cs_customer WHERE id='t100'").fetchone())
+    product, qty = bot._resolve_product(customer, '这是什么商品')
+    assert product and product['name'] == 'MODEL-1' and qty is None
+    assert 'MODEL-1' in bot._on_text(customer, '这是什么商品')
 
 
 def test_confirm_promotes_drafts(bot, conn):

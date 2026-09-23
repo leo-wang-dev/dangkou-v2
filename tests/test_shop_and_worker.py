@@ -63,6 +63,37 @@ def test_failed_message_backoff_keeps_same_customer_order(env):
     assert conn.execute('SELECT attempts FROM cs_inbox WHERE update_id=802').fetchone()[0]==0
 
 
+def test_failed_photo_gets_one_customer_visible_retry_notice(env):
+    import json
+    from scripts.run_cs_bot import PHOTO_RETRY_NOTICE, process_pending
+    conn, _, _ = env
+    payload = {'update_id': 804, 'message': {
+        'chat': {'id': 321}, 'from': {'id': 321},
+        'photo': [{'file_id': 'photo', 'width': 20, 'height': 20}],
+    }}
+    conn.execute('INSERT INTO cs_inbox(update_id,payload) VALUES(?,?)',
+                 (804, json.dumps(payload)))
+    conn.commit()
+    stub = Mock()
+    stub.handle_update.side_effect = RuntimeError('vision unavailable')
+
+    assert process_pending(conn, stub, limit=1) == 1
+    assert conn.execute('SELECT processed FROM cs_inbox WHERE update_id=804').fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT COUNT(*) FROM cs_outbox WHERE channel='tg' AND recipient='321' AND body=?",
+        (PHOTO_RETRY_NOTICE,),
+    ).fetchone()[0] == 1
+
+    # Make the retry due.  A second failure must not spam a second notice.
+    conn.execute("UPDATE cs_inbox SET next_attempt_at=datetime('now','-1 second') WHERE update_id=804")
+    conn.commit()
+    assert process_pending(conn, stub, limit=1) == 1
+    assert conn.execute(
+        "SELECT COUNT(*) FROM cs_outbox WHERE channel='tg' AND recipient='321' AND body=?",
+        (PHOTO_RETRY_NOTICE,),
+    ).fetchone()[0] == 1
+
+
 def test_index_failure_is_persisted_and_recovers(env,tmp_path,monkeypatch):
     from catalog import search
     from catalog.storage import LocalStorage

@@ -40,7 +40,13 @@ CREATE TABLE IF NOT EXISTS import_doc (
   filename TEXT NOT NULL, category TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'parsing',
   stats_json TEXT, error TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now')),
+  mode TEXT NOT NULL DEFAULT '',
+  category_key TEXT NOT NULL DEFAULT '',
+  content_sha256 TEXT NOT NULL DEFAULT '',
+  phase TEXT NOT NULL DEFAULT 'legacy',
+  template_doc_id INTEGER,
+  template_keys_json TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS category_template (
   key TEXT PRIMARY KEY,
@@ -50,6 +56,7 @@ CREATE TABLE IF NOT EXISTS category_template (
   status TEXT NOT NULL DEFAULT 'approved',
   storage TEXT NOT NULL DEFAULT 'dynamic',
   source_sheet TEXT NOT NULL DEFAULT '',
+  quote_map_json TEXT NOT NULL DEFAULT '',
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -90,7 +97,11 @@ CREATE TABLE IF NOT EXISTS cs_redline (
   UNIQUE(product_id));
 CREATE TABLE IF NOT EXISTS cs_customer (   -- 采购员（=TG账号）
   id TEXT PRIMARY KEY, tg_id TEXT UNIQUE, tg_name TEXT,
+  lang TEXT NOT NULL DEFAULT '',           -- 客户选定语言（''=未选，'中文'=默认）
   first_seen TEXT DEFAULT (datetime('now')), last_seen TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS cs_translation ( -- 客服文案按语言缓存（LLM 翻译一次复用）
+  lang TEXT NOT NULL, source TEXT NOT NULL, target TEXT NOT NULL,
+  PRIMARY KEY(lang, source));
 CREATE TABLE IF NOT EXISTS cs_note (       -- 清单条目（draft=待确认 confirmed=已入清单）
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_id TEXT NOT NULL, photo TEXT,

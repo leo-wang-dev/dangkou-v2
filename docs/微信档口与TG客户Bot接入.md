@@ -18,7 +18,7 @@
 
 引擎：DSH_WECHAT_DM_ALLOWLIST明确登记同一微信ID；WECHAT_CUSTOMER_BOT_ENABLED=1、CATALOG_V2_URL、CATALOG_V2_SERVICE_TOKEN、CATALOG_V2_PLUGIN_PATH绝对路径。新Token先于模型/检索/会话存储拦截，不作为普通工具参数。CATALOG_NOTIFY_TOKEN/PORT启用受限微信审批通知。
 
-客户守护：`scripts/run_wechat_customer.py`，校验凭据身份与已提交档口一致，只启动本店客户worker，不回写商家资料。Token更新后重启worker；换Bot身份需要显式迁移旧消息记录。
+客户守护：`scripts/run_wechat_customer.py`，校验凭据身份与已提交档口一致，启动本店客户 worker，并在没有独立通知服务占用 `.notify.lock` 时自动启动通知 worker；不回写商家资料。Token更新后重启 worker；换 Bot 身份需要显式迁移旧消息记录。
 
 ## 本次隔离手测
 

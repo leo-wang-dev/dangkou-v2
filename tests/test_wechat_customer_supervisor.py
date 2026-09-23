@@ -1,5 +1,6 @@
 from catalog import db, merchant_policy
 from scripts import run_wechat_customer
+import fcntl
 
 
 def test_binding_snapshot_is_read_only_after_service_start(tmp_path, monkeypatch):
@@ -28,3 +29,13 @@ def test_healthy_child_with_unchanged_credentials_needs_no_binding_check():
     assert not run_wechat_customer.needs_binding_check(RunningChild(), 'same', 'same')
     assert run_wechat_customer.needs_binding_check(None, 'same', 'same')
     assert run_wechat_customer.needs_binding_check(RunningChild(), 'old', 'new')
+
+
+def test_notification_lock_detects_a_separately_managed_worker(tmp_path, monkeypatch):
+    db_path = tmp_path / 'shop.db'
+    monkeypatch.setattr(run_wechat_customer.config, 'DB_PATH', str(db_path))
+    assert not run_wechat_customer.notification_lock_busy()
+    with open(str(db_path) + '.notify.lock', 'a+') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert run_wechat_customer.notification_lock_busy()
+        fcntl.flock(lock, fcntl.LOCK_UN)

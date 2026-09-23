@@ -125,6 +125,7 @@ def test_concurrent_ticket_approval_has_one_effect(tmp_path):
     path = str(tmp_path/'concurrent.db')
     conn = db.connect(path)
     db.init_db(conn)
+    conn.execute("INSERT OR IGNORE INTO cs_customer(id,tg_id,tg_name,lang) VALUES('t100','100','buyer','中文')")
     tk = tickets.create(conn,'import','razor',{'kind':'import','drafts':{'new':[{'model_no':'ONE','_rid':'n0'}]}})
     def approve():
         local = db.connect(path)
@@ -144,6 +145,7 @@ def test_concurrent_ticket_approval_has_one_effect(tmp_path):
 def test_import_does_not_delist_or_update_another_supplier(tmp_path, monkeypatch):
     conn = db.connect(str(tmp_path/'imports.db'))
     db.init_db(conn)
+    conn.execute("INSERT OR IGNORE INTO cs_customer(id,tg_id,tg_name,lang) VALUES('t100','100','buyer','中文')")
     products = [{'model_no':'SHARED','price':'10'}, {'model_no':'A-ONLY','price':'15'}]
     monkeypatch.setattr(ingest.agent,'parse',lambda *args:{'products':products})
     storage = LocalStorage(str(tmp_path/'images'))

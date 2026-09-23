@@ -31,6 +31,17 @@ def _migrate(conn):
     cols = {r[1] for r in conn.execute('PRAGMA table_info(import_doc)')}
     if 'source_key' not in cols:
         conn.execute("ALTER TABLE import_doc ADD COLUMN source_key TEXT NOT NULL DEFAULT ''")
+    for field in ('mode', 'category_key', 'content_sha256', 'phase',
+                  'template_doc_id', 'template_keys_json'):
+        if field not in cols:
+            if field == 'template_doc_id':
+                conn.execute("ALTER TABLE import_doc ADD COLUMN template_doc_id INTEGER")
+            elif field == 'template_keys_json':
+                conn.execute("ALTER TABLE import_doc ADD COLUMN template_keys_json TEXT NOT NULL DEFAULT '[]'")
+            elif field == 'phase':
+                conn.execute("ALTER TABLE import_doc ADD COLUMN phase TEXT NOT NULL DEFAULT 'legacy'")
+            else:
+                conn.execute(f"ALTER TABLE import_doc ADD COLUMN {field} TEXT NOT NULL DEFAULT ''")
     conn.execute("UPDATE import_doc SET source_key=filename WHERE source_key=''")
     inbox_cols = {r[1] for r in conn.execute('PRAGMA table_info(cs_inbox)')}
     if 'next_attempt_at' not in inbox_cols:
@@ -39,6 +50,9 @@ def _migrate(conn):
     for field in ('address', 'business_hours', 'shipping_info', 'faq'):
         if field not in shop_cols:
             conn.execute(f"ALTER TABLE shop_profile ADD COLUMN {field} TEXT NOT NULL DEFAULT ''")
+    cust_cols = {r[1] for r in conn.execute('PRAGMA table_info(cs_customer)')}
+    if cust_cols and 'lang' not in cust_cols:
+        conn.execute("ALTER TABLE cs_customer ADD COLUMN lang TEXT NOT NULL DEFAULT ''")
     from .templates import TEMPLATES
     for t in TEMPLATES.values():
         cols = {r[1] for r in conn.execute(f'PRAGMA table_info({t.table})')}
@@ -48,6 +62,23 @@ def _migrate(conn):
             conn.execute(f"ALTER TABLE {t.table} ADD COLUMN tier_price TEXT")
         if cols and 'cs_visible' not in cols:      # C端：对客户可见（默认关）
             conn.execute(f"ALTER TABLE {t.table} ADD COLUMN cs_visible INTEGER DEFAULT 0")
+    # 动态分类报价映射：老库补列并按表头回填推荐值（价格列唯一才自动绑，
+    # 多候选留给商家显式指定——不能猜价格口径）。
+    import json as _json
+    tpl_cols = {r[1] for r in conn.execute('PRAGMA table_info(category_template)')}
+    if tpl_cols and 'quote_map_json' not in tpl_cols:
+        conn.execute("ALTER TABLE category_template ADD COLUMN quote_map_json TEXT NOT NULL DEFAULT ''")
+        from . import dynamic_catalog
+        for row in conn.execute(
+                "SELECT key, fields_json FROM category_template WHERE storage='dynamic'").fetchall():
+            try:
+                fields = _json.loads(row['fields_json'])
+            except (TypeError, ValueError):
+                continue
+            suggested = dynamic_catalog.suggest_quote_map(fields)
+            if suggested:
+                conn.execute('UPDATE category_template SET quote_map_json=? WHERE key=?',
+                             (_json.dumps(suggested, ensure_ascii=False), row['key']))
 
 
 def _seed_cs(conn):

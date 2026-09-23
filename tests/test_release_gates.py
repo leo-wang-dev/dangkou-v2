@@ -28,6 +28,7 @@ def env(tmp_path, monkeypatch):
     conn = sqlite3.connect(':memory:', check_same_thread=False)
     conn.row_factory = sqlite3.Row
     db.init_db(conn)
+    conn.execute("INSERT OR IGNORE INTO cs_customer(id,tg_id,tg_name,lang) VALUES('t100','100','buyer','中文')")
     app = FastAPI()
     app.state.conn = conn
     app.state.token = 'audit-service-secret'

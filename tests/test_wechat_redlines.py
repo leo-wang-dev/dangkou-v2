@@ -38,28 +38,36 @@ def test_empty_new_mode_does_not_enable_seed(client):
     '可以改包装吗',
 ])
 def test_empty_new_mode_never_invents_a_handoff_rule(client, question):
-    """No merchant-approved rule means business questions stay with the bot."""
+    """No merchant-approved rule means business questions stay with the bot.
+
+    对话大脑可以用资料回答，但绝不转人工、绝不跑规则分类器（没有规则可分类）。
+    """
     conn = app.state.conn
     cs.set_redline(conn, None, '')
-    calls = []
+
+    def fake_chat(system, messages, **kwargs):
+        assert '规则匹配' not in system
+        return '您好，这个问题需要跟商家确认后答复。'
+
     bot = SimpleNamespace(
         conn=conn,
-        llm=SimpleNamespace(chat_text=lambda *args, **kwargs: calls.append(args) or 'TRANSFER'),
-        _resolve_product=lambda *args: (None, None),
+        llm=SimpleNamespace(chat_text=fake_chat),
+        _resolve_product=lambda *args, **kwargs: (None, None),
+        _history=lambda *args: [],
+        _remember_catalog_photos=lambda *args: None,
         _handoff=lambda *args: pytest.fail('empty redline must not transfer the customer'),
     )
 
     reply = merchant_policy.answer(bot, {'id': 'buyer'}, question, False)
 
-    assert '现有资料暂不能确认' in reply
-    assert calls == []
+    assert '需要跟商家确认' in reply
 
 
 def test_approved_faq_answer_is_used_by_customer_bot(client):
     conn = app.state.conn
     conn.execute("UPDATE shop_profile SET faq=? WHERE id=1", ('问：可以安排货代吗？答：可以安排。',))
     conn.commit()
-    bot = SimpleNamespace(conn=conn, _resolve_product=lambda *args: (None, None),
+    bot = SimpleNamespace(conn=conn, _resolve_product=lambda *args, **kwargs: (None, None),
                           _handoff=lambda *args: pytest.fail('FAQ answer should not hand off'))
     assert merchant_policy.answer(bot, {'id': 'buyer'}, '可以安排货代吗？', False) == '可以安排。'
     assert merchant_policy.answer(bot, {'id': 'buyer'}, '可以帮我安排货代吗？', False) == '可以安排。'
@@ -70,7 +78,7 @@ def test_faq_price_text_still_hands_off(client):
     conn.execute("UPDATE shop_profile SET faq=? WHERE id=1", ('问：单价是多少？答：12元。',))
     conn.execute("UPDATE shop_profile SET owner_wechat='owner-wx' WHERE id=1")
     conn.commit()
-    bot = SimpleNamespace(conn=conn, _resolve_product=lambda *args: (None, None),
+    bot = SimpleNamespace(conn=conn, _resolve_product=lambda *args, **kwargs: (None, None),
                           _handoff=lambda *args: '联系老板')
     assert merchant_policy.answer(bot, {'id': 'buyer'}, '单价是多少？', False) == '12元。'
 
@@ -101,7 +109,7 @@ def test_wechat_rule_live_reload_ignores_hub(client):
     seen = []
     bot = SimpleNamespace(conn=conn,
         llm=SimpleNamespace(chat_text=lambda prompt, *args, **kwargs: seen.append(prompt) or 'TRANSFER'),
-        _resolve_product=lambda *args: (None, None),
+        _resolve_product=lambda *args, **kwargs: (None, None),
         _handoff=lambda *args: '转人工')
     cs.set_redline(conn, None, '加急才转人工')
     assert merchant_policy.answer(bot, {'id': 'buyer'}, '能加急吗', False) == '转人工'
@@ -118,7 +126,7 @@ def test_wechat_rule_selected_product_overrides_store(client):
     cs.set_redline(conn, 'p1', '商品规则')
     bot = SimpleNamespace(conn=conn,
         llm=SimpleNamespace(chat_text=lambda prompt, *args, **kwargs: seen.append(prompt) or 'TRANSFER'),
-        _resolve_product=lambda *args: ({'id': 'p1', 'cs_visible': 1}, None),
+        _resolve_product=lambda *args, **kw: ({'id': 'p1', 'cs_visible': 1}, None),
         _handoff=lambda *args: '转人工')
     merchant_policy.answer(bot, {'id': 'buyer'}, '这款可以加急吗', False)
     assert '商品规则' in seen[-1] and '全店规则' not in seen[-1]
@@ -142,7 +150,7 @@ def test_price_inquiry_selection_uses_merchant_rule_and_keeps_product_context(cl
     seen=[]
     bot = SimpleNamespace(conn=conn, _commit=conn.commit,
         llm=SimpleNamespace(chat_text=lambda prompt, *args, **kwargs: seen.append(prompt) or 'TRANSFER'),
-        _resolve_product=lambda *args: (None,None), _handoff=lambda *args: '转人工')
+        _resolve_product=lambda *args, **kw: (None,None), _handoff=lambda *args: '转人工')
     assert merchant_policy.answer(bot, {'id':'buyer'}, '询价1 能加急吗', False) == '转人工'
     assert len(seen) == 1 and '商品规则' in seen[0]
     assert conn.execute("SELECT product_id FROM cs_context WHERE customer_id='buyer'").fetchone()[0] == 'p1'
@@ -160,7 +168,7 @@ def test_recent_selected_product_applies_to_followup(client, monkeypatch):
     seen=[]
     bot = SimpleNamespace(conn=conn,
         llm=SimpleNamespace(chat_text=lambda prompt, *args, **kwargs: seen.append(prompt) or 'TRANSFER'),
-        _resolve_product=lambda *args: (None,None), _handoff=lambda *args: '转人工')
+        _resolve_product=lambda *args, **kw: (None,None), _handoff=lambda *args: '转人工')
     merchant_policy.answer(bot, {'id':'buyer'}, '能加急吗', False)
     assert '商品规则' in seen[-1] and '全店规则' not in seen[-1]
 
@@ -179,7 +187,7 @@ def test_hidden_or_expired_selection_does_not_apply_product_rule(client, monkeyp
     seen=[]
     bot=SimpleNamespace(conn=conn,
         llm=SimpleNamespace(chat_text=lambda prompt,*args,**kwargs:seen.append(prompt) or 'TRANSFER'),
-        _resolve_product=lambda *args:(None,None),_handoff=lambda *args:'转人工')
+        _resolve_product=lambda *args, **kw:(None,None),_handoff=lambda *args:'转人工')
     merchant_policy.answer(bot,{'id':'buyer'},'能加急吗',False)
     assert '全店规则' in seen[-1] and '商品规则' not in seen[-1]
 
@@ -192,7 +200,7 @@ def test_catalog_query_returns_only_approved_visible_products(client, query, mon
     for pid, visible, status in [('visible', 1, 'approved'), ('hidden', 0, 'approved'), ('pending', 1, 'pending')]:
         conn.execute('INSERT INTO product_razor(id,inner_code,model_no,status,cs_visible) VALUES(?,?,?,?,?)',
                      (pid, pid, pid, status, visible))
-    bot = SimpleNamespace(conn=conn, _resolve_product=lambda *a: (None, None))
+    bot = SimpleNamespace(conn=conn, _resolve_product=lambda *a, **kw: (None, None))
     bot._catalog_brief = lambda query='', require_category=False: CsBot._catalog_brief(
         bot, query, require_category)
     reply = merchant_policy.answer(bot, {'id': 'buyer'}, query, False)

@@ -9,7 +9,13 @@ def test_index_served_with_views_and_fetch():
     assert r.status_code == 200
     assert '审核' in r.text and '商品' in r.text
     assert 'fetch(' in r.text          # 真实调用后端
-    assert '剃须刀' in r.text and '卷发棒' in r.text  # 品类页签
+    # 品类页签数据驱动：页面不得写死预置分类（空店显示 0 个分类）
+    assert "CAT_NAMES = {razor" not in r.text
+    assert 'loadCats' in r.text
+    # 可观测用卡片按钮控制，不再是表单字段；表单用表头标签并有系统字段过滤
+    assert 'toggleProductVisible' in r.text
+    assert "['image','sequence','visibility'].includes(f.role)" in r.text
+    assert '${f.label||f.col}' in r.text
 
 
 def test_script_syntax():

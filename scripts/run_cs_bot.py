@@ -9,6 +9,34 @@ from catalog import config, db
 from catalog.csbot import CsBot
 from catalog.tg import TgApi
 
+PHOTO_RETRY_NOTICE = '图片已收到，但识别服务暂时不可用，系统会自动重试；也可以把型号文字一起发来。'
+
+
+def _queue_photo_retry_notice(conn, row):
+    """Make a photo-processing failure visible while keeping the inbox retryable.
+
+    The old worker only recorded the exception and left the update pending.  A
+    transient vision/download failure therefore looked like a silent bot.  The
+    notice is queued only for the first failed attempt; subsequent retries keep
+    the inbox idempotent and do not spam the customer.
+    """
+    if row['attempts']:
+        return
+    try:
+        payload = json.loads(row['payload'])
+        message = payload.get('message') or {}
+        if not message.get('photo'):
+            return
+        chat_id = (message.get('chat') or {}).get('id')
+        if chat_id is None:
+            return
+    except (TypeError, ValueError, AttributeError):
+        return
+    conn.execute(
+        'INSERT INTO cs_outbox(channel,recipient,body) VALUES(?,?,?)',
+        ('tg', str(chat_id), PHOTO_RETRY_NOTICE),
+    )
+
 
 def process_pending(conn, bot, limit=1000):
     """Process oldest due message per customer, preserving order without loading the backlog."""
@@ -31,6 +59,7 @@ def process_pending(conn, bot, limit=1000):
                 # handle_update commits processed=1; stubs should obey the same contract.
             except Exception as exc:
                 conn.rollback()
+                _queue_photo_retry_notice(conn, row)
                 delay=min(900,30 * 2 ** min(row['attempts'],5))
                 conn.execute("UPDATE cs_inbox SET attempts=attempts+1,last_error=?,next_attempt_at=datetime('now',?) WHERE update_id=?",
                              (type(exc).__name__,f'+{delay} seconds',row['update_id']))

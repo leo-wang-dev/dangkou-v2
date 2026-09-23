@@ -33,8 +33,11 @@ def test_single_shop_runtime_start_rotate_preserves_wechat_info(tmp_path):
                 except (OSError,ValueError):return {}
             wait_for(lambda: status().get('runtime_status')=='running')
             pid=status()['pid']
+            notify_pid=status()['notify_pid']
+            assert notify_pid and notify_pid != pid
             write_secret(runtime/'credentials.json',{'bot_id':'222222','bot_token':'222222:rotated'})
             wait_for(lambda: status().get('runtime_status')=='running' and status().get('pid')!=pid)
+            assert status().get('notify_pid') and status()['notify_pid'] != notify_pid
             assert c.execute('SELECT owner_wechat FROM shop_profile').fetchone()[0]=='owner-after-edit'
             assert merchant_policy.read(c)=={'wechat_managed':True}
         finally:

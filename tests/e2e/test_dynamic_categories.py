@@ -28,6 +28,12 @@ def test_b_template_import_confirms_fields_then_exposes_dynamic_category(page, s
     expect(detail).to_contain_text('吹风机')
     expect(detail).to_contain_text('产品型号')
     expect(detail.locator('[data-template-visibility]')).to_have_count(11)
+    assert detail.locator('[data-field-type]').count() == 0
+    assert detail.locator('[data-field-role]').count() == 0
+    preview = detail.locator('.draft').first.locator('img.p')
+    expect(preview).to_have_count(1)
+    page.wait_for_function('(img) => img.complete && img.naturalWidth > 0',
+                           arg=preview.element_handle())
     cost_visibility = detail.locator('[data-field-label-name="不含税 单风嘴成本"]')
     expect(cost_visibility).to_have_value('internal')
     first_row = detail.locator('.draft').first

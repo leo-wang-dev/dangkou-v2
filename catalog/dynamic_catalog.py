@@ -87,7 +87,16 @@ def seed_legacy_templates(conn) -> None:
 def _template(row) -> dict:
     return {'key': row['key'], 'name': row['name'], 'version': row['version'],
             'fields': _loads(row['fields_json'], []), 'status': row['status'],
-            'storage': row['storage'], 'source_sheet': row['source_sheet']}
+            'storage': row['storage'], 'source_sheet': row['source_sheet'],
+            'quote_map': _loads(_safe_col(row, 'quote_map_json'), {})}
+
+
+def _safe_col(row, name):
+    """极老库/迁移前没有该列时按空值处理。"""
+    try:
+        return row[name] or ''
+    except (IndexError, KeyError):
+        return ''
 
 
 def list_templates(conn, *, approved_only: bool = True) -> list[dict]:
@@ -112,25 +121,110 @@ def template_versions(conn, key: str) -> list[dict]:
     return values
 
 
+QUOTE_MAP_FIELDS = ('model_field', 'price_field', 'ctn_field', 'color_field')
+
+
+def suggest_quote_map(fields: list[dict]) -> dict:
+    """从模板表头推断报价单列映射。价格/型号列唯一才自动绑；多候选或缺位返回缺项，
+    由商家显式指定——价格口径不能猜。箱规/颜色按表头词匹配，命中唯一才绑。"""
+    def by_role_unique(role):
+        hits = [field for field in fields if field.get('role') == role]
+        if hits:   # 角色已有候选：唯一才绑，多个直接拒绝（不降级到表头猜）
+            return hits[0]['key'] if len(hits) == 1 else None
+        return None
+
+    def by_label_unique(*words):
+        hits = [field for field in fields
+                if any(word in field['label'].casefold() for word in words)]
+        return hits[0]['key'] if len(hits) == 1 else None
+
+    model = by_role_unique('model') or by_label_unique('型号', 'item.no', 'itemno', 'sku', '货号')
+    price_role = [field for field in fields if field.get('role') == 'price']
+    if price_role:
+        price = by_role_unique('price')          # 歧义即拒绝，不落到表头猜
+    else:
+        price = by_label_unique('报价', '出厂价', '单价', '价格', 'price')
+    mapping = {
+        'model_field': model,
+        'price_field': price,
+        'ctn_field': by_label_unique('箱规', '装箱'),
+        'color_field': by_label_unique('颜色', 'colour', 'color'),
+    }
+    return {name: key for name, key in mapping.items() if key}
+
+
+def quotable(template: dict) -> bool:
+    """报价单可出：型号列+价格列都已映射。"""
+    quote_map = template.get('quote_map') or {}
+    return bool(quote_map.get('model_field') and quote_map.get('price_field'))
+
+
+def set_quote_map(conn, key: str, mapping: dict) -> dict:
+    template = get_template(conn, key)
+    if template['storage'] != 'dynamic':
+        raise ValueError('预置分类的报价映射是固定配置，不能修改')
+    by_key = {field['key']: field for field in template['fields']}
+    by_label = {field['label'].casefold(): field for field in template['fields']}
+    resolved = {}
+    for name in QUOTE_MAP_FIELDS:
+        value = str((mapping or {}).get(name) or '').strip()
+        if not value:
+            continue
+        field = by_key.get(value) or by_label.get(value.casefold())
+        if field is None:
+            raise ValueError(f'字段「{value}」不在分类「{template["name"]}」的表头里')
+        resolved[name] = field['key']
+    if 'price_field' not in resolved:
+        raise ValueError('报价映射必须指定价格列 price_field（可用字段名或字段 key）')
+    if 'model_field' not in resolved:
+        raise ValueError('报价映射必须指定型号列 model_field（可用字段名或字段 key）')
+    merged = {**(template.get('quote_map') or {}), **resolved}
+    conn.execute("UPDATE category_template SET quote_map_json=?, updated_at=datetime('now') WHERE key=?",
+                 (json.dumps(merged, ensure_ascii=False), key))
+    conn.commit()
+    return merged
+
+
+def rename_template(conn, key: str, name: str) -> dict:
+    name = str(name or '').strip()
+    if not name:
+        raise ValueError('分类名称不能为空')
+    template = get_template(conn, key)
+    if template['storage'] != 'dynamic':
+        raise ValueError('预置分类名称是固定配置，不能修改')
+    conn.execute("UPDATE category_template SET name=?, updated_at=datetime('now') WHERE key=?",
+                 (name, key))
+    conn.commit()
+    return {**template, 'name': name}
+
+
 def approve_template(conn, draft: dict, expected_version: int | None = None) -> dict:
     value = validate_template(draft)
     current = conn.execute('SELECT version FROM category_template WHERE key=?', (value['key'],)).fetchone()
     if current:
         if expected_version is None or current['version'] != expected_version:
-            raise ValueError('分类模板已经变化，请重新审批')
+            raise ValueError('此工单已过期（分类模板已更新），请直接驳回；如需入库请重新发送 Excel')
         version = current['version'] + 1
+        previous = _loads(conn.execute('SELECT quote_map_json FROM category_template WHERE key=?',
+                                       (value['key'],)).fetchone()['quote_map_json'] or '{}', {})
+        # 表头变了重推映射：保留仍然存在的显式绑定，缺的重新推荐。
+        field_keys = {field['key'] for field in value['fields']}
+        quote_map = {**suggest_quote_map(value['fields']),
+                     **{name: key for name, key in previous.items() if key in field_keys}}
         conn.execute('UPDATE category_template SET name=?,version=?,fields_json=?,status=\'approved\','
-                     'storage=?,source_sheet=?,updated_at=datetime(\'now\') WHERE key=?',
+                     'storage=?,source_sheet=?,quote_map_json=?,updated_at=datetime(\'now\') WHERE key=?',
                      (value['name'], version, json.dumps(value['fields'], ensure_ascii=False),
-                      value['storage'], value['source_sheet'], value['key']))
+                      value['storage'], value['source_sheet'],
+                      json.dumps(quote_map, ensure_ascii=False), value['key']))
     else:
         if expected_version not in (None, 0):
-            raise ValueError('分类模板已经变化，请重新审批')
+            raise ValueError('此工单已过期（分类模板已更新），请直接驳回；如需入库请重新发送 Excel')
         version = 1
-        conn.execute('INSERT INTO category_template(key,name,version,fields_json,status,storage,source_sheet) '
-                     "VALUES(?,?,?,?, 'approved',?,?)",
+        quote_map = suggest_quote_map(value['fields'])
+        conn.execute('INSERT INTO category_template(key,name,version,fields_json,status,storage,source_sheet,quote_map_json) '
+                     "VALUES(?,?,?,?, 'approved',?,?,?)",
                      (value['key'], value['name'], version, json.dumps(value['fields'], ensure_ascii=False),
-                      value['storage'], value['source_sheet']))
+                      value['storage'], value['source_sheet'], json.dumps(quote_map, ensure_ascii=False)))
     snapshot = {**value, 'version': version}
     conn.execute('INSERT INTO category_template_version(category_key,version,snapshot_json) VALUES(?,?,?)',
                  (value['key'], version, json.dumps(snapshot, ensure_ascii=False)))

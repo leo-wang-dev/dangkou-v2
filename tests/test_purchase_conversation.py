@@ -13,6 +13,7 @@ from catalog.csbot import CsBot
 def setup(tmp_path, monkeypatch):
     monkeypatch.delenv('CATALOG_CS_API_URL', raising=False)
     c = db.connect(str(tmp_path / 'shop.db')); db.init_db(c)
+    c.execute("INSERT OR IGNORE INTO cs_customer(id,tg_id,tg_name,lang) VALUES('t100','100','buyer','中文')")
     c.execute("UPDATE shop_profile SET shop_name='测试店',tg_bot_id='123',owner_wechat='bosswx' WHERE id=1")
     merchant_policy.apply(c, {'shop_name':'测试店', 'logistics':'加急转人工'}, 1); c.commit()
     class Model:

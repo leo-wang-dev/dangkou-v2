@@ -73,3 +73,26 @@ def test_sheet_defined_product_can_be_matched_and_selected_from_photo_text(env):
     photo_inquiry.save(conn, 'a', found); conn.commit()
     selected = photo_inquiry.selection(conn, 'a', 1)
     assert selected['id'] == 'dryer-1' and selected['specs']['颜色'] == '玫红色'
+
+
+def test_photo_text_matches_model_line_of_variant_name(env):
+    from catalog import dynamic_catalog
+    conn, _, _ = env
+    dynamic_catalog.approve_template(conn, {
+        'key': 'cat_shaver', 'name': '剃须刀', 'source_sheet': '剃须刀',
+        'fields': [
+            {'key': 'model', 'label': '型号', 'role': 'model', 'visibility': 'public'},
+            {'key': 'material', 'label': '材质', 'role': 'spec', 'visibility': 'public'},
+        ],
+    }, expected_version=0)
+    dynamic_catalog.upsert_approved_products(conn, 'cat_shaver', [{
+        'id': 'shaver-1', 'inner_code': 'INNER-SHAVER', 'cs_visible': 1,
+        'data': {'model': 'KS-0276\n铝合金', 'material': '铝合金'},
+    }])
+    conn.commit()
+
+    assert photo_inquiry.local_candidates(
+        conn, [{'型号或品名': 'KS-0276'}], b'photo') == [{
+            'category': 'cat_shaver', 'product_id': 'shaver-1',
+            'name': 'KS-0276\n铝合金',
+        }]
