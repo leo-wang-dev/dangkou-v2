@@ -146,19 +146,22 @@ def test_price_and_quote_rules_never_bypass_platform_handoff(tmp_path):
     conn=db.connect(str(tmp_path/'shop.db'));db.init_db(conn)
     conn.execute("UPDATE shop_profile SET owner_wechat='ownerwx' WHERE id=1")
     calls=[]
-    llm=SimpleNamespace(chat_text=lambda *a,**kw:calls.append(a) or 'TRANSFER')
+    llm=SimpleNamespace(chat_text=lambda system,messages,*a,**kw: calls.append((system,messages))
+        or ('TRANSFER' if '规则匹配' in system else '价格需要跟商家确认，可以回复“找老板”。'))
     bot=CsBot(conn,None,llm=llm,img_dir=str(tmp_path/'photos'))
     cust=bot._ensure_customer({'id':123,'first_name':'test'})
     merchant_policy.apply(conn,{'shop_name':'测试','quote_rules':'整箱议价'},1)
     reply = bot._on_text(cust,'拿1000件多少钱')
     assert 'ownerwx' not in reply and '整箱议价' not in reply
-    assert calls==[]
+    assert '整箱议价' not in str(calls)  # 未审批的报价规则不得进入任何提示词
+    assert '找老板' in reply
     merchant_policy.apply(conn,{'shop_name':'测试','price':'议价转人工'},2)
     assert 'ownerwx' in bot._on_text(cust,'能便宜吗')
-    assert len(calls)==1
+    assert sum('规则匹配' in c[0] for c in calls)==1  # 命中规则只走规则匹配
+    assert sum('智能客服' in c[0] for c in calls)==1  # 无规则的问题才走大脑
     merchant_policy.apply(conn,{'shop_name':'测试'},3)
     assert 'ownerwx' not in bot._on_text(cust,'多少钱')
-    assert calls==[calls[0]]
+    assert sum('智能客服' in c[0] for c in calls)==2  # 清空规则后回大脑，仍不转人工
 
 def test_migration_preserves_notes_and_archives_offsets(c,tmp_path):
     from scripts.migrate_merchant_bot import migrate

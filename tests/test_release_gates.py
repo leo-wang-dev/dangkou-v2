@@ -53,6 +53,15 @@ def env(tmp_path, monkeypatch):
     llm.chat_vision.return_value = '[{"型号或品名":"A","价格":"12"}]'
     llm.chat_text.return_value = '<<PASS>>'
     bot = CsBot(conn, api, llm=llm, notifier=Mock(), img_dir=str(tmp_path))
+    # 新版客户 bot 首条消息先问语言；离线审计里的买家 tg_id 固定 100/200，
+    # 预置“中文”让用例直接进入业务分支。
+    from catalog import cs_i18n
+    for tg in (100, 200):
+        bot._ensure_customer({'id': tg})
+        cs_i18n.set_language(
+            conn, conn.execute("SELECT id FROM cs_customer WHERE tg_id=?", (str(tg),)).fetchone()[0],
+            '中文')
+    conn.commit()
     with TestClient(app) as client:
         yield conn, client, bot
     conn.close()

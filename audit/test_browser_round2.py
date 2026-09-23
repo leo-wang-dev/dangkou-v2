@@ -430,8 +430,10 @@ def test_tier_edit_persists_and_reopens(page, site):
     products(page, site, category='卷发棒')
     page.locator('.pcard').get_by_role('button', name='编辑').click()
     expect(page.locator('#fg-tier_price')).to_have_count(0)
-    page.locator('#fg-cs_visible').fill('1')
+    expect(page.locator('#fg-cs_visible')).to_have_count(0)  # 可观测不在编辑表单
     submit(page)
-    page.locator('.pcard').get_by_role('button', name='编辑').click()
-    expect(page.locator('#fg-tier_price')).to_have_count(0)
-    expect(page.locator('#fg-cs_visible')).to_have_value('1')
+    # 可观测改由卡片开关直接切换；重进页面后状态保持
+    page.locator('.pcard').get_by_role('button', name='🚫 客户不可见').click()
+    expect(page.locator('.pcard').get_by_role('button', name='👁 客户可见')).to_be_visible()
+    products(page, site, category='卷发棒')
+    expect(page.locator('.pcard').get_by_role('button', name='👁 客户可见')).to_be_visible()

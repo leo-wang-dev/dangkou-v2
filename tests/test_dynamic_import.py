@@ -79,7 +79,7 @@ def test_stale_template_approval_cannot_overwrite_new_version(conn, tmp_path):
         'visibility': 'public', 'searchable': True, 'role': 'spec'}]}
     dynamic_catalog.approve_template(conn, changed, expected_version=template['version'])
     conn.commit()
-    with pytest.raises(tickets.TicketConflict, match='模板已经变化'):
+    with pytest.raises(tickets.TicketConflict, match='模板已更新|模板已经变化'):
         tickets.decide(conn, second['id'], second['token'], True)
 
 

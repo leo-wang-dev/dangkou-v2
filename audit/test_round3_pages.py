@@ -18,7 +18,7 @@ def test_import_edit_retains_tiers_and_visibility(page,site):
     detail = review(page,site,tk)
     detail.get_by_role('button',name='编辑',exact=True).click()
     expect(page.locator('#fg-tier_price')).to_have_count(0)
-    expect(page.locator('#fg-cs_visible')).to_have_value('1')
+    expect(page.locator('#fg-cs_visible')).to_have_count(0)  # 可观测走卡片开关
     page.locator('#fg-price').fill('14')
     submit(page)
     with page.expect_response(lambda r: r.url.endswith(f'/tickets/{tk["id"]}/row') and r.request.method=='POST') as approval:

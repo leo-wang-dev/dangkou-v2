@@ -33,6 +33,17 @@ def setup(tmp_path, monkeypatch):
 
 
 def send(bot, text='', uid=1, photo=False, customer=100):
+    # 新版客户 bot 首条消息先问语言；测试统一替客户先选“中文”（负数 update_id
+    # 只用一次，不与用例自己的正数 id 冲突去重）。
+    picked = getattr(bot, '_test_lang_picked', None)
+    if picked is None:
+        picked = bot._test_lang_picked = set()
+    if customer not in picked:
+        picked.add(customer)
+        bot.handle_update({'update_id': -customer,
+                           'message': {'from': {'id': customer},
+                                       'chat': {'id': customer, 'type': 'private'},
+                                       'text': '中文'}})
     msg={'from':{'id':customer}, 'chat':{'id':customer,'type':'private'}}
     msg.update({'photo':[{'file_id':'x'}], 'caption':text} if photo else {'text':text})
     bot.handle_update({'update_id':uid,'message':msg})

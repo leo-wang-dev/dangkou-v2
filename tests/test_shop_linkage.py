@@ -42,7 +42,9 @@ def test_merchant_approval_bot_photo_web_excel_same_identity(env):
     assert 'TEST-WX' in listed['fields']['供应商联系方式']
     sheet=openpyxl.load_workbook(io.BytesIO(client.get('/cs/link/'+token+'/export.xlsx').content)).active
     assert sheet.max_row==2 and len(sheet._images)==1
-    assert '接待档口（供货关系待确认）' in str(list(sheet.values))
+    rows_export = list(sheet.values)
+    assert {'档口名称', '供应商联系方式'} <= set(rows_export[0])  # 供货身份列必须在
+    assert '待确认' in str(rows_export[1])  # 未确认的供货关系明示给商家
     document=json.loads(conn.execute("SELECT body FROM cs_outbox WHERE channel='tg_document'").fetchone()[0])
     assert json.loads(document['notes'][0]['fields_json'])['档口名称']=='测试义乌美妆档口'
     approve(client,{'shop_name':'测试档口新名','owner_wechat':'TEST-NEW'})

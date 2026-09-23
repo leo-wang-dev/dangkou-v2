@@ -111,9 +111,13 @@ def test_two_live_workers_pause_resume(tmp_path,monkeypatch):
                     assert page.get_by_text('ITEM-234567',exact=True).count()==0
                     page.get_by_role('button',name='新增商品').click()
                     page.locator('#fg-model_no').fill('BROWSER-NEW')
-                    page.locator('#fg-cs_visible').fill('1')
                     page.locator('#modalBox').get_by_role('button',name='提交').click()
                     page.get_by_text('BROWSER-NEW',exact=True).wait_for()
+                    # 可观测不再是表单字段：卡片上的开关控制，默认不可见就点开
+                    card=page.locator('.pcard',has_text='BROWSER-NEW')
+                    if card.get_by_role('button',name='🚫 客户不可见').count():
+                        card.get_by_role('button',name='🚫 客户不可见').click()
+                        card.get_by_role('button',name='👁 客户可见').wait_for()
                     assert not errors
                     # The customer brain reads the new product through the live merchant API.
                     from catalog.csbot import CsBot

@@ -68,6 +68,13 @@ def bot(conn):
     notified = []
     b = CsBot(conn, api, llm=llm, notifier=notified.append)
     b.notified = notified
+    # 新版客户 bot 未选语言时首条消息是语言选择提示；测试客户 tg_id 固定 100，
+    # 预置“中文”跳过该步，保持用例只关心业务行为。
+    from catalog import cs_i18n
+    b._ensure_customer({'id': 100, 'username': 'buyer'})
+    cs_i18n.set_language(
+        conn, conn.execute("SELECT id FROM cs_customer WHERE tg_id='100'").fetchone()[0], '中文')
+    conn.commit()
     return b
 
 

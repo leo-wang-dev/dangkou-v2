@@ -121,12 +121,12 @@ def test_decision_with_row_edits(client):
 
 
 def test_import_returns_est_sec_floor(client, tmp_path):
-    """预估公式：max(120, MB×30)——小文件吃保底。"""
+    """预估公式：min(600, max(60, MB×4))——小文件吃保底（实测 91MB/378图<1s）。"""
     import tempfile
     f = tempfile.mktemp(suffix='.xlsx')
     open(f, 'wb').write(b'x' * (2 * 1048576))   # 2MB
     r = client.post('/import', json={'path': f, 'category': 'razor'}).json()
-    assert r['est_sec'] == 120                    # 2×30=60 < 保底120
+    assert r['est_sec'] == 60                     # 2×4=8 < 保底60
 
 
 def test_ticket_detail_lists_all_preview_images(client):

@@ -95,8 +95,8 @@ def test_zero_to_one_shop_dynamic_catalog_and_redline():
             bot = SimpleNamespace(
                 conn=conn,
                 llm=SimpleNamespace(chat_text=lambda prompt, *a, **k: calls.append(prompt) or 'TRANSFER'),
-                _resolve_product=lambda *a: (None, None),
-                _handoff=lambda *a: '联系老板',
+                _resolve_product=lambda *a, **kw: (None, None),
+                _handoff=lambda *a, **kw: '联系老板',
             )
             assert '联系老板' not in merchant_policy.answer(bot, {'id': 'buyer'}, '可以安排货代吗？', False)
             redline = client.post('/cs/redline', headers=_auth(), json={
