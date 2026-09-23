@@ -1,4 +1,5 @@
 """报价单：科森 5 列模板（型号/图片/价格/产品规格/起订量），输出可直接转发客户。"""
+import json
 import os
 import math
 import re
@@ -222,6 +223,68 @@ def _add_photo(ws, r: int, path: str):
     ws.add_image(xi)
 
 
+def _preset_extractor(t):
+    """预置分类取数：剃须刀=箱规文本解析；卷发棒=结构化字段。"""
+    if t.key == 'razor':
+        def extract(p):
+            return {'item': str(_rv(p, t.dedup_field) or ''),
+                    'desc': _rv(p, 'description'), 'color': _rv(p, 'color'),
+                    'price': str(p['price'] or ''),
+                    'ctn': parse_ctn_spec(_rv(p, 'ctn_spec'))}
+    else:
+        def extract(p):
+            ctn = {}
+            if str(_rv(p, 'ctn_qty') or '').strip():
+                try:
+                    ctn['pcs'] = int(float(_rv(p, 'ctn_qty')))
+                except ValueError:
+                    pass
+            dims = parse_dims(_rv(p, 'ctn_size'))
+            if dims:
+                ctn['meas'] = f'{_num(dims[0])}*{_num(dims[1])}*{_num(dims[2])}'
+                ctn['dims'] = dims
+            return {'item': str(_rv(p, t.dedup_field) or ''), 'desc': '', 'color': '',
+                    'price': str(p['price'] or ''), 'ctn': ctn}
+    return extract
+
+
+def _dynamic_extractor(conn, category_key):
+    """动态分类取数：按 quote_map 映射。型号/价格缺映射时明确拒单，不猜口径。"""
+    from . import dynamic_catalog
+    try:
+        template = dynamic_catalog.get_template(conn, category_key)
+    except KeyError:
+        raise ValueError('商品品类无效')
+    if template['storage'] != 'dynamic':
+        raise ValueError('商品品类无效')
+    qmap = template.get('quote_map') or {}
+    missing = [name for name in ('model_field', 'price_field') if not qmap.get(name)]
+    if missing:
+        raise ValueError(f'分类「{template["name"]}」未配置报价字段映射（缺{"、".join(missing)}），'
+                         '请先指定报价用哪一列（型号列和价格列）后再出正式报价单')
+    skip = {qmap.get('model_field'), qmap.get('price_field'),
+            qmap.get('ctn_field'), qmap.get('color_field')}
+    desc_fields = [field for field in template['fields']
+                   if field['key'] not in skip and field.get('role') == 'spec'][:4]
+
+    def extract(p):
+        try:
+            data = json.loads(p['data_json'] or '{}')
+        except (TypeError, ValueError):
+            data = {}
+
+        def val(key):
+            value = data.get(key) if key else None
+            return str(value) if value not in (None, '') else ''
+        ctn_text = val(qmap.get('ctn_field'))
+        return {'item': val(qmap['model_field']),
+                'desc': ' / '.join(v for v in (val(f['key']) for f in desc_fields) if v),
+                'color': val(qmap.get('color_field')),
+                'price': val(qmap['price_field']),
+                'ctn': parse_ctn_spec(ctn_text) if ctn_text else {}}
+    return extract
+
+
 def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pct: float = 30):
     """ELETRO BELEZA 模板填充：14列全字段，行数=商品数（插行/删空行），
     合计/DEPOSIT/BALANCE 公式按实际行数重写，定金比例动态。"""
@@ -236,17 +299,21 @@ def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pc
     # 先取数（无效商品剔除后再定行数）
     prows = []
     for item in items:
-        t = TEMPLATES.get(item.get('category', ''))
-        if not t:
-            raise ValueError('商品品类无效')
-        p = conn.execute(f'SELECT * FROM {t.table} WHERE id=?',
-                         (item['product_id'],)).fetchone()
+        category = item.get('category', '')
+        t = TEMPLATES.get(category)
+        extract = _preset_extractor(t) if t else _dynamic_extractor(conn, category)
+        if t:
+            p = conn.execute(f'SELECT * FROM {t.table} WHERE id=?',
+                             (item['product_id'],)).fetchone()
+        else:
+            p = conn.execute('SELECT * FROM product_dynamic WHERE id=? AND category_key=?',
+                             (item['product_id'], category)).fetchone()
         if p is None or p['status'] != 'approved':
             raise ValueError('商品不存在或已下架')
         qty = item.get('quantity', 1)
         if isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0:
             raise ValueError('商品数量必须为正整数')
-        prows.append((t, p, qty))
+        prows.append((extract, p, qty))
     if not prows:
         raise ValueError('没有可报价的商品')
     k = len(prows)
@@ -269,26 +336,12 @@ def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pc
     _FMT = {8: '0', 9: '0', 10: '0.0', 11: '0.0', 12: 'General', 13: '0.0', 14: '0.000'}
     sums = {'amount': 0, 'ctns': 0, 'gw': 0.0, 'cbm': 0.0}
 
-    for i, (t, p, qty) in enumerate(prows):
+    for i, (extract, p, qty) in enumerate(prows):
         r = DATA_START + i
-        base = float(str(p['price'] or '0').replace('¥', '').replace(',', '')) or 0
+        row = extract(p)
+        base = float(str(row['price'] or '0').replace('¥', '').replace(',', '')) or 0
         unit = round(base * (1 + price_adjustment_pct / 100))
-        # 物流四件套：剃须刀=箱规文本解析；卷发棒=结构化字段（无重量→留空客户自填）
-        if t.key == 'razor':
-            ctn = parse_ctn_spec(_rv(p, 'ctn_spec'))
-            desc, color = _rv(p, 'description'), _rv(p, 'color')
-        else:
-            ctn = {}
-            if str(_rv(p, 'ctn_qty') or '').strip():
-                try:
-                    ctn['pcs'] = int(float(_rv(p, 'ctn_qty')))
-                except ValueError:
-                    pass
-            dims = parse_dims(_rv(p, 'ctn_size'))
-            if dims:
-                ctn['meas'] = f'{_num(dims[0])}*{_num(dims[1])}*{_num(dims[2])}'
-                ctn['dims'] = dims
-            desc, color = '', ''
+        ctn = row['ctn']
         pcs, gw, nw = ctn.get('pcs'), ctn.get('gw'), ctn.get('nw')
         meas, dims = ctn.get('meas'), ctn.get('dims')
         ctns = _ceil_div(qty, pcs) if pcs else None
@@ -298,15 +351,15 @@ def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pc
         tcbm = round(ctns * (dims[0] * dims[1] * dims[2]) / 1e6, 3) \
             if (ctns is not None and dims) else None
 
-        ws.cell(r, 1, str(_rv(p, t.dedup_field) or ''))       # A ITEM NO.
+        ws.cell(r, 1, str(row['item'] or ''))                    # A ITEM NO.
         if p['image_main']:                                    # B PHOTO（统一框+居中）
             try:
                 _add_photo(ws, r, storage.abs_path(p['image_main']))
             except Exception as e:  # noqa: BLE001
                 print(f'[quote] 图嵌失败 {p["id"]}: {e}', flush=True)
-        c = ws.cell(r, 3, desc)                                # C DESCRIPTION（卷发棒留空）
+        c = ws.cell(r, 3, row['desc'])                           # C DESCRIPTION
         c.alignment = Alignment(wrap_text=True, vertical='top')
-        ws.cell(r, 4, color)                                   # D COLORS（卷发棒留空）
+        ws.cell(r, 4, row['color'])                              # D COLORS
         ws.cell(r, 5, unit)                                    # E PRICE
         ws.cell(r, 6, qty)                                     # F QUANTITY
         amount = unit * qty

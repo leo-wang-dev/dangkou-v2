@@ -18,6 +18,10 @@ PROMPT = '''你是采购记录抽取器，只输出JSON对象 {"actions": [...]}
 '''
 FIELDS = {'型号或品名','颜色','规格','数量','体积或尺寸','装箱数','起订量','其他'}
 
+# 问句（询价/可行性）不走兜底抽取，交给客服对话回答；LLM 抽取本身能处理“采购+提问”混合消息。
+QUESTION_HINT = re.compile(
+    r'[?？]|(?:吗|呢|多少|价格|报价|有货|库存|有没有|发货|物流|运费|交期|能否|能不能|可不可以|够不够)')
+
 _QUANTITY = re.compile(
     r'(?<![\d.])((?:\d+(?:\.\d+)?)\s*(?:个|件|只|支|台|把|瓶|盒|罐|箱|套|包|pcs\b|pieces\b|units\b))',
     re.I,
@@ -40,6 +44,13 @@ def _explicit_purchase_action(text: str) -> dict | None:
     if verb:
         quantity = quantities[0]
         if quantity.start() < verb.end():
+            return None
+        # 动词和数量之间夹着疑问词（“我能不能要100个”）＝数量本身被提问，不算采购。
+        if QUESTION_HINT.search(value[verb.end():quantity.start()]):
+            return None
+        # 数量后紧跟句末疑问词（“我想要100个吗”）同样是提问不是承诺；
+        # 数量之后另起一句提问（“我想采购100台，多少钱？”）则采购部分成立。
+        if re.match(r'^(吗|么|呢)', value[quantity.end():].strip()):
             return None
         segment = value[verb.end():]
     else:
@@ -69,7 +80,9 @@ def _product_identity(value: str | None) -> str:
 
 
 def capture(bot, cust, text, note_ids=None):
-    if text.strip() in ('确认','确认入库','确认清单','OK','ok','出表','导出','导出Excel'):
+    # 整条消息就是命令才跳过抽取；“杯子100个，帮我出表”这种混合消息要先记笔记再出表。
+    if text.strip().casefold() in ('确认', '确认入库', '确认清单', 'ok', '出表', '导出',
+                                   '导出excel', 'confirm', 'confirmed', 'export', 'excel'):
         return ''
     rows = list(bot.conn.execute("SELECT * FROM cs_note WHERE customer_id=? AND status='draft' ORDER BY id", (cust['id'],)))
     if note_ids is not None:

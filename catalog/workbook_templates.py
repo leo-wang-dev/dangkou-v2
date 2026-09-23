@@ -125,20 +125,32 @@ def _extract_images(ws, sheet_key: str, image_dir: Path | None):
     return by_row, len(ws._images)
 
 
-def discover_workbook(path, image_dir=None) -> list[dict]:
-    """Return one template/product draft for every visible worksheet."""
+def discover_workbook(path, image_dir=None, *, include_rows=True, include_images=True) -> list[dict]:
+    """Return one template/product draft for every visible worksheet.
+
+    Template-only imports use ``include_rows=False`` and ``include_images=False``:
+    the workbook is validated and its schema is discovered without materializing
+    product rows or decoding embedded images.  The default remains the original
+    full discovery path for compatibility with direct callers.
+    """
     path = Path(path)
-    max_file = int(os.environ.get('CATALOG_IMPORT_MAX_BYTES', 50 * 1024 * 1024))
-    max_unpacked = int(os.environ.get('CATALOG_IMPORT_MAX_UNPACKED_BYTES', 250 * 1024 * 1024))
+    # 91MB/378图的真实目录实测：解析<1s、峰值内存130MB。默认上限放宽到
+    # 200MB/750MB（解压上限保持约3.5倍压缩比余量防zip炸弹），需要更紧可环境变量覆盖。
+    max_file = int(os.environ.get('CATALOG_IMPORT_MAX_BYTES', 200 * 1024 * 1024))
+    max_unpacked = int(os.environ.get('CATALOG_IMPORT_UNPACKED_BYTES', 750 * 1024 * 1024))
     if path.stat().st_size > max_file:
-        raise ValueError('Excel 文件超过 50MB，请拆分后导入')
+        raise ValueError(f'Excel 文件超过 {max_file // 1048576}MB，请拆分后导入')
     try:
         with zipfile.ZipFile(path) as archive:
             if sum(item.file_size for item in archive.infolist()) > max_unpacked:
                 raise ValueError('Excel 解压内容过大，请删除无关图片或拆分后导入')
     except zipfile.BadZipFile as exc:
         raise ValueError('Excel 文件损坏或不是有效的 xlsx') from exc
-    workbook = load_workbook(path, data_only=False)
+    # A schema-only pass can stream worksheet XML and avoid constructing the
+    # cell/image graph for the entire workbook.  Full product discovery keeps
+    # normal mode because merged cells and embedded image anchors are needed.
+    workbook = load_workbook(path, data_only=False,
+                             read_only=not (include_rows or include_images))
     if len(workbook.worksheets) > 20:
         raise ValueError('Excel Sheet 超过 20 个，请拆分后导入')
     drafts = []
@@ -147,7 +159,7 @@ def discover_workbook(path, image_dir=None) -> list[dict]:
             continue
         if ws.max_row > 20000 or ws.max_column > 200:
             raise ValueError(f'Sheet“{ws.title}”超过 20000 行或 200 列，请拆分后导入')
-        if len(ws._images) > 5000:
+        if len(getattr(ws, '_images', ())) > 5000:
             raise ValueError(f'Sheet“{ws.title}”图片超过 5000 张，请拆分后导入')
         header_row = _header_row(ws)
         if header_row is None:
@@ -166,10 +178,13 @@ def discover_workbook(path, image_dir=None) -> list[dict]:
         if not fields:
             continue
         key = _category_key(ws.title)
-        sources, _ = _merged_sources(ws)
-        images_by_row, image_count = _extract_images(ws, key, Path(image_dir) if image_dir else None)
+        sources, _ = _merged_sources(ws) if include_rows else ({}, {})
+        if include_images:
+            images_by_row, image_count = _extract_images(ws, key, Path(image_dir) if image_dir else None)
+        else:
+            images_by_row, image_count = {}, 0
         rows = []
-        for row_number in range(header_row + 1, ws.max_row + 1):
+        for row_number in range(header_row + 1, ws.max_row + 1) if include_rows else []:
             direct = any(_text(ws.cell(row_number, field['source_column']).value) for field in fields)
             if not direct and row_number not in images_by_row:
                 continue

@@ -1,6 +1,7 @@
 import json
 import os
 import secrets
+import time
 from urllib.parse import quote as urlquote
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -47,10 +48,24 @@ def _auth(request: Request, token: str):
         raise HTTPException(401, 'unauthorized')
 
 
+# wait 模式的模板解析等待上限：正常几秒完成；冷启动 LLM 慢时让位给出站推送。
+TEMPLATE_WAIT_SEC = float(os.environ.get('CATALOG_TEMPLATE_WAIT_SEC', '90'))
+
+
 class ImportIn(BaseModel):
     path: str
     category: str | None = None
     source_key: str | None = None
+    mode: str | None = None
+    category_key: str | None = None
+    # The merchant-facing bot uses explicit two-stage imports.  None keeps the
+    # old direct API callers backward-compatible while the plugin always sends
+    # template/products explicitly.
+    phase: str | None = None
+    template_doc_id: int | None = None
+    # 模板阶段等待模式：原地等解析出结果（上限 TEMPLATE_WAIT_SEC），把
+    # 工单状态直接带回给调用方，出站推送只留给超时兜底。
+    wait: bool = False
 
 
 class DecisionIn(BaseModel):
@@ -128,7 +143,99 @@ def register_routes(app: FastAPI):
     def categories(request: Request):
         _auth(request, app.state.token)
         from . import dynamic_catalog
-        return {'categories': dynamic_catalog.list_templates(request_conn())}
+        conn = request_conn()
+        templates = dynamic_catalog.list_templates(conn)
+        # 空分类不上列表（预置剃须刀/卷发棒在新店没商品时不应出现）；
+        # 显式按 key 访问 /products/{cat} 仍可用。
+        counts = {}
+        for t in TEMPLATES.values():
+            counts[t.key] = conn.execute(
+                f"SELECT COUNT(*) c FROM {t.table} WHERE status != 'delisted'").fetchone()['c']
+        dyn = conn.execute("SELECT category_key, COUNT(*) c FROM product_dynamic "
+                           "WHERE status != 'delisted' GROUP BY category_key").fetchall()
+        counts.update({row['category_key']: row['c'] for row in dyn})
+        templates = [value for value in templates if counts.get(value['key'], 0) > 0]
+        return {'categories': templates}
+
+    class CategoryRenameIn(BaseModel):
+        name: str = Field(min_length=1, max_length=64)
+
+    @app.patch('/categories/{category}')
+    def rename_category(category: str, body: CategoryRenameIn, request: Request):
+        """动态分类改名：Sheet 名是默认名（如 Sheet1）时商家的自救口。"""
+        _auth(request, app.state.token)
+        from . import dynamic_catalog
+        try:
+            template = dynamic_catalog.rename_template(request_conn(), category, body.name)
+        except KeyError:
+            raise HTTPException(404, '未知分类')
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {'key': template['key'], 'name': template['name']}
+
+    class QuoteMapIn(BaseModel):
+        price_field: str = Field(min_length=1, max_length=128)
+        model_field: str = Field(min_length=1, max_length=128)
+        ctn_field: str | None = Field(default=None, max_length=128)
+        color_field: str | None = Field(default=None, max_length=128)
+
+    @app.get('/categories/{category}/quote-map')
+    def get_quote_map(category: str, request: Request):
+        _auth(request, app.state.token)
+        from . import dynamic_catalog
+        try:
+            template = dynamic_catalog.get_template(request_conn(), category)
+        except KeyError:
+            raise HTTPException(404, '未知分类')
+        if template['storage'] != 'dynamic':
+            raise HTTPException(400, '预置分类的报价映射是固定配置')
+        return {'key': category, 'name': template['name'],
+                'quote_map': template.get('quote_map') or {},
+                'quotable': dynamic_catalog.quotable(template),
+                'suggestion': dynamic_catalog.suggest_quote_map(template['fields']),
+                'fields': [{'key': f['key'], 'label': f['label']} for f in template['fields']]}
+
+    @app.put('/categories/{category}/quote-map')
+    def put_quote_map(category: str, body: QuoteMapIn, request: Request):
+        """指定该分类哪一列是报价/型号/箱规/颜色；字段名（中文表头）或字段 key 均可。"""
+        _auth(request, app.state.token)
+        from . import dynamic_catalog
+        try:
+            merged = dynamic_catalog.set_quote_map(request_conn(), category, body.model_dump())
+        except KeyError:
+            raise HTTPException(404, '未知分类')
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {'key': category, 'quote_map': merged, 'quotable': True}
+
+    class CategoryVisibilityIn(BaseModel):
+        visible: bool
+
+    @app.patch('/categories/{category}/visibility')
+    def set_category_visibility(category: str, body: CategoryVisibilityIn, request: Request):
+        """整分类客户可见性：一次设置该分类全部在售商品的可观测（cs_visible）。"""
+        _auth(request, app.state.token)
+        conn = request_conn()
+        if category in TEMPLATES:
+            table = TEMPLATES[category].table
+        else:
+            from . import dynamic_catalog
+            try:
+                template = dynamic_catalog.get_template(conn, category)
+            except KeyError:
+                raise HTTPException(404, '未知分类')
+            if template['storage'] != 'dynamic':
+                raise HTTPException(400, '预置分类的可见性请用 razor/curler key 设置')
+            table = 'product_dynamic'
+        if table == 'product_dynamic':
+            cur = conn.execute("UPDATE product_dynamic SET cs_visible=?, updated_at=datetime('now') "
+                               "WHERE category_key=? AND status!='delisted'",
+                               (1 if body.visible else 0, category))
+        else:
+            cur = conn.execute(f"UPDATE {table} SET cs_visible=?, updated_at=datetime('now') "
+                               "WHERE status!='delisted'", (1 if body.visible else 0,))
+        conn.commit()
+        return {'key': category, 'visible': body.visible, 'updated': cur.rowcount}
 
     @app.get('/categories/{category}/template.xlsx')
     def category_template_xlsx(category: str, request: Request):
@@ -267,10 +374,70 @@ def register_routes(app: FastAPI):
         _auth(request, app.state.token)
         if not os.path.isfile(body.path):
             raise HTTPException(404, f'文件不存在: {body.path}')
-        est = min(1800, max(120, int(os.path.getsize(body.path) / 1048576 * 30)))
-        return {'doc_id': ingest.start(request_conn(), app.state.storage,
-                                       body.path, body.category,
-                                       callback=app.state.callback, source_key=body.source_key),
+        if body.mode not in (None, 'new', 'existing'):
+            raise HTTPException(400, '导入 mode 只能是 new 或 existing')
+        if body.mode == 'existing' and not body.category_key:
+            raise HTTPException(400, '并入已有分类时必须提供 category_key')
+        if body.mode != 'existing' and body.category_key:
+            raise HTTPException(400, '只有 existing 模式可以提供 category_key')
+        if body.phase not in (None, 'template', 'products'):
+            raise HTTPException(400, '导入 phase 只能是 template 或 products')
+        if body.phase == 'products' and (body.template_doc_id is None or body.template_doc_id <= 0):
+            raise HTTPException(400, '商品导入必须提供已审批的 template_doc_id')
+        if body.phase != 'products' and body.template_doc_id is not None:
+            raise HTTPException(400, '只有 products 阶段可以提供 template_doc_id')
+        # 实测 91MB/378 图解析<1s；按每 MB 4s 估并封顶 10 分钟，宁可报短不报长。
+        est = min(600, max(60, int(os.path.getsize(body.path) / 1048576 * 4)))
+        # Dynamic Sheet imports default to the safe template-only phase even
+        # for older callers that do not know the new field.  Fixed legacy
+        # callers keep their old path unless the bot explicitly sends a phase.
+        phase = body.phase or ('template' if body.category is None else 'legacy')
+        # 模板阶段通常几秒内完成：wait 模式原地等结果，让调用方（bot）一条
+        # 消息把字段模板和审批入口说清。否则后台完成推送可能抢在对话回复
+        # 前面落地，商家会先看到“已识别”再看到“开始解析”的倒序消息。
+        want_wait = body.wait and phase == 'template'
+        real_callback = app.state.callback
+        inline_mode = {'on': want_wait}
+
+        def wait_callback(**kw):
+            # inline 模式下完成通知由本请求原样带回；超时后 route 会先关掉
+            # inline_mode 再返回，之后的完成才走出站推送。
+            if inline_mode['on']:
+                return
+            if real_callback:
+                real_callback(**kw)
+
+        try:
+            doc_id = ingest.start(request_conn(), app.state.storage,
+                                  body.path, body.category,
+                                  callback=wait_callback, source_key=body.source_key,
+                                  mode=body.mode, category_key=body.category_key,
+                                  phase=phase,
+                                  template_doc_id=body.template_doc_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+        def inline(s):
+            out = {'doc_id': doc_id, 'status': s['status'], 'phase': s['phase'],
+                   'stats': s['stats']}
+            if s['status'] == 'failed':
+                out['error'] = s['error']
+            return out
+
+        if want_wait:
+            deadline = time.monotonic() + TEMPLATE_WAIT_SEC
+            while time.monotonic() < deadline:
+                s = ingest.status(request_conn(), doc_id)
+                if s['status'] in ('ticketed', 'failed'):
+                    return inline(s)
+                time.sleep(0.4)
+            # 超时兜底：先放出站推送，再补查一次状态——覆盖“回调刚被吞、
+            # 状态其实已落库”的窗口，保证完成通知不丢。
+            inline_mode['on'] = False
+            s = ingest.status(request_conn(), doc_id)
+            if s['status'] in ('ticketed', 'failed'):
+                return inline(s)
+        return {'doc_id': doc_id,
                 'est_sec': est}
 
     @app.get('/import/{doc_id}')
@@ -395,6 +562,18 @@ def register_routes(app: FastAPI):
             raise HTTPException(409 if isinstance(e, tickets.TicketConflict) else 400, str(e))
         if body.approved:
             _reindex_decision(result)
+            if result.get('phase') == 'template' and result.get('template_doc_id'):
+                # The first callback announces the template ticket.  This
+                # second durable outbox message is sent only after approval,
+                # so the merchant is reminded at the exact hand-off point.
+                try:
+                    from . import notify
+                    notify.push(result['template_doc_id'], ticket_id, body.token,
+                                {'phase': 'template', 'approved': True,
+                                 'template_count': result.get('template_approved', 0)},
+                                conn=request_conn())
+                except Exception:
+                    pass
         return result
 
     class DraftEditIn(BaseModel):
@@ -419,6 +598,17 @@ def register_routes(app: FastAPI):
             raise HTTPException(409 if isinstance(e, tickets.TicketConflict) else 400, str(e))
         if body.approved:
             _reindex_decision(result)
+            if result.get('phase') == 'template' and result.get('template_doc_id'):
+                # Whole-ticket approval is the normal H5 path.  Queue the
+                # hand-off reminder only after the template commit succeeds.
+                try:
+                    from . import notify
+                    notify.push(result['template_doc_id'], ticket_id, body.token,
+                                {'phase': 'template', 'approved': True,
+                                 'template_count': result.get('template_approved', 0)},
+                                conn=request_conn())
+                except Exception:
+                    pass
         return result
 
     def _persist_decision_images(result):
@@ -432,8 +622,28 @@ def register_routes(app: FastAPI):
         cats = {r['_category'] for r in result.get('created_rows', [])}
         if result.get('images_applied'):
             cats.update(k for k, t in TEMPLATES.items() if t.table == result['images_applied']['table'])
-        for cat in cats:
-            search.reindex(request_conn(), app.state.storage, cat)
+        if not cats:
+            return
+        db_file = app.state.conn.execute('PRAGMA database_list').fetchone()[2]
+        if not db_file:
+            # 内存库（测试环境）：保持同步，断言可即时看到向量
+            for cat in cats:
+                search.reindex(request_conn(), app.state.storage, cat)
+            return
+        # 决策接口不等待嵌入：商品图向量后台补齐（reindex 幂等、失败自动退避重试），
+        # 大批量图片的导入审批不再把请求拖到浏览器/网关超时。
+        import threading
+        def _bg():
+            from . import db as _db
+            conn = _db.connect(db_file)
+            try:
+                for cat in cats:
+                    search.reindex(conn, app.state.storage, cat)
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                conn.close()
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _read_image_source(fn, work_dir=None):
         try:
@@ -689,6 +899,10 @@ def register_routes(app: FastAPI):
                 f"SELECT COUNT(*) c FROM {t.table} WHERE status != 'delisted'").fetchone()['c']
             visible = request_conn().execute(
                 f"SELECT COUNT(*) c FROM {t.table} WHERE status != 'delisted' AND cs_visible=1").fetchone()['c']
+            # 空分类不进清单（新店的预置剃须刀/卷发棒不该凭空出现）；
+            # 商家显式点名查询时如实返回 0 款。
+            if n == 0 and category is None:
+                continue
             by_cat[t.name] = n
             visible_by_cat[t.name] = visible
             total += n
@@ -707,6 +921,8 @@ def register_routes(app: FastAPI):
                 continue
             rows = [row for row in dynamic_catalog.list_products(request_conn(), key)
                     if row['status'] != 'delisted']
+            if not rows and category is None:
+                continue
             category_keys[template['name']] = key
             by_cat[template['name']] = len(rows)
             visible_by_cat[template['name']] = sum(1 for row in rows if row['cs_visible'])
@@ -755,7 +971,17 @@ def register_routes(app: FastAPI):
         extension = _validate_image_bytes(data)
         # 微信连接器保存的文件经常是 .bin；用已验证出的真实格式给视觉模型，
         # 避免把本地临时文件名误当成图片 MIME 类型。
-        vec = search.embed_image(data, 'query' + extension)
+        # 嵌入失败必须转成 503+可读文案：裸 500 会把引擎侧模型逼成自由发挥，
+        # 且 401（凭据失效）与超时对用户的含义不同，分开说清。
+        import requests as _requests
+        try:
+            vec = search.embed_image(data, 'query' + extension)
+        except _requests.exceptions.HTTPError as exc:
+            if getattr(exc.response, 'status_code', None) in (401, 403):
+                raise HTTPException(503, '识图服务凭据失效，请联系开通人员处理') from exc
+            raise HTTPException(503, '识图服务暂时不可用，请稍后重试') from exc
+        except (_requests.exceptions.RequestException, KeyError, IndexError) as exc:
+            raise HTTPException(503, '识图服务暂时不可用，请稍后重试') from exc
         return {'hits': search.query(request_conn(), vec,
                                      top_k=body.top_k, exclude=body.exclude_ids)}
 
@@ -1107,9 +1333,19 @@ def register_routes(app: FastAPI):
         if not notes:
             raise HTTPException(409, '暂无可导出条目，请先上传采购照片')
         from .shop_link import snapshot
-        content = render_notes([snapshot(request_conn(),n) for n in notes], include_status=True)
+        lang = request_conn().execute(
+            'SELECT lang FROM cs_customer WHERE id=?', (row['customer_id'],)).fetchone()
+        lang = (lang[0] if lang and lang[0] else '') or ''
+        from . import llm as _llm, cs_i18n
+        # 请求线程内同步翻译：未缓存条数超限直接回退中文表，别把 HTTP 请求拖死。
+        def _texts(texts, **kw):
+            return cs_i18n.translate_texts(request_conn(), _llm, lang, texts, max_missing=200, **kw)
+        content = render_notes([snapshot(request_conn(),n) for n in notes], include_status=True,
+                               lang=lang, conn=request_conn(), llm=_llm,
+                               texts=_texts if lang and lang != '中文' else None)
+        title = _texts(['采购清单'])[0] if lang and lang != '中文' else '采购清单'
         from urllib.parse import quote
-        fname = quote(f"清单-{row['customer_id'][:6]}.xlsx")
+        fname = quote(f"{title}-{row['customer_id'][:6]}.xlsx")
         return Response(content=content,
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                         headers={'Content-Disposition': f"attachment; filename*=UTF-8''{fname}"})

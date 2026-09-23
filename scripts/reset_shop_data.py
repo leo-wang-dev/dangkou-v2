@@ -67,13 +67,22 @@ def wipe_sessions(dry):
     if not os.path.isdir(src):
         print(f'会话目录不存在: {src}')
         return
-    entries = [e for e in os.listdir(src) if e.startswith('wechat-')]
-    print(f'会话目录: {len(entries)} 个聊天会话' + ('（dry-run 不动）' if dry else ''))
-    if dry or not entries:
+    # 引擎持久化插件把会话放在“工作区路径净化名”子目录下（形如
+    # --home-...-workspace--/<session-id>/session.jsonl），只按顶层 wechat-*
+    # 扫会漏（曾因此漏清当天测试记忆）。凡名字不含 backup 的都算活数据。
+    live = [e for e in os.listdir(src) if 'backup' not in e.lower()]
+    n_sessions = 0
+    for e in live:
+        for _root, _dirs, files in os.walk(os.path.join(src, e)):
+            n_sessions += sum(1 for f in files if f == 'session.jsonl')
+    print(f'会话目录: {len(live)} 个活目录 / {n_sessions} 个聊天会话'
+          + ('（dry-run 不动）' if dry else ''))
+    if dry or not live:
         return
     dst = os.path.join(ENGINE_STATE, f'sessions-backup-{time.strftime("%Y%m%d-%H%M%S")}')
-    shutil.move(src, dst)
-    os.makedirs(src)
+    os.makedirs(dst)
+    for e in live:
+        shutil.move(os.path.join(src, e), os.path.join(dst, e))
     r = subprocess.run(['systemctl', 'restart', ENGINE_SERVICE])
     time.sleep(4)
     status = subprocess.run(['systemctl', 'is-active', ENGINE_SERVICE],
@@ -131,6 +140,10 @@ def main():
         wipe_sessions(args.dry_run)
     if args.handover:
         wipe_handover(args.dry_run)
+    if not args.dry_run:
+        c = sqlite3.connect(DB)
+        print('终态:', counts(c, BASE_TABLES + ['approval_ticket', 'category_template']))
+        c.close()
     print('完成。保留：微信绑定/服务令牌/TG凭据文件')
 
 

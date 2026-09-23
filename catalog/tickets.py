@@ -115,6 +115,16 @@ def decide(conn, ticket_id, token, approved: bool, decisions=None, before_commit
     if row['token'] != token or row['status'] != 'pending':
         raise TicketError('token 无效或工单已决')
     if not approved:
+        try:
+            rejected_payload = json.loads(row['payload'])
+            phase = rejected_payload.get('phase')
+            doc_id = rejected_payload.get('doc_id')
+            if phase in ('template', 'products') and doc_id:
+                status = 'template_rejected' if phase == 'template' else 'product_rejected'
+                conn.execute('UPDATE import_doc SET status=?, stats_json=? WHERE id=?',
+                             (status, json.dumps({'phase': phase, 'rejected': True}, ensure_ascii=False), doc_id))
+        except (TypeError, ValueError):
+            pass
         conn.execute("UPDATE approval_ticket SET status='rejected', "
                      "token_used_at=datetime('now'), decided_at=datetime('now') WHERE id=?",
                      (ticket_id,))
@@ -122,6 +132,14 @@ def decide(conn, ticket_id, token, approved: bool, decisions=None, before_commit
     payload = json.loads(row['payload'])
     _check_import_snapshot(conn, payload, row['category'])
     result = _apply(conn, payload, row['category'], decisions)
+    if payload.get('phase') == 'products' and payload.get('doc_id'):
+        conn.execute("UPDATE import_doc SET status='product_approved', stats_json=? WHERE id=?",
+                     (json.dumps({'phase': 'products',
+                                  'template_doc_id': payload.get('template_doc_id'),
+                                  'created': result.get('created', 0),
+                                  'updated': result.get('updated', 0),
+                                  'delisted': result.get('delisted', 0)}, ensure_ascii=False),
+                      payload['doc_id']))
     if before_commit:
         before_commit(result)
     conn.execute("UPDATE approval_ticket SET status='approved', "

@@ -9,7 +9,7 @@ import re
 from urllib.parse import urlparse
 
 from . import cs, merchant_policy
-from . import cs_supplier, shop_link, price_policy, customer_catalog, tg
+from . import cs_i18n, cs_supplier, shop_link, price_policy, customer_catalog, tg
 
 TRANSFER_MARK = '<<TRANSFER>>'
 HOLD_THE_LINE = '您好，这个情况我需要请商家来回复您，商家马上来～'
@@ -106,6 +106,17 @@ class CsBot:
             if msg and msg.get('chat', {}).get('type', 'private') == 'private':
                 chat_id = msg['chat']['id']
                 text = msg.get('text')
+                lang = self._cust_lang(cust)
+                if text and not lang:
+                    # 语言未选：先定语言再开对话；照片流程不在此分支。
+                    self._pending_user = (cust['id'], text)
+                    reply = self._language_step(cust, text)
+                    self._log(cust['id'], 'assistant', reply)
+                    self._enqueue('tg', str(chat_id), reply)
+                    self._finish_update(uid)
+                    self._pending_user = None
+                    self.flush_outbox()
+                    return
                 reply = None
                 if msg.get('photo'):
                     prepared = self._prepare_photo(cust, msg)
@@ -114,33 +125,60 @@ class CsBot:
                     before = self.conn.execute('SELECT COALESCE(MAX(id),0) FROM cs_note').fetchone()[0]
                     if merchant_mode:
                         reply = self._on_photo(cust, msg, prepared)
-                    if msg.get('caption'):
-                        self._pending_user = (cust['id'], msg['caption'])
+                    if msg.get('caption') and lang:
+                        caption = msg['caption']
+                        self._pending_user = (cust['id'], caption)
                         recorded = ''
                         if merchant_mode:
                             from . import purchase_notes
                             ids = [r[0] for r in self.conn.execute('SELECT id FROM cs_note WHERE customer_id=? AND id>?', (cust['id'],before))]
-                            recorded = purchase_notes.capture(self,cust,msg['caption'],note_ids=ids)
-                        caption_reply = self._on_text(cust, msg['caption'], allow_edit=False)
-                        caption_reply = self._combine_note_reply(recorded, caption_reply, msg['caption'])
+                            recorded = purchase_notes.capture(self,cust,caption,note_ids=ids)
+                        caption_reply = self._on_text(cust, caption, allow_edit=False)
+                        caption_reply = self._combine_note_reply(recorded, caption_reply, caption)
                     if not merchant_mode:
                         reply = self._on_photo(cust, msg, prepared)
                     if caption_reply:
                         reply += '\n\n' + caption_reply
+                    if not lang:
+                        picked = cs_i18n.detect_language(msg.get('caption') or '')
+                        if picked:
+                            cs_i18n.set_language(self.conn, cust['id'], picked, commit=False)
+                            extra = cs_i18n.translate_text(self.conn, self.llm, picked,
+                                f'好的，已切换为 {picked}。刚才照片的说明我还没有登记，'
+                                '请选好语言后用文字再发一次。', commit=False)
+                        else:
+                            extra = self._language_prompt()
+                        reply = (reply or '') + '\n\n' + extra
                 elif msg.get('voice') is not None:
                     reply = '收到语音啦，我还听不懂语音，麻烦您打字或拍照告诉我～'
                 elif text:
                     self._pending_user = (cust['id'], text)
                     recorded = ''
-                    if merchant_policy.read(self.conn) is not None:
-                        from . import purchase_notes
-                        recorded = purchase_notes.capture(self,cust,text)
-                    reply = self._on_text(cust, text, allow_edit=not bool(recorded))
-                    reply = self._combine_note_reply(recorded, reply, text)
+                    request = cs_i18n.parse_language_request(text) if lang else None
+                    if request:
+                        # 中途换语言：“我想转英文”/“English”/“换语言”都直接切。
+                        target = request[1] if request[0] == 'switch' else ''
+                        cs_i18n.set_language(self.conn, cust['id'], target, commit=False)
+                        cust = self.conn.execute('SELECT * FROM cs_customer WHERE id=?',
+                                                 (cust['id'],)).fetchone()
+                        if target:
+                            self._log(cust['id'], 'user', text)
+                            self._pending_user = None
+                            reply = cs_i18n.translate_text(
+                                self.conn, self.llm, target, f'好的，已切换为 {target}。接下来我会用这门语言和您交流。', commit=False)
+                        else:
+                            reply = self._language_prompt()
+                    else:
+                        if merchant_policy.read(self.conn) is not None:
+                            from . import purchase_notes
+                            recorded = purchase_notes.capture(self,cust,text)
+                        reply = self._on_text(cust, text, allow_edit=not bool(recorded))
+                        reply = self._combine_note_reply(recorded, reply, text)
                     if self._pending_user:
                         self._log(cust['id'], 'user', text)
                         self._pending_user = None
                 if reply:
+                    reply = self._t(cust, reply)
                     self._enqueue('tg', str(chat_id), reply)
                     for product in self._pending_catalog_photos:
                         self._enqueue('tg_photo', str(chat_id), json.dumps({
@@ -156,6 +194,45 @@ class CsBot:
             self._processing = False
             self._pending_user = None
         self.flush_outbox()
+
+    def _finish_update(self, uid):
+        if uid is not None:
+            self.conn.execute('UPDATE cs_inbox SET processed=1,last_error=NULL WHERE update_id=?', (uid,))
+        self.conn.commit()
+
+    @staticmethod
+    def _cust_lang(cust) -> str:
+        return (cust['lang'] if cust is not None and 'lang' in cust.keys() else '') or ''
+
+    @staticmethod
+    def _language_prompt() -> str:
+        from . import cs_i18n
+        return cs_i18n.LANGUAGE_PROMPT
+
+    def _language_step(self, cust, text) -> str:
+        """首次接触：客户选语言（裸语言名或“我想转英文”都算）；选完按所选语言打招呼。"""
+        from . import cs_i18n
+        picked = None
+        request = cs_i18n.parse_language_request(text)
+        if request and request[0] == 'switch':
+            picked = request[1]
+        if picked is None:
+            return self._language_prompt()
+        cs_i18n.set_language(self.conn, cust['id'], picked,
+                             commit=not getattr(self, '_processing', False))
+        greeting = (f'好的，已切换为 {picked}。您好，可以查询本店商品、发照片整理采购清单，'
+                    '或回复“找老板”获取联系方式。')
+        return cs_i18n.translate_text(self.conn, self.llm, picked, greeting,
+                                      commit=not getattr(self, '_processing', False))
+
+    def _t(self, cust, text: str) -> str:
+        """中文话术按客户语言出街；未选/中文原样，翻译失败回退原文。"""
+        lang = self._cust_lang(cust)
+        if not lang or lang == '中文':
+            return text
+        from . import cs_i18n
+        return cs_i18n.translate_text(self.conn, self.llm, lang, text,
+                                      commit=not getattr(self, '_processing', False))
 
     @staticmethod
     def _combine_note_reply(recorded, reply, text):
@@ -203,9 +280,17 @@ class CsBot:
                 elif row['channel'] == 'tg_document':
                     from .cs_export import render_notes
                     document = json.loads(row['body'])
-                    self.api.send_document(int(row['recipient']), document['filename'],
-                                           render_notes(document['notes'], include_status=True),
-                                           document['caption'])
+                    lang = document.get('lang') or ''
+                    caption, filename = document['caption'], document['filename']
+                    if lang and lang != '中文':
+                        filename = cs_i18n.translate_texts(
+                            self.conn, self.llm, lang, ['采购清单'])[0] + '.xlsx'
+                        caption = cs_i18n.translate_text(self.conn, self.llm, lang, caption)
+                    self.api.send_document(int(row['recipient']), filename,
+                                           render_notes(document['notes'], include_status=True,
+                                                        lang=lang,
+                                                        conn=self.conn, llm=self.llm),
+                                           caption)
                 elif row['channel'] == 'tg_photo':
                     product = json.loads(row['body'])
                     filename, content = customer_catalog.photo_bytes(self.conn, product)
@@ -270,7 +355,7 @@ class CsBot:
                 "VALUES(?,?,?,'draft',?,?,?)",
                 (cust['id'], path, json.dumps(fields, ensure_ascii=False),received_shop,source_shop,basis))
             note = self.conn.execute('SELECT * FROM cs_note WHERE id=?',(cur.lastrowid,)).fetchone()
-            fields = shop_link.fields_for(self.conn,note)
+            fields = shop_link.customer_fields(self.conn,note)
             got = [f'{k}={v}' for k, v in fields.items()
                    if v and '未拍到' not in str(v) and '模糊' not in str(v)]
             miss = [k for k, v in fields.items() if '未拍到' in str(v) or '模糊' in str(v)]
@@ -409,16 +494,16 @@ class CsBot:
                 return self._handoff(cust, text, '照片询价候选已过期、无效或商品已下架，请重新确认')
             _, qty = self._resolve_product(cust, low[selection.end():])
             return self._on_text(cust, text, allow_edit=False, resolved=(selected, qty))
-        if any(word in low for word in ('找老板', '老板微信', '老板联系方式', '转人工')):
+        if cs_i18n.wants_boss(text):
             return self._handoff(cust, text, '客户主动要求联系老板')
-        if low in ('确认', '确认入库', '确认清单', 'OK', 'ok'):
+        if cs_i18n.wants_confirm(text) or low in ('确认入库','确认清单'):
             return self._confirm_drafts(cust)
         if any(word in low for word in ('报价单', '盖章', '合同')):
             self._enqueue('notify', None, f'🔔 客户请求商家处理正式文件\n客户：{cust.get("tg_name") or cust.get("tg_id") or cust["id"]}\n原话：{text}\n依据：正式报价/盖章文件由商家出具')
             reply = cs.contact_reply(self.conn)
             self._log(cust['id'], 'assistant', reply)
             return reply
-        if '出表' in low or '导出' in low:
+        if cs_i18n.wants_export(text):
             return self._make_link(cust)
         edited = self._try_edit_draft(cust, text) if allow_edit else None      # 有草稿时先判是不是补改指令
         if edited is not None:
@@ -435,6 +520,9 @@ class CsBot:
         system = PERSONA_BASE + knowledge
         if product:
             system += '\n当前商品型号：' + product['name']
+        lang = self._cust_lang(cust)
+        if lang and lang != '中文':
+            system += f'\n回复必须使用「{lang}」书写。'
         # The model only judges policy. It cannot author a customer-facing price.
         system += '\n未命中红线时只输出 <<PASS>>，不要报价或提供任何数字。'
         history = self._history(cust['id'])
@@ -477,8 +565,8 @@ class CsBot:
         self._log(cust['id'], 'assistant', reply)
         return reply
 
-    def _resolve_product(self, cust, text):
-        candidates = customer_catalog.products(self.conn)
+    def _resolve_product(self, cust, text, products=None):
+        candidates = products if products is not None else customer_catalog.products(self.conn)
         matches = self._matching_products(text, candidates)
         qty_match = re.search(r'(?<![\d.\-])(\d+)\s*(?:个|件|只|支|台|把|瓶|盒|罐|pcs\b)', text, re.I)
         qty = int(qty_match[1]) if qty_match else None
@@ -495,10 +583,30 @@ class CsBot:
 
     @staticmethod
     def _matching_products(text, candidates):
+        def boundary(name):
+            return re.search(r'(?<![A-Za-z0-9_-])' + re.escape(name) + r'(?![A-Za-z0-9_-])', text, re.I)
+        def hit(name):
+            # 纯数字型号（“5800”）后随数量单位＝说的是数量不是型号（“我要5800个”）。
+            m = boundary(name)
+            if not m:
+                return False
+            if not re.search(r'[A-Za-z]', name):
+                return not re.match(r'\s*(?:个|件|只|支|台|把|瓶|盒|罐|箱|套|包|pcs)', text[m.end():], re.I)
+            return True
+        # 第一优先：完整商品名原样出现在消息里。
+        matches = [product for product in candidates
+                   if product.get('name') and hit(str(product['name']))]
+        if matches:
+            return matches
+        # 第二优先：型号主体匹配。导入商品的名称常是“KS-0276\n铝合金”这种
+        # “型号+换行+规格”格式，客户只会说型号，按首行（型号主体）匹配。
+        bases = {str(product['name']).split('\n')[0].strip()
+                 for product in candidates if product.get('name')}
+        hits = {base for base in bases if len(base) >= 2 and re.search(r'[A-Za-z0-9]', base) and hit(base)}
+        if not hits:
+            return []
         return [product for product in candidates
-                if product.get('name') and re.search(
-                    r'(?<![A-Za-z0-9_-])' + re.escape(str(product['name'])) + r'(?![A-Za-z0-9_-])',
-                    text, re.I)]
+                if product.get('name') and str(product['name']).split('\n')[0].strip() in hits]
 
     def _format_catalog_variants(self, products, text):
         """Describe duplicate-model variants without binding the customer to one row."""
@@ -551,6 +659,46 @@ class CsBot:
                 reply += '\n发货资料：商家尚未填写，不能确认发货时间。'
         return reply
 
+    # 客户常问属性 → 规格表头匹配用（问“什么颜色”只答颜色，不倒全表）。
+    _ATTR_KEYWORDS = {
+        '颜色': ('颜色', '什么色', '配色'),
+        '尺寸': ('尺寸', '大小', '长宽高'),
+        '重量': ('重量', '多重', '克重'),
+        '箱规': ('箱规', '装箱', '一箱', '整箱'),
+        '装箱数量': ('装箱数量', '一箱多少', '每箱多少'),
+        '电压': ('电压', '伏特', '多少伏'),
+        '功率': ('功率', '多少瓦'),
+        '材质': ('材质', '材料'),
+        '频率': ('频率', '赫兹'),
+        '发热体': ('发热体',),
+        '容量': ('容量',),
+    }
+
+    @staticmethod
+    def _attribute_answer(product, text):
+        """问单个属性（颜色/尺寸/箱规…）只答那个属性；没问属性返回 None 走完整介绍。"""
+        specs = product.get('specs') or {}
+        asked = []
+        for label, value in specs.items():
+            core = re.sub(r'（[^）]*）|\([^)]*\)', '', str(label)).strip()
+            for attr, words in CsBot._ATTR_KEYWORDS.items():
+                if attr in str(label) or attr in core:
+                    if any(w in text for w in words):
+                        value = str(value)
+                        if len(value) > 300:
+                            value = value[:300] + '…'
+                        asked.append(f'{product["name"]} 的{label}：{value}')
+                    break
+        if asked:
+            return '\n'.join(dict.fromkeys(asked))
+        # 问了属性但这商品没这个字段/没填值：明确说未填写，不要倒整张规格表。
+        if any(q in text for q in ('什么', '哪个', '吗', '呢', '?', '？')):
+            for attr, words in CsBot._ATTR_KEYWORDS.items():
+                if any(w in text for w in words):
+                    return (f'{product["name"]} 的{attr}资料商家暂未填写，'
+                            '需要的话可以回复“找老板”确认。')
+        return None
+
     def _format_catalog_products(self, products, *, numbered=True):
         blocks = []
         for index, product in enumerate(products, 1):
@@ -563,6 +711,10 @@ class CsBot:
                     continue
                 if str(value) == str(product['name']) and ('型号' in label or '品名' in label):
                     continue
+                # 整体介绍只给首行摘要；多行长文（功能描述/箱规）问到了再完整给。
+                value = str(value).split('\n')[0]
+                if len(value) > 60:
+                    value = value[:60] + '…'
                 specs.append(f'{label}：{value}')
                 if len(specs) == 4:
                     break
@@ -624,7 +776,7 @@ class CsBot:
             shop_link.set_field(self.conn,note,'档口名称' if field=='档口' else field,value)
         except ValueError as exc:
             return str(exc)
-        fields = shop_link.fields_for(self.conn,self.conn.execute('SELECT * FROM cs_note WHERE id=?',(note['id'],)).fetchone())
+        fields = shop_link.customer_fields(self.conn,self.conn.execute('SELECT * FROM cs_note WHERE id=?',(note['id'],)).fetchone())
         self._commit()
         self._log(cust['id'], 'assistant', f'[改草稿] {idx} {field}={value}')
         got = '；'.join(f'{k}={v}' for k, v in fields.items()
@@ -653,10 +805,12 @@ class CsBot:
             (cust['id'],)).fetchall()
         if not notes:
             return '目前没有可导出的条目，先拍照发我吧～'
+        lang = self._cust_lang(cust)
         drafts = sum(n['status'] == 'draft' for n in notes)
         summary = f'采购清单：共 {len(notes)} 条，其中 {drafts} 条待确认。照片识别价格不是商家确认报价。'
+        # 文件名/说明在发送时翻译（flush 阶段），回复文本由 _t 统一翻译，避免译两遍。
         self._enqueue('tg_document', str(cust['tg_id']), json.dumps({
-            'filename': '采购清单.xlsx', 'caption': summary,
+            'filename': '采购清单.xlsx', 'caption': summary, 'lang': lang,
             'notes': [shop_link.snapshot(self.conn,n) for n in notes]}, ensure_ascii=False))
         token = secrets.token_urlsafe(16)
         self.conn.execute(

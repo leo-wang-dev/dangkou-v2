@@ -46,30 +46,63 @@ function finiteNumber(value, label) {
 export async function apply(ctx, _config = {}) {
   ctx.tools.register({
     name: 'catalog_import',
-    description: '导入商家商品 Excel：默认按“一个 Sheet=一个分类、识别到的表头=分类规格模板”解析，分类模板与商品一起人工审批后落库。'
-      + '返回 docId 后你必须安排几分钟后用 catalog_check 查询并告知用户进度（ticketed 时发审批链接）——这就是回调推送。'
+    description: '两阶段导入商家商品 Excel。phase=template：本次只识别并建立分类模板，不读取商品行入库；模板审批通过后必须提醒商家再次上传同一份商品 Excel。phase=products：必须使用模板阶段返回的 templateDocId，并且只按已审批模板解析商品。mode=new 时按“一个 Sheet=一个分类、识别到的表头=分类规格模板”；mode=existing 时按指定已有动态分类模板映射。模板和商品分开审批，商品不会在模板阶段入库。'
+      + '模板阶段通常调用即已完成（status=ticketed，含审批入口，当条回复发给商家）；若返回仍在解析（status=parsing），等商家下次来问时再用 catalog_check 查询进度，不要承诺具体时长。template 阶段完成后明确提醒“请再次上传商品 Excel”，products 阶段 ticketed 后发商品审批入口。'
+      + '收到 Excel 后必须先让商家选择“新建分类”或“并入已有分类”，得到明确答复后再调用 phase=template；不要把第一次上传直接当商品导入。同一阶段、同一文件和同一模板会被服务端幂等去重。'
       + '通常不要传 category；只有商家明确说这是旧版剃须刀或卷发棒固定模板时才传对应旧品类。',
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: '服务器上的 xlsx 文件绝对路径' },
+        phase: { type: 'string', enum: ['template', 'products'], description: '必填：template=第一次上传，只建立并审批分类模板；products=模板审批后再次上传，导入商品' },
+        mode: { type: 'string', enum: ['new', 'existing'], description: '必填：new=每个 Sheet 新建分类；existing=并入 categoryKey 指定的已有动态分类' },
+        categoryKey: { type: 'string', description: 'mode=existing 时必填：目标已有动态分类 key' },
+        templateDocId: { type: 'number', description: 'phase=products 时必填：phase=template 返回且已审批通过的 docId' },
         sourceKey: { type: 'string', description: '供应商/商品表的稳定唯一来源标识；重导沿用，不同供应商不可复用。未传按文件名区分。' },
         category: { type: 'string', enum: ['razor', 'curler'], description: '可选：仅旧版固定模板使用' },
       },
-      required: ['path'],
+      required: ['path', 'phase', 'mode'],
     },
     output: OUT,
-    async execute({ path, category, sourceKey }) {
+    async execute({ path, phase, mode, categoryKey, templateDocId, category, sourceKey }) {
       requiredText(path, 'Excel 文件路径')
+      if (!['template', 'products'].includes(phase)) throw new Error('phase 必须是 template 或 products')
+      if (!['new', 'existing'].includes(mode)) throw new Error('mode 必须是 new 或 existing')
+      if (mode === 'existing') requiredText(categoryKey, 'categoryKey')
+      if (mode === 'new' && categoryKey !== undefined) throw new Error('new 模式不能传 categoryKey')
+      if (phase === 'products' && (!Number.isInteger(templateDocId) || templateDocId <= 0)) {
+        throw new Error('products 阶段必须传 templateDocId（模板审批通过后返回的 docId）')
+      }
+      if (phase === 'template' && templateDocId !== undefined) {
+        throw new Error('template 阶段不能传 templateDocId')
+      }
       optionalText(sourceKey, 'sourceKey')
       if (category !== undefined && !['razor', 'curler'].includes(category)) {
         throw new Error('category 仅支持旧版固定分类 razor 或 curler')
       }
-      const body = { path, source_key: sourceKey }
+      const body = { path, source_key: sourceKey, mode, phase }
+      if (categoryKey) body.category_key = categoryKey
+      if (templateDocId !== undefined) body.template_doc_id = templateDocId
       if (category) body.category = category
+      // 模板阶段几秒可完成：原地等结果，一条回复把分类、字段和审批入口说清，
+      // 避免“完成推送”抢在对话回复前落地造成消息倒序。
+      if (phase === 'template') body.wait = true
       const r = await call('/import', 'POST', body)
-      const mins = Math.max(2, Math.round((r.est_sec || 480) / 60))
-      return JSON.stringify({ docId: r.doc_id, note: `解析已启动，预计约${mins}分钟，完成后会自动推送` })
+      let note
+      if (r.status === 'ticketed') {
+        const cats = ((r.stats && r.stats.categories) || []).join('、') || '新分类'
+        note = `模板识别完成：${cats}。把审批入口发给商家，请商家确认字段和客户可见性；模板审批通过后必须提醒商家再次上传同一份商品 Excel（用 templateDocId=${r.doc_id} 进入 products 阶段导入商品）。审批入口：${MANAGE}/?t=${TOKEN}`
+      } else if (r.status === 'failed') {
+        note = `模板识别失败：${r.error || '未知错误'}；如实告知商家，不要编造原因`
+      } else {
+        note = phase === 'template'
+          ? `模板识别已在后台启动，完成后审批入口会自动推送到本对话；模板审批通过后必须提醒商家再次上传商品 Excel，并用 templateDocId=${r.doc_id} 进入 products 阶段`
+          : '商品解析已在后台启动，量大时需要一些时间；完成后商品审批入口会自动推送，不要向商家承诺具体分钟数'
+      }
+      return JSON.stringify({ docId: r.doc_id, phase, status: r.status || 'parsing',
+        templateDocId: phase === 'template' ? r.doc_id : templateDocId,
+        approveUrl: r.status === 'ticketed' ? `${MANAGE}/?t=${TOKEN}` : undefined,
+        note })
     },
   })
 
@@ -84,8 +117,11 @@ export async function apply(ctx, _config = {}) {
       const s = await call(`/import/${docId}`)
       if (s.status === 'ticketed') {
         const tks = await call('/tickets')
-        tks.tickets.find(t => t.status === 'pending' && ['import', 'template_import'].includes(t.ticket_type))
+        tks.tickets.find(t => t.status === 'pending' && ['import', 'template_import', 'product_import'].includes(t.ticket_type))
         s.approveUrl = `${MANAGE}/?t=${TOKEN}`
+      }
+      if (s.status === 'template_approved') {
+        s.nextAction = '请再次上传同一份商品 Excel，并调用 catalog_import phase=products，传 templateDocId=docId'
       }
       return JSON.stringify(s)
     },
@@ -155,7 +191,8 @@ export async function apply(ctx, _config = {}) {
 
   ctx.tools.register({
     name: 'catalog_quote',
-    description: '为已配置报价字段映射的预置剃须刀/卷发棒生成正式报价单 Excel（ELETRO BELEZA 全字段模板：14列含装箱物流+合计+定金，完成后系统自动推送文件）。动态分类不能调用本工具。'
+    description: '生成正式报价单 Excel（ELETRO BELEZA 全字段模板：14列含装箱物流+合计+定金，完成后系统自动推送文件）。'
+      + '支持预置剃须刀/卷发棒，以及已配置报价字段映射的动态分类（quotable=true，用 quote_map_get 查）；未配置映射的动态分类会返回明确错误，按提示用 quote_map_set 配置后即可出单。'
       + 'items 每项含 product_id 和 quantity；price_adjustment_pct 正=上浮负=下浮（如 3=+3%, -5=下浮5%）。'
       + '用户说"出厂价加3个点"→ pct=3；"销售价下浮5%"→ pct=-5；"加3%佣金"→ pct=3。'
       + 'depositPercent=定金百分比：用户说"30%定金"传30、"两成定金"传20，不传默认30。'
@@ -168,7 +205,7 @@ export async function apply(ctx, _config = {}) {
           items: {
             type: 'object',
             properties: {
-              category: { type: 'string', enum: ['razor', 'curler'] },
+              category: { type: 'string', description: '分类 key：razor、curler 或 catalog_stats 返回的动态分类 key' },
               product_id: { type: 'string' },
               quantity: { type: 'number', description: '数量（台/个）' },
             },
@@ -185,9 +222,8 @@ export async function apply(ctx, _config = {}) {
       if (!Array.isArray(items) || items.length === 0) throw new Error('至少选择一款商品')
       if (items.length > 200) throw new Error('单次报价最多 200 款商品')
       for (const item of items) {
-        if (!item || !['razor', 'curler'].includes(item.category)) {
-          throw new Error('正式报价单目前只支持已配置报价模板的剃须刀或卷发棒')
-        }
+        if (!item) throw new Error('商品项无效')
+        requiredText(item.category, 'category')
         requiredText(item.product_id, 'product_id')
         if (item.quantity !== undefined && (!Number.isInteger(item.quantity) || item.quantity <= 0)) {
           throw new Error('quantity 必须是正整数')
@@ -211,6 +247,98 @@ export async function apply(ctx, _config = {}) {
       })
       return JSON.stringify({ path: r.path,
         note: `报价单已生成（${items?.length || 0} 款，调整 ${price_adjustment_pct ?? 0}%，定金 ${depositPercent ?? 30}%），系统自动推送` })
+    },
+  })
+
+  ctx.tools.register({
+    name: 'quote_map_get',
+    description: '查看动态分类的报价字段映射：哪个字段当报价列/型号列/箱规列/颜色列，以及是否可直接出正式报价单（quotable）。'
+      + '未配置时返回 suggestion（按表头自动推荐）和全部字段，向商家复述让其确认。',
+    parameters: {
+      type: 'object',
+      properties: { categoryKey: { type: 'string', description: '动态分类 key' } },
+      required: ['categoryKey'],
+    },
+    output: OUT,
+    async execute({ categoryKey }) {
+      requiredText(categoryKey, 'categoryKey')
+      return JSON.stringify(await call(`/categories/${encodeURIComponent(categoryKey)}/quote-map`))
+    },
+  })
+
+  ctx.tools.register({
+    name: 'quote_map_set',
+    description: '为动态分类配置报价字段映射：商家说"报价用『报价（不含税不含运）』这列、箱规用『箱规』列"时调用。'
+      + 'priceField 和 modelField 必填，ctnField/colorField 可选；传中文字段名（表头）或字段 key 均可。'
+      + '配置立即生效，之后 catalog_quote 即可对该分类出正式报价单。多个价格列时必须让商家明示用哪列，不得自行猜测。',
+    parameters: {
+      type: 'object',
+      properties: {
+        categoryKey: { type: 'string', description: '动态分类 key' },
+        priceField: { type: 'string', description: '报价列（表头名或字段 key）' },
+        modelField: { type: 'string', description: '型号列（表头名或字段 key）' },
+        ctnField: { type: 'string', description: '可选：箱规列' },
+        colorField: { type: 'string', description: '可选：颜色列' },
+      },
+      required: ['categoryKey', 'priceField', 'modelField'],
+    },
+    output: OUT,
+    async execute({ categoryKey, priceField, modelField, ctnField, colorField }) {
+      requiredText(categoryKey, 'categoryKey')
+      requiredText(priceField, 'priceField')
+      requiredText(modelField, 'modelField')
+      optionalText(ctnField, 'ctnField')
+      optionalText(colorField, 'colorField')
+      const body = { price_field: priceField, model_field: modelField }
+      if (ctnField) body.ctn_field = ctnField
+      if (colorField) body.color_field = colorField
+      const r = await call(`/categories/${encodeURIComponent(categoryKey)}/quote-map`, 'PUT', body)
+      return JSON.stringify({ quotable: r.quotable, quote_map: r.quote_map,
+        note: '报价映射已保存，现在可以出正式报价单了' })
+    },
+  })
+
+  ctx.tools.register({
+    name: 'category_rename',
+    description: '给动态分类改名（key 不变，商品不动）。Sheet 名是默认名（如 Sheet1/工作表1）或商家想换更好懂的分类名时调用，'
+      + '改名后向商家复述确认。预置剃须刀/卷发棒分类名称固定，不能改。',
+    parameters: {
+      type: 'object',
+      properties: {
+        categoryKey: { type: 'string', description: '动态分类 key' },
+        newName: { type: 'string', description: '新分类名（给商家看的名称）' },
+      },
+      required: ['categoryKey', 'newName'],
+    },
+    output: OUT,
+    async execute({ categoryKey, newName }) {
+      requiredText(categoryKey, 'categoryKey')
+      requiredText(newName, 'newName')
+      const r = await call(`/categories/${encodeURIComponent(categoryKey)}`, 'PATCH', { name: newName })
+      return JSON.stringify({ key: r.key, name: r.name, note: '分类已改名' })
+    },
+  })
+
+  ctx.tools.register({
+    name: 'category_visibility',
+    description: '设置整个分类对客户是否可见：一次批量设置该分类全部在售商品的「可观测」。'
+      + '商家说"把XX分类整体隐藏/客户不可见"时传 visible=false；"恢复可见/上架给客户看"传 true。'
+      + '单个商品的可见性仍用 catalog_mutate 改「可观测」字段。',
+    parameters: {
+      type: 'object',
+      properties: {
+        categoryKey: { type: 'string', description: '分类 key（预置 razor/curler 或动态分类 key）' },
+        visible: { type: 'boolean', description: 'true=对客户可见，false=整体不可见' },
+      },
+      required: ['categoryKey', 'visible'],
+    },
+    output: OUT,
+    async execute({ categoryKey, visible }) {
+      requiredText(categoryKey, 'categoryKey')
+      if (typeof visible !== 'boolean') throw new Error('visible 必须是布尔值')
+      const r = await call(`/categories/${encodeURIComponent(categoryKey)}/visibility`, 'PATCH', { visible })
+      return JSON.stringify({ key: r.key, updated: r.updated,
+        note: r.visible ? `该分类 ${r.updated} 款商品已全部对客户可见` : `该分类 ${r.updated} 款商品已全部对客户不可见` })
     },
   })
 

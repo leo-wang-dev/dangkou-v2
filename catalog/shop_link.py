@@ -106,6 +106,7 @@ def customer_fields(conn, note):
     fields = fields_for(conn, note)
     for key in INTERNAL_NOTE_FIELDS:
         fields.pop(key, None)
+    fields.pop('档口归属依据', None)   # 内部留档口径，客户不可见
     return fields
 
 
