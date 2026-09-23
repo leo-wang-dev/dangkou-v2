@@ -129,6 +129,8 @@ img.big{width:86px;height:86px}
     <div class="tabs" id="catTabs"></div>
     <div class="row" style="margin-bottom:10px">
       <button class="btn p" onclick="openForm()">＋ 新增商品</button>
+      <button class="btn o" id="rename-cat" onclick="renameCat()" hidden>✏️ 分类改名</button>
+      <button class="btn o" id="toggle-visible" onclick="toggleCategoryVisible()" hidden>👁 整体可见性</button>
       <button class="btn o" id="download-template" onclick="downloadTemplate()">下载当前分类模板</button>
       <input id="q" placeholder="搜索型号 / 内部货号 / 字段…" oninput="renderProducts()" style="max-width:320px">
     </div>
@@ -158,8 +160,8 @@ function openWechatBinding(){
   const u=MANAGE_PREFIX+'/wechat-bind.html'+(TOKEN?'?t='+encodeURIComponent(TOKEN):'');
   window.open(u,'_blank','noopener');
 }
-let CAT_NAMES = {razor:'剃须刀', curler:'卷发棒'};
-let cur = {cat:'razor', tpl:null, prods:[]};
+let CAT_NAMES = {};
+let cur = {cat:'', tpl:null, prods:[]};
 const rej = new Set();
 const edits = {};
 let draftRows = {};
@@ -168,6 +170,26 @@ let dynamicImportRows = {};
 
 const str = v => v===null||v===undefined?'':String(v);
 const esc = s => str(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+// API image links are rooted at the isolated catalog service.  The merchant
+// page can be mounted below /merchant/manage/<id>, so make every audit image
+// use the same mount prefix as the API calls and product page.
+function manageAssetUrl(value){
+  const src = str(value);
+  if(!src || /^(?:https?:|data:|blob:)/i.test(src)) return src;
+  if(MANAGE_PREFIX && src.startsWith(MANAGE_PREFIX+'/')) return src;
+  if(src.startsWith('/')){
+    if(!MANAGE_PREFIX) return src;
+    // A direct sidecar response may still contain its private `t` token.
+    // Through the merchant hub the image request must carry the management
+    // capability instead, so replace the sidecar query when remounting it.
+    const parsed = new URL(src, location.origin);
+    const query = new URLSearchParams(parsed.search);
+    query.delete('t'); query.delete('auth'); query.set('token', TOKEN);
+    const suffix = query.toString() ? '?' + query.toString() : '';
+    return MANAGE_PREFIX + parsed.pathname + suffix;
+  }
+  return MANAGE_PREFIX + '/' + src;
+}
 const api = async (p, opt={}) => {
   const r = await fetch(MANAGE_PREFIX+p, {...opt, headers:H});
   if(!r.ok){
@@ -228,7 +250,7 @@ async function loadTickets(){
   for(const t of pend){
     const c = document.createElement('div'); c.className='card';
     c.innerHTML = `<div class="row" style="justify-content:space-between">
-      <div><b>#${t.id}</b> ${t.ticket_type==='template_import'?'分类模板与商品导入':t.ticket_type==='import'?'整批导入':t.ticket_type==='redline'?'转人工红线':t.ticket_type==='shop'?'店铺资料与老板联系方式':(CAT_NAMES[t.category]||'商品')+'操作'}
+      <div><b>#${t.id}</b> ${t.ticket_type==='template_import'?'分类模板与商品导入':t.ticket_type==='product_import'?'商品导入':t.ticket_type==='import'?'整批导入':t.ticket_type==='redline'?'转人工红线':t.ticket_type==='shop'?'店铺资料与老板联系方式':(CAT_NAMES[t.category]||'商品')+'操作'}
         <span class="muted">· ${CAT_NAMES[t.category]||'店铺设置'} · ${t.created_at}</span></div>
       <button class="btn o" onclick="loadDetail(${t.id})">展开明细 ▾</button></div>
       <div class="row" style="margin-top:10px">
@@ -268,10 +290,12 @@ async function refreshDetail(tid){
   }
   const fields = await tplFields(detailCat);
   let html = '';
-  const rowHtml = (tag, imgs, kv, key, done) => `
+  const rowHtml = (tag, imgs, kv, key, done) => {
+    const imageUrls = (imgs||[]).map(manageAssetUrl);
+    return `
     <div class="draft ${done?'done':''}" id="row-${tid}-${key}">
-      ${imgs.length?`<div class="imgwrap"><img class="p" src="${imgs[0]}" onclick="lbGallery(${JSON.stringify(imgs).replace(/"/g,'&quot;')})">
-        ${imgs.length>1?`<span class="badge">${imgs.length}图</span>`:''}</div>`:''}
+      ${imageUrls.length?`<div class="imgwrap"><img class="p" src="${imageUrls[0]}" onclick="lbGallery(${JSON.stringify(imageUrls).replace(/"/g,'&quot;')})">
+        ${imageUrls.length>1?`<span class="badge">${imageUrls.length}图</span>`:''}</div>`:''}
       <div class="f"><span class="tag ${tag.cls}">${tag.txt}</span>
         ${fields.map(f=>kv[f.col]?`<div class="kv"><b>${f.label}</b>：${esc(str(kv[f.col]))}</div>`:'').join('')}
       </div>
@@ -281,6 +305,7 @@ async function refreshDetail(tid){
         <button class="btn d s" onclick="toggleRej(${tid},'${key}',this)">驳回</button>
       </div>
     </div>`;
+  };
   const ticketRows = {};
   draftRows[tid] = {cat: detailCat, rows: ticketRows};
   const doneRows = (p.done_rows || {});
@@ -312,7 +337,7 @@ async function refreshDetail(tid){
     const act = p.action || 'update';
     const actName = act==='update' ? '📋 修改商品' : act==='create' ? '➕ 新增商品' : '🗑️ 下架商品';
     if(act === 'update' && p.before){
-      const img = p.before['主图'] ? `/img/${p.before['主图']}?token=${TOKEN}` : '';
+      const img = p.before['主图'] ? manageAssetUrl(`/img/${p.before['主图']}?token=${TOKEN}`) : '';
       html = `
       <div class="draft">
         ${img?`<img class="p" src="${img}" onclick="lbGallery(['${img}'])">`:''}
@@ -346,7 +371,7 @@ async function refreshDetail(tid){
       </div>` + html;
     } else if(act === 'delete'){
       const b = p.before || {};
-      const img = b['主图'] ? `/img/${b['主图']}?token=${TOKEN}` : '';
+      const img = b['主图'] ? manageAssetUrl(`/img/${b['主图']}?token=${TOKEN}`) : '';
       const model = str(b[cur.tpl?.fields?.[0]?.label] || b['产品型号'] || b['ITEM.NO 型号'] || p.product_id);
       html = `
       <div class="draft">
@@ -371,6 +396,11 @@ function selectOptions(values, current){
   return values.map(([value,label])=>`<option value="${esc(value)}" ${value===current?'selected':''}>${esc(label)}</option>`).join('');
 }
 function renderTemplateImport(tid, payload, box){
+  if(payload.fixed_category){
+    box.innerHTML = `<div class="card"><b>固定分类模板已确认</b><p class="muted">${esc(payload.fixed_template_name||payload.fixed_category)} 已作为解析模板。请通过微信再次上传商品 Excel，系统才会开始导入商品。</p></div>`;
+    return;
+  }
+  const productPhase = payload.phase === 'products';
   templateDrafts[tid] = {};
   dynamicImportRows[tid] = {};
   let html = '';
@@ -380,21 +410,20 @@ function renderTemplateImport(tid, payload, box){
     const counts = section.drafts||{};
     html += `<section class="card template-section" data-ticket-id="${tid}" data-template-key="${esc(tpl.key)}">
       <div class="row" style="justify-content:space-between"><div>
-        <span class="tag ${section.template_action==='create'?'new':'upd'}">${section.template_action==='create'?'新建分类':section.template_action==='update'?'更新模板':'沿用模板'}</span>
+        <span class="tag ${section.template_action==='create'?'new':'upd'}">${productPhase?'模板已确认 · 商品导入':section.template_action==='create'?'新建分类':section.template_action==='update'?'更新模板':'沿用模板'}</span>
         <b>Sheet：${esc(section.source_sheet||tpl.source_sheet||tpl.name)}</b>
       </div><span class="muted">表头第 ${section.header_row||'-'} 行 · ${section.image_count||0} 张图</span></div>
-      <div class="fg" style="margin-top:12px"><label>分类名称</label>
+      ${productPhase?'<p class="muted">本次使用已审批模板解析商品；模板字段不再重复确认。</p>':`<p class="muted">本工单只建立分类模板，不导入商品。模板审批通过后，请再次上传同一份商品 Excel。</p><div class="fg" style="margin-top:12px"><label>分类名称</label>
         <input data-template-name value="${esc(tpl.name)}"></div>
       <div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>
-        <th style="text-align:left;padding:7px">表头字段</th><th>类型</th><th>用途</th><th>客户可见</th></tr></thead><tbody>
+        <th style="text-align:left;padding:7px">表头字段</th><th>客户可见</th><th></th></tr></thead><tbody>
         ${(tpl.fields||[]).map(field=>`<tr data-template-field="${esc(field.key)}">
           <td style="padding:7px"><input data-field-label value="${esc(field.label)}" aria-label="${esc(field.label)}字段名称"></td>
-          <td style="padding:7px"><select data-field-type>${selectOptions([['text','文本'],['number','数字'],['money','金额'],['image','图片']],field.type)}</select></td>
-          <td style="padding:7px"><select data-field-role>${selectOptions([['model','型号/品名'],['spec','规格'],['image','图片'],['stock','库存'],['cost','成本'],['price','价格'],['note','备注'],['sequence','序号']],field.role)}</select></td>
           <td style="padding:7px"><select data-template-visibility="${esc(field.key)}" data-field-label-name="${esc(field.label)}">${selectOptions([['public','公开'],['internal','内部']],field.visibility)}</select></td>
         </tr>`).join('')}
       </tbody></table></div>
-      <p class="muted">默认把成本、价格、备注和序号设为内部字段；客户 Bot 不会返回金额字段。</p>
+      ${productPhase?'':'<div class="row" style="margin-top:8px"><button class="btn o s" onclick="addTemplateField(this)">＋ 添加表头字段</button><span class="muted">漏识别的列在这里补：填字段名、选好可见性，批准后生效（商品数据里该列的值需要重新导入一次才有）</span></div>'}
+      <p class="muted">字段类型和用途由系统根据表头自动识别；这里仅确认字段名称和客户是否可见。成本、价格、备注和序号默认设为内部字段，客户 Bot 不会返回金额字段。</p>`}
       <div class="row"><span class="tag new">新增 ${counts.new?.length||0}</span><span class="tag upd">更新 ${counts.update?.length||0}</span><span class="tag del">疑似下架 ${counts.delist?.length||0}</span></div>
       <div style="margin-top:10px">
         ${(counts.new||[]).map((row,index)=>templateRowHtml(tid,tpl,row,row._rid||('n'+index),'新增')).join('')}
@@ -407,7 +436,7 @@ function renderTemplateImport(tid, payload, box){
 }
 function templateRowHtml(tid,tpl,row,key,state){
   dynamicImportRows[tid][key] = {tpl,row};
-  const imgs=row._imgs||[];
+  const imgs=(row._imgs||[]).map(manageAssetUrl);
   const values=row.data||{};
   return `<div class="draft" id="row-${tid}-${esc(key)}">
     ${imgs.length?`<div class="imgwrap"><img class="p" src="${imgs[0]}" onclick='lbGallery(${JSON.stringify(imgs)})'>${imgs.length>1?`<span class="badge">${imgs.length}图</span>`:''}</div>`:''}
@@ -417,18 +446,29 @@ function templateRowHtml(tid,tpl,row,key,state){
       ${state!=='疑似下架'?`<button class="btn o s" onclick="editTemplateDraft(${tid},'${esc(key)}')">编辑</button>`:''}
       <button class="btn d s" onclick="toggleRej(${tid},'${esc(key)}',this)">驳回</button></div></div>`;
 }
+function addTemplateField(btn){
+  const tbody=btn.closest('.template-section').querySelector('tbody');
+  const key='field_add_'+Math.random().toString(36).slice(2,12);
+  const tr=document.createElement('tr');
+  tr.dataset.templateField=key;
+  tr.innerHTML=`<td style="padding:7px"><input data-field-label value="" placeholder="字段名称，如：型号"></td>
+    <td style="padding:7px"><select data-template-visibility="${key}" data-field-label-name="">${selectOptions([['public','公开'],['internal','内部']],'public')}</select></td>
+    <td style="padding:7px"><button class="btn d s" onclick="this.closest('tr').remove()">✕</button></td>`;
+  tbody.appendChild(tr);
+  tr.querySelector('[data-field-label]').focus();
+}
 function collectTemplateDecisions(tid){
   const result = {};
   document.querySelectorAll(`.template-section[data-ticket-id="${tid}"]`).forEach(section=>{
+    if(!section.querySelector('[data-template-name]')) return;
     const key=section.dataset.templateKey, original=templateDrafts[tid]?.[key];
     if(!original) return;
-    const fields=(original.fields||[]).map(field=>{
-      const row=section.querySelector(`[data-template-field="${CSS.escape(field.key)}"]`);
-      return {...field, label:row.querySelector('[data-field-label]').value.trim(),
-        type:row.querySelector('[data-field-type]').value,
-        role:row.querySelector('[data-field-role]').value,
+    const fields=[...section.querySelectorAll('tr[data-template-field]')].map(row=>{
+      const fkey=row.dataset.templateField;
+      const base=(original.fields||[]).find(f=>f.key===fkey)||{key:fkey};
+      return {...base, key:fkey, label:row.querySelector('[data-field-label]').value.trim(),
         visibility:row.querySelector('[data-template-visibility]').value};
-    });
+    }).filter(f=>f.label!=='');
     result[key]={...original,name:section.querySelector('[data-template-name]').value.trim(),fields};
   });
   return result;
@@ -457,6 +497,8 @@ async function submitDecision(tid, wholeReject){
   const t = (await api('/tickets')).tickets.find(x=>x.id===tid);
   try{
     const templates = collectTemplateDecisions(tid);
+    document.getElementById('review').innerHTML =
+      '<div class="card empty">⏳ 正在处理审批…商品和图片多时需要几十秒，请勿关闭页面。</div>';
     const r = await api(`/tickets/${tid}/decision`, {method:'POST', body:JSON.stringify(
       {token:t.token, approved:!wholeReject, decisions:{reject, edits: rowEdits, templates}})});
     if(r.mutated){
@@ -467,7 +509,7 @@ async function submitDecision(tid, wholeReject){
     [...rej].filter(k=>k.startsWith(tid+':')).forEach(k=>rej.delete(k));
     delete edits[tid];
     loadTickets();
-  }catch(e){ alert('决策失败：'+e.message); }
+  }catch(e){ alert('决策失败：'+e.message); loadTickets(); }
 }
 
 /* ---------- 编辑弹窗（字段 + 图片管理合一） ---------- */
@@ -495,10 +537,14 @@ function renderImgMan(){
   const el=document.getElementById('imgManArea');
   if(el) el.innerHTML=imgManHtml();
 }
+function formFields(fields){
+  // 表单只编辑业务字段：序号/图片/可观测是系统字段，可观测用卡片上的开关控制。
+  return (fields||[]).filter(f=>!['image','sequence','visibility'].includes(f.role)&&f.col!=='cs_visible');
+}
 function formHtml(title, kv, fields){
   return `<h3>${title}</h3>` +
-    fields.map(f=>`<div class="fg"><label>${f.label}</label>
-      <input id="fg-${f.col}" value="${esc(str(kv[f.col] ?? kv[f.label] ?? (f.col==='cs_visible'?'0':'')))}"></div>`).join('') +
+    formFields(fields).map(f=>`<div class="fg"><label>${f.label||f.col}</label>
+      <input id="fg-${f.col}" value="${esc(str(kv[f.col] ?? kv[f.label] ?? ''))}"></div>`).join('') +
     `<div class="fg"><label>图片（点 × 删除，点 ＋ 上传新图）</label><div id="imgManArea">${imgManHtml()}</div></div>` +
     `<div class="row" style="justify-content:flex-end;margin-top:6px">
       <button class="btn o" onclick="closeForm()">取消</button>
@@ -513,7 +559,7 @@ async function editDraft(tid, key){
   const cat = ticket.cat;
   const fields = await tplFields(cat);
   const d = ticket.rows[key];
-  const srcImgs = d._imgs||[];
+  const srcImgs = (d._imgs||[]).map(manageAssetUrl);
   const srcRels = d.images||(d.image_main?[d.image_main]:[]);
   formCtx = {mode:'draft', tid, key, cat,
     images: srcImgs.map((u,i)=>({rel:srcRels[i]||null, url:u}))};
@@ -525,8 +571,8 @@ async function editDraft(tid, key){
 async function editTemplateDraft(tid, key){
   const item=dynamicImportRows[tid]?.[key];
   if(!item) return;
-  const fields=(item.tpl.fields||[]).filter(field=>field.role!=='image').map(field=>({...field,col:field.key}));
-  const row=item.row, srcImgs=row._imgs||[], srcRels=row.images||[];
+  const fields=formFields(item.tpl.fields).map(field=>({...field,col:field.key}));
+  const row=item.row, srcImgs=(row._imgs||[]).map(manageAssetUrl), srcRels=row.images||[];
   formCtx={mode:'template-draft',tid,key,cat:item.tpl.key,fields,
     images:srcImgs.map((url,index)=>({rel:srcRels[index]||null,url}))};
   document.getElementById('modalBox').innerHTML=
@@ -535,6 +581,7 @@ async function editTemplateDraft(tid, key){
 }
 
 async function openForm(pid){
+  if(!cur.cat){ alert('还没有分类。请先把商品 Excel 发给微信 Bot，导入审批通过后再新增商品。'); return; }
   const fields = await tplFields(cur.cat);
   const p = pid ? cur.prods.find(x=>x['id']===pid) : null;
   formCtx = {mode: p?'product':'create', pid,
@@ -584,23 +631,70 @@ async function submitForm(){
 }
 
 /* ---------- 商品页 ---------- */
+const DEFAULT_SHEET_NAME = /^(sheet\s*\d*|工作表\s*\d*)$/i;
+let CAT_META = {};
 async function loadCats(){
   const categories = await api('/categories');
+  CAT_META = Object.fromEntries(categories.categories.map(value=>[value.key,value]));
   CAT_NAMES = Object.fromEntries(categories.categories.map(value=>[value.key,value.name]));
   if(!CAT_NAMES[cur.cat]) cur.cat = categories.categories[0]?.key || '';
   const tabs = document.getElementById('catTabs');
   tabs.innerHTML = '';
   for(const [key,name] of Object.entries(CAT_NAMES)){
     const b = document.createElement('button');
-    b.textContent = name; b.className = key===cur.cat?'on':'';
+    const isDefaultName = DEFAULT_SHEET_NAME.test(name.trim());
+    b.textContent = isDefaultName ? `${name} ✏️` : name;
+    if(isDefaultName) b.title = '分类名来自默认 Sheet 名，建议改成品类名（如“剃须刀现货”）';
+    b.className = key===cur.cat?'on':'';
     b.onclick = ()=>{cur.cat=key; delete _tplCache[key]; loadCats()};
     tabs.appendChild(b);
+  }
+  const renameBtn = document.getElementById('rename-cat');
+  renameBtn.hidden = !cur.cat;   // 选中任意分类即可见；预置分类点击时提示固定不可改
+  if(!cur.cat){
+    document.getElementById('download-template').textContent = '下载分类模板';
+    document.getElementById('plist').innerHTML =
+      '<div class="card empty" style="grid-column:1/-1">还没有分类。把商品 Excel 发给微信 Bot，或等导入审批通过后，分类会出现在这里。</div>';
+    cur.tpl = null; cur.prods = [];
+    return;
   }
   const d = await api('/products/'+cur.cat);
   cur.tpl = d.template;
   cur.prods = d.products.filter(p=>p['状态']!=='delisted');
+  const visBtn = document.getElementById('toggle-visible');
+  const visibleCount = cur.prods.filter(p=>String(p['可观测'])==='1').length;
+  visBtn.hidden = !cur.prods.length;
+  visBtn.textContent = visibleCount===cur.prods.length && visibleCount
+    ? `👁 客户可见 ${visibleCount}/${cur.prods.length}`
+    : visibleCount ? `👁 部分可见 ${visibleCount}/${cur.prods.length}` : '🙈 客户不可见';
+  visBtn.title = visibleCount===cur.prods.length
+    ? '点击把整个分类设为客户不可见' : '点击把整个分类全部设为客户可见';
   document.getElementById('download-template').textContent = `下载${CAT_NAMES[cur.cat]||cur.tpl.name}模板`;
   renderProducts();
+}
+async function toggleCategoryVisible(){
+  if(!cur.cat || !cur.prods.length) return;
+  const visibleCount = cur.prods.filter(p=>String(p['可观测'])==='1').length;
+  const target = visibleCount < cur.prods.length;   // 有不可见的 → 全部可见；全可见 → 整体隐藏
+  if(!confirm(target ? '把该分类全部商品设为对客户可见？'
+                     : '把该分类全部商品设为对客户不可见？（客户目录和Bot查不到，商品数据保留）')) return;
+  try{
+    await api('/categories/'+encodeURIComponent(cur.cat)+'/visibility',
+      {method:'PATCH', body:JSON.stringify({visible:target})});
+    loadCats();
+  }catch(e){ alert('设置失败：'+e.message); }
+}
+async function renameCat(){
+  if(!cur.cat) return;
+  const meta = CAT_META[cur.cat];
+  if(meta && meta.storage!=='dynamic'){ alert('预置剃须刀/卷发棒的分类名是固定的，不能修改。'); return; }
+  const name = prompt('新分类名（展示给你和客户看的名字，商品不动）：', CAT_NAMES[cur.cat]);
+  const clean = (name||'').trim();
+  if(!clean || clean===CAT_NAMES[cur.cat]) return;
+  try{
+    await api('/categories/'+encodeURIComponent(cur.cat), {method:'PATCH', body:JSON.stringify({name:clean})});
+    loadCats();
+  }catch(e){ alert('改名失败：'+e.message); }
 }
 function downloadTemplate(){
   if(!cur.cat) return;
@@ -613,8 +707,10 @@ function renderProducts(){
   const rows = cur.prods.filter(p=>!q||JSON.stringify(p).toLowerCase().includes(q));
   const el = document.getElementById('plist');
   if(!rows.length){ el.innerHTML = '<div class="card empty" style="grid-column:1/-1">暂无商品</div>'; return; }
-  const first = cur.tpl.fields.find(field=>field.role==='model') || cur.tpl.fields.find(field=>field.role!=='sequence'&&field.role!=='image') || cur.tpl.fields[0];
+  const formFieldsList = formFields(cur.tpl.fields);
+  const first = formFieldsList.find(field=>field.role==='model') || formFieldsList[0] || cur.tpl.fields[0];
   el.innerHTML = rows.map(p=>{
+    const visible = String(p['可观测'])==='1';
     const imgs=(p['图集']&&p['图集'].length?p['图集']:[p['主图']].filter(Boolean))
       .map(r=>`${MANAGE_PREFIX}/img/${r}?token=${TOKEN}`);
     return `<div class="card pcard">
@@ -626,16 +722,26 @@ function renderProducts(){
           <div class="ptitle">${esc(str(p[first.label]))||'（无型号）'}</div>
           <div class="psub muted">${p['内部货号']??''} · ${p['状态']??''}</div>
           <div class="pbtns">
+            <button class="btn ${visible?'p':'d'} s" onclick="toggleProductVisible('${p['id']}',${visible})"
+              title="控制这款商品是否对客户可见">${visible?'👁 客户可见':'🚫 客户不可见'}</button>
             <button class="btn o s" onclick="openForm('${p['id']}')">编辑</button>
             <button class="btn d s" onclick="delP('${p['id']}')">下架</button>
           </div>
         </div>
       </div>
       <div class="pfields">
-        ${cur.tpl.fields.filter(f=>f!==first&&f.role!=='image').map(f=>`
-          <div class="pf"><span class="pl">${f.label}</span><span class="pv">${esc(str(p[f.label]))||'—'}</span></div>`).join('')}
+        ${formFieldsList.filter(f=>f!==first).map(f=>`
+          <div class="pf"><span class="pl">${f.label||f.col}</span><span class="pv">${esc(str(p[f.label]))||'—'}</span></div>`).join('')}
       </div>
     </div>`;}).join('');
+}
+async function toggleProductVisible(pid, visible){
+  if(!cur.cat) return;
+  try{
+    await api(`/products/${encodeURIComponent(cur.cat)}/${encodeURIComponent(pid)}/direct`,
+      {method:'PATCH', body:JSON.stringify({changes:{cs_visible: visible?'0':'1'}})});
+    loadCats();
+  }catch(e){ alert('切换失败：'+e.message); }
 }
 async function delP(pid){
   if(!confirm('确认下架？')) return;
