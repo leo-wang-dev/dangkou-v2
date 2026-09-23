@@ -76,7 +76,11 @@ def wants_switch(text: str) -> bool:
 
 # 命令词别名：客户选了外语后，常用外文说法也要能触发同一动作。
 _EXPORT_WORDS = ('出表', '导出', 'export', 'excel', 'my list', 'send the list',
-                 'send me the list', 'purchase list', 'download the list', 'descargar')
+                 'send me the list', 'purchase list', 'download the list', 'descargar',
+                 # 采购员不会说咒语词：把“把文件发我”一类说法也认成导出意图。
+                 '发文件', '发个文件', '发表格', '把表发', '发清单', '发我表',
+                 '发我文件', '把文件发', '把清单发', '表格发我', '发个表',
+                 'send file', 'send the file', 'send me the file')
 _CONFIRM_WORDS = ('确认', 'confirm', 'confirmed', 'ok')
 _BOSS_WORDS = ('找老板', '老板微信', '老板联系方式', '转人工', '转老板',
                'boss', 'contact the boss', 'talk to the boss', 'human agent', 'contact owner',

@@ -552,3 +552,29 @@ def test_stock_and_shipping_question_reports_missing_fields_without_promising(se
     assert '库存' in reply and ('尚未填写' in reply or '不能确认' in reply)
     assert '发货' in reply and ('尚未填写' in reply or '不能确认' in reply)
     assert '可以今天发' not in reply
+
+
+def test_send_file_phrrasing_triggers_export(setup):
+    """『直接发我文件』这类说法也必须触发导出（关键词快速通道），不能被大脑拒掉。"""
+    from catalog import cs_i18n
+    c, b, m = setup
+    m.actions = [{'op': 'create', 'fields': {'型号或品名': '杯子', '数量': '10个'}}]
+    send(b, '记一下杯子10个')
+    send(b, '直接发我文件', 2)
+    assert b.api.sent[-1][1].count('http') > 0 or '链接' in b.api.sent[-1][1]
+    assert cs_i18n.wants_export('直接发我文件')
+
+
+def test_brain_export_mark_sends_file_without_keywords(setup, monkeypatch):
+    """措辞不含任何导出关键词：大脑自己判断意图，输出 <<EXPORT>> 也必须发文件。"""
+    c, b, m = setup
+    m.actions = [{'op': 'create', 'fields': {'型号或品名': '杯子', '数量': '10个'}}]
+    send(b, '记一下杯子10个')
+    original = m.chat_text
+    def brain(system, messages, **kw):
+        if '智能客服' in system:      # 对话大脑调用
+            return '<<EXPORT>>'
+        return original(system, messages, **kw)
+    monkeypatch.setattr(m, 'chat_text', brain)
+    send(b, '把我的单子弄成表格送过来', 2)   # 无任何触发词
+    assert '清单' in b.api.sent[-1][1] and b.api.sent[-1][1].count('http') > 0
