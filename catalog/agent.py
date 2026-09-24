@@ -18,7 +18,60 @@ def build_prompt(template_key, xlsx_path, out_json) -> str:
             .replace('__OUT__', out_json))
 
 
+def build_dynamic_prompt(template: dict, xlsx_path: str, out_json: str, sheet: str = '') -> str:
+    """动态分类提示词：已审批字段注入 B端同款方法论，另补乱表规则。
+
+    与固定品类的差别：表头位置不定、表可能极宽、商品跨行、图片行不是商品——
+    这些是动态商家真实表（如 84 列吹风机表 18 商品被代码按物理行切成 34）的实测坑。
+    """
+    lines = []
+    for f in template['fields']:
+        if f.get('role') == 'image':
+            continue
+        hint = ''
+        if f.get('role') == 'model':
+            hint = ' ← 型号字段，尽量必填'
+        elif f.get('role') == 'note':
+            hint = ' ← 模板字段装不下的补充信息拼这里，没有留空'
+        lines.append(f"  {f['label']}({f['key']}){hint}")
+    sheet_clause = f"只处理工作表「{sheet}」，其他 Sheet 一律忽略。\n" if sheet else ""
+    field_block = '\n'.join(lines)
+    return f"""解析这份 Excel 厂家报价单，按品类模板产出商品库。
+
+输入：{xlsx_path}（你的工作目录）
+输出：{out_json}
+品类：{template['name']}
+{sheet_clause}模板字段（括号内=输出键名，逐字段填，原文有就填没有留空）：
+{field_block}
+
+# 硬性验收标准
+表头不一定在第一行（可能在中部、可能是多级表头）：先定位真实表头再取数；表格可能很宽（几十列）。
+一个逻辑商品可能占多个物理行（数据行+规格行+图片行）：按型号/品名判断归属，合并为一个商品；
+同一型号的不同配色/规格仍是独立商品；只有图片没有数据的行不是商品，图片按锚点归属到对应商品。
+纵向合并单元格只是格式：空单元格继承上方有值单元格的内容。
+内嵌图片在 xlsx（zip）的 xl/media/、锚点在 xl/drawings/：解到工作目录（r行号_c列号.扩展名），
+每条商品 image_main 填主图文件名、images 填该商品全部图片文件名清单（主图排第一）、image_count 填数量。
+所有字段值逐字来自单元格原文：禁止编造、改写、翻译、换算单位。
+定稿前自检：商品数应等于表内逻辑商品数（不是物理行数），抽 5-10 个商品核对字段值和图片归属。
+
+# 输出
+{{"vendor":"厂家名或null","products":[{{...模板字段...,"image_main":"主图文件名","images":["该商品全部图片文件名"],"image_count":N}}]}}
+用 python 的 json.dump(..., ensure_ascii=False, indent=1) 写入输出文件。
+完成后只回一行：DONE N（N=商品数）"""
+
+
 def parse(template_key, xlsx_path, work_dir) -> dict:
+    prompt = build_prompt(template_key, '/input/source.xlsx', '/work/products.json')
+    return _run_container(prompt, xlsx_path, work_dir)
+
+
+def parse_dynamic(template: dict, xlsx_path: str, work_dir: str, *, sheet: str = '') -> dict:
+    """动态分类的商品解析：提示词由已审批模板字段现场生成，同一容器链路执行。"""
+    prompt = build_dynamic_prompt(template, '/input/source.xlsx', '/work/products.json', sheet)
+    return _run_container(prompt, xlsx_path, work_dir)
+
+
+def _run_container(prompt: str, xlsx_path: str, work_dir: str) -> dict:
     docker = shutil.which('docker')
     image = os.environ.get('CATALOG_AGENT_CONTAINER_IMAGE', '')
     if not docker or not image:
@@ -33,7 +86,6 @@ def parse(template_key, xlsx_path, work_dir) -> dict:
     out_json = os.path.join(work_dir, 'products.json')
     if os.path.exists(out_json):
         os.remove(out_json)
-    prompt = build_prompt(template_key, '/input/source.xlsx', '/work/products.json')
     # Only the parser-specific API credential enters the container. No Telegram,
     # merchant notification or catalog service token is inherited.
     env = {k: os.environ[k] for k in ('PATH', 'HOME', 'DOCKER_HOST', 'DOCKER_CONTEXT') if k in os.environ}
