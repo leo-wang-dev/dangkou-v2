@@ -40,6 +40,10 @@ def provision(c,m):
         else:
             conn.execute('UPDATE shop_profile SET shop_name=?,owner_tg_username=?,owner_wechat=? WHERE id=1',
                 (values['shop_name'],values.get('owner_tg_username',''),values.get('owner_wechat','')))
+        # 开店即生成 H5 客服入口（公共 H5 平台：每店家一个稳定 /cs/chat/<token>）
+        import secrets as _secrets
+        if not conn.execute('SELECT chat_token FROM shop_profile WHERE id=1').fetchone()[0]:
+            conn.execute('UPDATE shop_profile SET chat_token=? WHERE id=1', (_secrets.token_urlsafe(24),))
         merchant_policy.apply(conn,values,m['revision']);conn.commit()
     finally:conn.close()
     port=m['port']

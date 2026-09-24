@@ -75,7 +75,7 @@ def main():
             return
         except Exception as exc:
             conn.rollback()
-            print(f'[cs-bot] 轮询异常（10s后继续）: {type(exc).__name__}', flush=True)
+            print(f'[cs-bot] 轮询异常（10s后继续）: {type(exc).__name__}: {exc}', flush=True)
             time.sleep(10)
 
 

@@ -20,12 +20,12 @@ EXTRACT_PROMPT = (
     '每件清晰可辨的主体商品独立成一条；同图有多个主体则分别列出。'
     '仅局部入镜、遮挡且信息不完整的背景商品只在其他中注明，不新增采购条目。'
     '只输出JSON数组，每条使用以下商品键，所有值是字符串：'
-    '型号或品名、价格、装箱数、颜色、体积或尺寸、起订量、其他。'
+    '型号或品名、价格、装箱数、颜色、体积或尺寸、其他。\n若照片里是名片（或含名片）：不作为商品，单独输出一条 {"名片": {"档口名称":..,"供应商联系人":..,"供应商联系方式":..,"档口号/地址":..}}，名片上看不清的字段留空。'
     '型号或品名写可见品牌和品名；体积或尺寸保留mL/g等单位。'
     '没有拍到的字段写未拍到，看不清写模糊，不得补造数字。'
     '价格仅抄录对应商品的价签；小数点、货币符号或数字不清楚时写模糊（待确认），不要猜精确金额。'
     '明确为手写的价格末尾加（手写价，待确认）。相邻商品价签不能混用。'
-    '未标明数量用途的裸数字只放其他，注明原始数字及含义待确认，不能推断为装箱数或起订量。'
+    '未标明数量用途的裸数字只放其他，注明原始数字及含义待确认，不能推断为装箱数。'
     '颜色只描述可见包装，不猜测密封包装里的内容物颜色、成分或功效。'
     '供应商信息用独立键：档口名称、档口号/地址、供应商联系人、供应商联系方式。'
     '仅从明确属于该商品供应商的名片或档口招牌抄录；商品品牌、制造商、包装上的厂商地址不能当作采购档口。'
@@ -40,8 +40,8 @@ REVIEW_PHOTO_PROMPT = (
     '价签被画面边缘截断、疑似还有尾部数字、字迹模糊或归属不清时，_价格完整=false，价格写模糊（待确认）。'
     '只看到开头一个数字不能作为完整价格。不要把边缘不完整的容量数字补成精确容量。'
     '3.颜色描述只写包装可见颜色，包装上印刷的膏体/头发图片不等于看见内容物。'
-    '4.无明确数量用途的数字放其他并写含义待确认，不猜成装箱数、起订量或订单数量。'
-    '只输出修正后的JSON数组，不要分析说明，不要Markdown代码块；每条保留型号或品名、价格、装箱数、颜色、体积或尺寸、起订量、其他七个字符串字段，'
+    '4.无明确数量用途的数字放其他并写含义待确认，不猜成装箱数或订单数量。'
+    '只输出修正后的JSON数组，不要分析说明，不要Markdown代码块；每条保留型号或品名、价格、装箱数、颜色、体积或尺寸、其他六个字符串字段，'
     '另外保留档口名称、档口号/地址、供应商联系人、供应商联系方式四个独立字段；只有明确对应的名片或招牌才填写，商品品牌和生产厂家不得代替采购档口，缺失写待补充。'
     '并增加_主体和_价格完整两个布尔字段，以及_价格框：[左,上,右,下]，坐标归一化到0到1000。'
     '价格框必须包住该商品对应的整个价签（货币符号和所有数字），不是商品包装框；找不到完整价签时填null。'
@@ -331,30 +331,67 @@ class CsBot:
                 '不要只看桌面手写数字；确实不可辨认才标模糊。\n' + EXTRACT_PROMPT)
             raw = self.llm.chat_vision(prompt, data)
             items = self._parse_items(raw)
-            if items and any(d['型号或品名'] not in ('未拍到', '模糊', '') for d in items):
+            if items and any(d.get('型号或品名') not in ('未拍到', '模糊', '', None) for d in items):
                 break
+        cards = [it.pop('名片') for it in items if isinstance(it.get('名片'), dict)]
+        items = [it for it in items if it]   # pop 后的空壳（原名片条目）一并剔除
         if items:
             reviewed = self.llm.chat_vision(REVIEW_PHOTO_PROMPT + json.dumps(items, ensure_ascii=False), data)
             items = self._conservative_prices(items, self._parse_items(reviewed))
         from . import photo_inquiry
-        return path, items, photo_inquiry.candidates(self.conn, items, data)
+        return path, items, photo_inquiry.candidates(self.conn, items, data), cards
+
+    def _crop_photo(self, path: str, index: int, box) -> str:
+        """一图多商品：按千分制图框裁出该商品的子图；框缺失/裁剪失败回落整图。"""
+        if not isinstance(box, list) or len(box) != 4:
+            return path
+        try:
+            from PIL import Image
+            img = Image.open(path)
+            w, h = img.size
+            x1 = max(0, min(w - 1, int(box[0] * w / 1000)))
+            y1 = max(0, min(h - 1, int(box[1] * h / 1000)))
+            x2 = max(x1 + 1, min(w, int(box[2] * w / 1000)))
+            y2 = max(y1 + 1, min(h, int(box[3] * h / 1000)))
+            if (x2 - x1) * (y2 - y1) < 64:      # 框小到没内容，当无效
+                return path
+            out = path.rsplit('.', 1)[0] + f'_crop{index}.jpg'
+            img.convert('RGB').crop((x1, y1, x2, y2)).save(out, 'JPEG', quality=88)
+            return out
+        except Exception:
+            return path
 
     def _on_photo(self, cust, msg, prepared=None) -> str:
-        path, items, found = prepared or self._prepare_photo(cust, msg)
+        if prepared is None:
+            prepared = self._prepare_photo(cust, msg)
+        path, items, found, cards = prepared
         from . import photo_inquiry
         photo_inquiry.save(self.conn, cust['id'], found)
-        if not items:
+        if not items and not cards:
             self._log(cust['id'], 'assistant', '(抽取失败)')
             return '这张照片我没能认出商品信息，麻烦重拍一张近一点的～'
         receipts = []
+        card_lines = []
+        for card in cards:
+            clean = {k: str(v or '').strip() for k, v in (card or {}).items()
+                     if k in ('档口名称', '供应商联系人', '供应商联系方式', '档口号/地址')
+                     and str(v or '').strip() and '未拍到' not in str(v)}
+            if clean:
+                self.conn.execute(
+                    "INSERT INTO cs_card_info(customer_id,fields_json,updated_at) VALUES(?,?,datetime('now')) "
+                    "ON CONFLICT(customer_id) DO UPDATE SET fields_json=excluded.fields_json,updated_at=datetime('now')",
+                    (cust['id'], json.dumps(clean, ensure_ascii=False)))
+                self._commit()
+                card_lines.append('已从名片记录档口信息：' + '；'.join(f'{k}={v}' for k, v in clean.items()))
         start = self.conn.execute("SELECT COUNT(*) FROM cs_note WHERE customer_id=? AND status='draft'", (cust['id'],)).fetchone()[0] + 1
         for i, fields in enumerate(items, start):
             fields = cs_supplier.normalize(fields)
             received_shop, source_shop, basis = shop_link.origin(self.conn, fields)
+            note_photo = self._crop_photo(path, i - start, fields.pop('__图框__', None))
             cur = self.conn.execute(
                 'INSERT INTO cs_note(customer_id, photo, fields_json, status,received_shop_id,source_shop_id,source_basis) '
                 "VALUES(?,?,?,'draft',?,?,?)",
-                (cust['id'], path, json.dumps(fields, ensure_ascii=False),received_shop,source_shop,basis))
+                (cust['id'], note_photo, json.dumps(fields, ensure_ascii=False),received_shop,source_shop,basis))
             note = self.conn.execute('SELECT * FROM cs_note WHERE id=?',(cur.lastrowid,)).fetchone()
             fields = shop_link.customer_fields(self.conn,note)
             got = [f'{k}={v}' for k, v in fields.items()
@@ -364,6 +401,10 @@ class CsBot:
             if miss:
                 line += f'\n　没拍到/看不清：{"、".join(miss)}（可以回复我补上，比如"颜色黑色"）'
             receipts.append(line)
+        if card_lines:
+            receipts.append('\n'.join(card_lines) + '\n（导出的采购清单将使用名片上的档口信息）')
+        if not receipts and card_lines:
+            receipts = list(card_lines)
         self._log(cust['id'], 'assistant', '\n'.join(receipts))
         inquiry = '\n照片里的价格只是采购记录，不是本店确认报价。'
         if found:
@@ -392,6 +433,11 @@ class CsBot:
         for item in data:
             if not isinstance(item, dict) or not item:
                 continue
+            if isinstance(item.get('名片'), dict):
+                normalized.append({'名片': item['名片']})
+                continue
+            crop = item.get('图框')
+            item.pop('图框', None)
             item = dict(item)
             reviewed = '_主体' in item
             price_box = item.pop('_价格框', None)
@@ -414,9 +460,12 @@ class CsBot:
             if result['价格'] not in ('未拍到', '模糊') and '待确认' not in result['价格']:
                 result['价格'] += '（照片识别，待确认）'
             for k,v in item.items():
-                if k not in keys and v:
+                if k not in keys and v and k != '__图框__':
                     extra = f'{k}：{v}'
                     result['其他'] = extra if result['其他'] == '未拍到' else result['其他']+'；'+extra
+            if isinstance(crop, list) and len(crop) == 4 and all(
+                    isinstance(x, (int, float)) and 0 <= x <= 1000 for x in crop):
+                result['__图框__'] = crop
             result.update(supplier)
             normalized.append(result)
         return normalized
@@ -433,9 +482,9 @@ class CsBot:
             match = re.search(r'\d+(?:\.\d+)?', value)
             return Decimal(match[0]) if match else None
         for item in reviewed:
-            candidates = sorted(initial, key=lambda d:SequenceMatcher(None, normalize(d['型号或品名']), normalize(item['型号或品名'])).ratio(), reverse=True)
+            candidates = sorted(initial, key=lambda d:SequenceMatcher(None, normalize(d.get('型号或品名','')), normalize(item.get('型号或品名',''))).ratio(), reverse=True)
             best = candidates[0] if candidates else None
-            score = SequenceMatcher(None, normalize(best['型号或品名']), normalize(item['型号或品名'])).ratio() if best else 0
+            score = SequenceMatcher(None, normalize(best['型号或品名']), normalize(item.get('型号或品名',''))).ratio() if best else 0
             old_price = number(best['价格']) if best and score>=0.6 else None
             new_price = number(item['价格'])
             if item['价格'] != '未拍到' and (old_price is None or new_price is None or old_price != new_price):

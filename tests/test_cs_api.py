@@ -132,7 +132,7 @@ def test_draft_list_photo_edit_and_export_without_confirmation(client, tmp_path)
     sheet = openpyxl.load_workbook(io.BytesIO(response.content)).active
     assert sheet.max_row == 2 and len(sheet._images) == 1
     values = str(list(sheet.values))
-    assert '蓝色' in values and '待确认' in values
+    assert '蓝色' in values and '待确认' not in values   # 确认状态列已按需求移除
     assert 'secret' not in values and 'deleted' not in values
     assert conn.execute('SELECT status FROM cs_note WHERE id=?',(notes[0]['id'],)).fetchone()[0] == 'draft'
 

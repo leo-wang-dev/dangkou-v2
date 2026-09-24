@@ -95,6 +95,15 @@ def fields_for(conn, note):
         p = profile(conn)
         if p['shop_id'] == note['source_shop_id']:
             fields.update({k:v or '待补充' for k,v in supplier_values(p).items()})
+    if note.get('customer_id'):
+        card = conn.execute("SELECT fields_json FROM cs_card_info WHERE customer_id=?",
+                            (note['customer_id'],)).fetchone()
+        if card:
+            try:
+                fields.update({k: v for k, v in json.loads(card['fields_json']).items()
+                               if str(v or '').strip() and '未拍到' not in str(v)})
+            except (TypeError, ValueError):
+                pass
     basis = note.get('source_basis', 'unknown')
     fields['档口归属依据'] = {'bot_context':'接待档口（供货关系待确认）','customer_confirmed':'客户确认本店',
                               'manual':'客户填写','photo':'照片信息（待确认）','unknown':'待确认'}.get(basis,'待确认')

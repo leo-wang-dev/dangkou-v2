@@ -241,7 +241,7 @@ def test_managed_photo_match_does_not_promise_an_unconfigured_handoff(bot, conn,
         {},
         prepared=(str(photo_path), [{'型号或品名': 'MODEL-1'}], [
             {'category': 'curler', 'product_id': 'p1', 'name': 'MODEL-1'},
-        ]),
+        ], []),
     )
 
     assert '回复“询价1”即可转人工' not in reply
@@ -337,7 +337,7 @@ def test_export_drafts_attachment_has_photos_status_and_customer_isolation(bot, 
     assert chat == 100 and name.endswith('.xlsx') and '1 条待确认' in caption
     sheet = openpyxl.load_workbook(io.BytesIO(content)).active
     assert sheet.max_row == 2 and len(sheet._images) == 1
-    assert '待确认' in [c.value for c in sheet[2]]
+    assert '待确认' not in [c.value for c in sheet[2]]   # 确认状态列已按需求移除
     assert '其他客户' not in str(list(sheet.values))
     assert conn.execute("SELECT status FROM cs_note WHERE customer_id!='other'").fetchone()[0] == 'draft'
     bot.handle_update(update)
@@ -398,7 +398,7 @@ def test_assign_different_suppliers_and_export_without_cross_customer_changes(bo
     assert [r[heads.index('档口名称')] for r in rows] == ['A档口','A档口','B档口']
     assert rows[0][heads.index('档口号/地址')] == '二区10号'
     assert rows[2][heads.index('供应商联系方式')] == '微信 test-only'
-    assert [r[heads.index('确认状态')] for r in rows] == ['已确认','已确认','待确认']
+    assert '确认状态' not in heads and '起订量' not in heads   # 两列已按需求移除
     assert conn.execute("SELECT fields_json FROM cs_note WHERE customer_id='other'").fetchone()[0] == '{}'
     before = [tuple(r) for r in conn.execute('SELECT * FROM cs_note')]
     bot.handle_update(_text_upd('清单第1、99条 档口：不应保存'))
@@ -414,3 +414,43 @@ def test_supplier_fields_stay_separate_from_brand_and_other(bot):
     from catalog.cs_supplier import normalize
     unknown = normalize({'型号或品名':'Brand cream'})
     assert unknown['档口名称'] == '待补充'
+
+
+def test_business_card_photo_sets_shop_info_not_note(bot, conn):
+    """名片：不生成商品笔记，档口信息入 cs_card_info 并覆盖导出档口列。"""
+    bot.llm.vision_reply = json.dumps([
+        {'名片': {'档口名称': '宏发电器', '供应商联系人': '王宏',
+                 '供应商联系方式': 'wx-123', '档口号/地址': 'F区21号'}}], ensure_ascii=False)
+    bot.handle_update(_photo_upd())
+    assert conn.execute("SELECT COUNT(*) FROM cs_note").fetchone()[0] == 0
+    card = conn.execute("SELECT fields_json FROM cs_card_info").fetchone()
+    assert json.loads(card[0])['档口名称'] == '宏发电器'
+    assert '宏发电器' in bot.api.sent[-1][1]
+
+
+def test_multi_product_photo_crops_subimages(bot, conn, tmp_path):
+    """一图多商品：图框裁出子图分别挂笔记；无框回落整图。"""
+    import io
+    from PIL import Image
+    bot.img_dir = str(tmp_path)
+    bot.api.download_photo = lambda p: (lambda b: b)(
+        Image.new('RGB', (1000, 500), 'white').tobytes()) and _jpeg_bytes()
+    bot.llm.vision_reply = json.dumps([
+        {'型号或品名': 'A款', '颜色': '红', '图框': [0, 0, 500, 1000]},
+        {'型号或品名': 'B款', '颜色': '蓝', '图框': [500, 0, 1000, 1000]},
+        {'型号或品名': 'C款', '颜色': '绿'}], ensure_ascii=False)
+    bot.handle_update(_photo_upd())
+    photos = [r[0] for r in conn.execute('SELECT photo FROM cs_note ORDER BY id')]
+    assert len(photos) == 3
+    assert photos[0].endswith('_crop0.jpg') and photos[1].endswith('_crop1.jpg')
+    assert photos[2] == photos[2] and not photos[2].endswith('_crop2.jpg')   # 无框=整图
+    from PIL import Image as I2
+    assert I2.open(photos[0]).size == (500, 500)
+
+
+def _jpeg_bytes():
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new('RGB', (1000, 500), 'white').save(buf, format='JPEG')
+    return buf.getvalue()

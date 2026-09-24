@@ -34,9 +34,10 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
     for item in items:
         for key in INTERNAL_NOTE_FIELDS:
             item.pop(key, None)
-    if include_status:
-        for item, note in zip(items, notes):
-            item['确认状态'] = '待确认' if note['status'] == 'draft' else '已确认'
+    # 确认状态列按老板 2026-09-24 要求从导出移除（include_status 保留签名兼容旧快照重试）。
+    for item in items:
+        item.pop('确认状态', None)
+        item.pop('起订量', None)   # 字段口径合并进装箱数，历史数据不再出列
     keys = []
     for f in items:                              # 动态字段列（保持出现顺序）
         for k in f:

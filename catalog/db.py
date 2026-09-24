@@ -55,6 +55,10 @@ def _migrate(conn):
             conn.execute(f"ALTER TABLE shop_profile ADD COLUMN {field} TEXT NOT NULL DEFAULT ''")
     if shop_cols and 'chat_token' not in shop_cols:
         conn.execute("ALTER TABLE shop_profile ADD COLUMN chat_token TEXT NOT NULL DEFAULT ''")
+    conn.execute('''CREATE TABLE IF NOT EXISTS cs_card_info(
+        customer_id TEXT PRIMARY KEY,
+        fields_json TEXT NOT NULL DEFAULT '{}',
+        updated_at TEXT DEFAULT (datetime('now')))''')
     cust_cols = {r[1] for r in conn.execute('PRAGMA table_info(cs_customer)')}
     if cust_cols and 'lang' not in cust_cols:
         conn.execute("ALTER TABLE cs_customer ADD COLUMN lang TEXT NOT NULL DEFAULT ''")
