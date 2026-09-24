@@ -287,13 +287,19 @@ def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
         xlsx_path, None, include_rows=False, include_images=False)
     # 模板阶段字段属性（类型/角色/可见性）由 AI 推断，代码推断保留为回落。
     ai_extract.apply_field_attributes(discovered, ai_extract.infer_field_attributes(discovered))
+    # 供应商由 AI 从文件名/表名推断（判断不出留空，审批页可改）。
+    supplier_guess = ai_extract.guess_supplier(
+        source_key or os.path.basename(xlsx_path), [d.get('title') or '' for d in discovered])
     sections = _template_sections(conn, discovered, source_key=source_key,
                                   doc_id=doc_id, mode=mode, category_key=category_key)
     if not sections:
         raise ValueError('Excel 中没有识别到有效 Sheet 和表头')
+    if supplier_guess:
+        for section in sections:
+            section['template'].setdefault('supplier', supplier_guess)
     return {'kind': 'template_import', 'phase': 'template', 'doc_id': doc_id,
             'source_key': source_key, 'mode': mode, 'category_key': category_key,
-            'work_dir': str(work_dir), 'sheets': sections}
+            'work_dir': str(work_dir), 'supplier_guess': supplier_guess, 'sheets': sections}
 
 
 def _template_session(conn, template_doc_id: int) -> tuple[dict, list[dict]]:

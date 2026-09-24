@@ -160,3 +160,22 @@ def _ask_mapping(target_fields: list[dict], cells: list[dict]):
         return _parse_json_array(raw)
     except Exception:
         return None
+
+
+def guess_supplier(source_key: str, sheet_names: list) -> str:
+    """模板阶段推断供应商：文件名+Sheet 名交给 LLM 判断（不写关键词规则）。
+
+    判断不出返回空串（调用方留空，页面/AI 随时可补）。
+    """
+    if not _enabled():
+        return ''
+    system = ('从商品 Excel 的文件名和工作表名里判断供应商/厂家名（中文优先，去掉"报价表/有限公司/'
+              '有限公司报价单"等修饰，保留可读主体如"华岳电器"）。判断不出只输出空字符串。'
+              '只输出供应商名本身，不要任何解释。')
+    try:
+        raw = llm.chat_text(system, [{'role': 'user', 'content': json.dumps(
+            {'文件名': str(source_key or ''), '工作表': [str(n) for n in sheet_names]},
+            ensure_ascii=False)}], temperature=0.1)
+        return str(raw).strip().strip('"\'')[:40]
+    except Exception:
+        return ''

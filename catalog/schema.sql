@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS import_doc (
 CREATE TABLE IF NOT EXISTS category_template (
   key TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  supplier TEXT NOT NULL DEFAULT '',
   version INTEGER NOT NULL DEFAULT 1,
   fields_json TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'approved',

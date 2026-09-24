@@ -205,20 +205,58 @@ def register_routes(app: FastAPI):
                 'name': name, 'fields': len(fields_in)}
 
     class CategoryRenameIn(BaseModel):
-        name: str = Field(min_length=1, max_length=64)
+        name: str | None = Field(default=None, min_length=1, max_length=64)
+        supplier: str | None = Field(default=None, max_length=40)
 
     @app.patch('/categories/{category}')
     def rename_category(category: str, body: CategoryRenameIn, request: Request):
-        """动态分类改名：Sheet 名是默认名（如 Sheet1）时商家的自救口。"""
+        """动态分类改名/改供应商：Sheet 名是默认名（如 Sheet1）时商家的自救口。"""
         _auth(request, app.state.token)
         from . import dynamic_catalog
-        try:
-            template = dynamic_catalog.rename_template(request_conn(), category, body.name)
-        except KeyError:
-            raise HTTPException(404, '未知分类')
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
-        return {'key': template['key'], 'name': template['name']}
+        conn = request_conn()
+        if body.supplier is not None:
+            row = conn.execute('SELECT 1 FROM category_template WHERE key=? AND storage=\'dynamic\'',
+                               (category,)).fetchone()
+            if row is None:
+                raise HTTPException(404, '未知动态分类')
+            conn.execute('UPDATE category_template SET supplier=? WHERE key=?',
+                         (body.supplier.strip()[:40], category))
+            conn.commit()
+        if body.name:
+            try:
+                dynamic_catalog.rename_template(conn, category, body.name)
+            except KeyError:
+                raise HTTPException(404, '未知分类')
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+        template = dynamic_catalog.get_template(conn, category)
+        return {'key': template['key'], 'name': template['name'],
+                'supplier': template.get('supplier') or ''}
+
+    @app.get('/stats/supplier')
+    def stats_supplier(request: Request, by: str = 'supplier'):
+        """按供应商/分类聚合在售统计（动态分类）：供应商搜索与“多少款在推广”的底数。
+
+        与既有 /stats（预置分类库存口径）互不影响；推广口径=对客户可见。
+        """
+        _auth(request, app.state.token)
+        conn = request_conn()
+        rows = conn.execute(
+            "SELECT t.key cat_key, t.name cat_name, COALESCE(NULLIF(t.supplier,''), t.name) supplier,"
+            " COALESCE(SUM(p.status!='delisted'),0) total,"
+            " COALESCE(SUM(p.status!='delisted' AND p.cs_visible=1),0) visible"
+            " FROM category_template t LEFT JOIN product_dynamic p ON p.category_key=t.key"
+            " WHERE t.storage='dynamic' GROUP BY t.key").fetchall()
+        items = [dict(r) for r in rows]
+        if by == 'category':
+            return {'by': 'category', 'categories': items}
+        groups: dict = {}
+        for item in items:
+            g = groups.setdefault(item['supplier'], {'supplier': item['supplier'], 'total': 0, 'visible': 0, 'categories': []})
+            g['total'] += item['total']; g['visible'] += item['visible']
+            g['categories'].append({'key': item['cat_key'], 'name': item['cat_name'],
+                                    'total': item['total'], 'visible': item['visible']})
+        return {'by': 'supplier', 'suppliers': sorted(groups.values(), key=lambda g: -g['total'])}
 
     class QuoteMapIn(BaseModel):
         price_field: str = Field(min_length=1, max_length=128)

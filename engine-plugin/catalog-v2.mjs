@@ -363,6 +363,44 @@ export async function apply(ctx, _config = {}) {
   })
 
   ctx.tools.register({
+    name: 'category_supplier_set',
+    description: '设置分类的供应商（厂家）。商家说“这个分类是华悦的货/供应商改成XX”时用；'
+      + '供应商用于按厂家聚合查询（“华悦还有多少货”“多少款在推广属于哪些商家”）。传空字符串清除。',
+    parameters: {
+      type: 'object',
+      properties: {
+        categoryKey: { type: 'string', description: '目标动态分类 key' },
+        supplier: { type: 'string', description: '供应商名，空字符串=清除' },
+      },
+      required: ['categoryKey', 'supplier'],
+    },
+    output: OUT,
+    async execute({ categoryKey, supplier }) {
+      requiredText(categoryKey, 'categoryKey')
+      const r = await call(`/categories/${encodeURIComponent(categoryKey)}`, 'PATCH',
+        { supplier: String(supplier || '').trim() })
+      return JSON.stringify({ key: r.key, supplier: r.supplier,
+        note: r.supplier ? `分类「${r.name}」的供应商已设为「${r.supplier}」`
+          : `分类「${r.name}」的供应商已清除` })
+    },
+  })
+
+  ctx.tools.register({
+    name: 'catalog_stats',
+    description: '在售商品统计。按供应商聚合（默认）：商家问“XX供应商还有多少货”“多少款在推广/对客户可见、属于哪些商家”时用；'
+      + 'by=category 按分类聚合。推广口径=对客户可见（cs_visible）。数字必须来自本工具，不能靠记忆。',
+    parameters: {
+      type: 'object',
+      properties: { by: { type: 'string', enum: ['supplier', 'category'] } },
+    },
+    output: OUT,
+    async execute({ by }) {
+      const r = await call('/stats/supplier' + (by === 'category' ? '?by=category' : ''))
+      return JSON.stringify(r)
+    },
+  })
+
+  ctx.tools.register({
     name: 'category_visibility',
     description: '设置整个分类对客户是否可见：一次批量设置该分类全部在售商品的「可观测」。'
       + '商家说"把XX分类整体隐藏/客户不可见"时传 visible=false；"恢复可见/上架给客户看"传 true。'

@@ -131,6 +131,7 @@ img.big{width:86px;height:86px}
       <button class="btn p" onclick="openCatForm()">＋ 新建分类</button>
       <button class="btn p" onclick="openForm()">＋ 新增商品</button>
       <button class="btn o" id="rename-cat" onclick="renameCat()" hidden>✏️ 分类改名</button>
+      <button class="btn o" id="supplier-cat" onclick="setSupplier()" hidden>🏷️ 供应商</button>
       <button class="btn o" id="toggle-visible" onclick="toggleCategoryVisible()" hidden>👁 整体可见性</button>
       <button class="btn o" id="download-template" onclick="downloadTemplate()">下载当前分类模板</button>
       <input id="q" placeholder="搜索型号 / 内部货号 / 字段…" oninput="renderProducts()" style="max-width:320px">
@@ -690,7 +691,13 @@ async function loadCats(){
     tabs.appendChild(b);
   }
   const renameBtn = document.getElementById('rename-cat');
-  renameBtn.hidden = !cur.cat;   // 选中任意分类即可见；预置分类点击时提示固定不可改
+  renameBtn.hidden = !cur.cat;
+  const supBtn = document.getElementById('supplier-cat');
+  supBtn.hidden = !cur.cat;
+  if (cur.cat) {
+    const sup = CAT_META[cur.cat]?.supplier || '';
+    supBtn.textContent = sup ? `🏷️ ${sup}` : '🏷️ 设供应商';
+  }   // 选中任意分类即可见；预置分类点击时提示固定不可改
   if(!cur.cat){
     document.getElementById('download-template').textContent = '下载分类模板';
     document.getElementById('plist').innerHTML =

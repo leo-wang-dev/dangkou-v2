@@ -85,7 +85,8 @@ def seed_legacy_templates(conn) -> None:
 
 
 def _template(row) -> dict:
-    return {'key': row['key'], 'name': row['name'], 'version': row['version'],
+    return {'key': row['key'], 'name': row['name'],
+            'supplier': _safe_col(row, 'supplier') or '', 'version': row['version'],
             'fields': _loads(row['fields_json'], []), 'status': row['status'],
             'storage': row['storage'], 'source_sheet': row['source_sheet'],
             'quote_map': _loads(_safe_col(row, 'quote_map_json'), {})}
@@ -211,9 +212,11 @@ def approve_template(conn, draft: dict, expected_version: int | None = None) -> 
         field_keys = {field['key'] for field in value['fields']}
         quote_map = {**suggest_quote_map(value['fields']),
                      **{name: key for name, key in previous.items() if key in field_keys}}
-        conn.execute('UPDATE category_template SET name=?,version=?,fields_json=?,status=\'approved\','
-                     'storage=?,source_sheet=?,quote_map_json=?,updated_at=datetime(\'now\') WHERE key=?',
-                     (value['name'], version, json.dumps(value['fields'], ensure_ascii=False),
+        conn.execute("UPDATE category_template SET name=?,supplier=COALESCE(NULLIF(?,''),supplier),version=?,"
+                     "fields_json=?,status='approved',"
+                     "storage=?,source_sheet=?,quote_map_json=?,updated_at=datetime('now') WHERE key=?",
+                     (value['name'], str(value.get('supplier') or '')[:40], version,
+                      json.dumps(value['fields'], ensure_ascii=False),
                       value['storage'], value['source_sheet'],
                       json.dumps(quote_map, ensure_ascii=False), value['key']))
     else:
@@ -221,9 +224,10 @@ def approve_template(conn, draft: dict, expected_version: int | None = None) -> 
             raise ValueError('此工单已过期（分类模板已更新），请直接驳回；如需入库请重新发送 Excel')
         version = 1
         quote_map = suggest_quote_map(value['fields'])
-        conn.execute('INSERT INTO category_template(key,name,version,fields_json,status,storage,source_sheet,quote_map_json) '
-                     "VALUES(?,?,?,?, 'approved',?,?,?)",
-                     (value['key'], value['name'], version, json.dumps(value['fields'], ensure_ascii=False),
+        conn.execute('INSERT INTO category_template(key,name,supplier,version,fields_json,status,storage,source_sheet,quote_map_json) '
+                     "VALUES(?,?,?,?,?,'approved',?,?,?)",
+                     (value['key'], value['name'], str(value.get('supplier') or '')[:40], version,
+                      json.dumps(value['fields'], ensure_ascii=False),
                       value['storage'], value['source_sheet'], json.dumps(quote_map, ensure_ascii=False)))
     snapshot = {**value, 'version': version}
     conn.execute('INSERT INTO category_template_version(category_key,version,snapshot_json) VALUES(?,?,?)',

@@ -100,3 +100,20 @@ def test_ai_extract_parsing(monkeypatch):
     out = ai_extract.map_rows(discovered, template)
     assert out and out[0]['data'] == {'m': 'A1', 'p': '9.9'}
     assert out[0]['images'] == []  # 行结构原样保留
+
+
+def test_supplier_and_stats_flow(client):
+    """供应商：PATCH 可改可清；stats 按供应商聚合（口径=对客户可见）。"""
+    t = client.post('/categories', headers=_auth(),
+                    json={'name': '华悦-吹风机', 'fields': [{'label': '型号'}]}).json()
+    client.post(f"/tickets/{t['ticket_id']}/decision",
+                json={'token': t['token'], 'approved': True})
+    key = next(c['key'] for c in client.get('/categories', headers=_auth()).json()['categories']
+               if c['name'] == '华悦-吹风机')
+    r = client.patch(f'/categories/{key}', headers=_auth(), json={'supplier': '华悦电器'})
+    assert r.json()['supplier'] == '华悦电器'
+    st = client.get('/stats/supplier', headers=_auth()).json()
+    g = next(s for s in st['suppliers'] if s['supplier'] == '华悦电器')
+    assert g['total'] == 0 and g['categories'][0]['key'] == key
+    client.patch(f'/categories/{key}', headers=_auth(), json={'supplier': ''})
+    assert client.get('/stats/supplier', headers=_auth()).json()['by'] == 'supplier'

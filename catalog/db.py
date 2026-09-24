@@ -46,6 +46,9 @@ def _migrate(conn):
     inbox_cols = {r[1] for r in conn.execute('PRAGMA table_info(cs_inbox)')}
     if 'next_attempt_at' not in inbox_cols:
         conn.execute("ALTER TABLE cs_inbox ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT '1970-01-01'")
+    cat_cols = {r[1] for r in conn.execute('PRAGMA table_info(category_template)')}
+    if cat_cols and 'supplier' not in cat_cols:
+        conn.execute("ALTER TABLE category_template ADD COLUMN supplier TEXT NOT NULL DEFAULT ''")
     shop_cols = {r[1] for r in conn.execute('PRAGMA table_info(shop_profile)')}
     for field in ('address', 'business_hours', 'shipping_info', 'faq'):
         if field not in shop_cols:
