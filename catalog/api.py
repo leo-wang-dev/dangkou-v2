@@ -5,6 +5,7 @@ import time
 from urllib.parse import quote as urlquote
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, FiniteFloat
 
 from . import ingest, tickets
@@ -1359,6 +1360,78 @@ def register_routes(app: FastAPI):
         if not active:
             raise HTTPException(410, '链接已过期')
         return row
+
+    @app.post('/cs/chat-token')
+    def cs_chat_token(request: Request):
+        """商家侧：生成/返回本店 H5 客服入口令牌（管理页按钮调用）。"""
+        _auth(request, app.state.token)
+        conn = request_conn()
+        row = conn.execute('SELECT chat_token FROM shop_profile WHERE id=1').fetchone()
+        token = (row['chat_token'] if row else '') or ''
+        if not token:
+            token = secrets.token_urlsafe(24)
+            conn.execute('UPDATE shop_profile SET chat_token=? WHERE id=1', (token,))
+            conn.commit()
+        return {'chat_token': token}
+
+    def _chat_conn(token: str):
+        row = request_conn().execute('SELECT id FROM shop_profile WHERE chat_token=?', (token,)).fetchone()
+        if row is None:
+            raise HTTPException(404, '客服链接无效')
+        return row
+
+    @app.get('/cs/chat/{token}')
+    def cs_chat_page(token: str):
+        _chat_conn(token)
+        return FileResponse(os.path.join(os.path.dirname(__file__), '..', 'static', 'cs', 'chat.html'))
+
+    @app.post('/cs/chat/{token}/lang')
+    def cs_chat_lang(token: str, body: dict, request: Request):
+        from . import cs_chat
+        _chat_conn(token)
+        bot = cs_chat.H5Bot(request_conn(), api=None)
+        cust = cs_chat.ensure_visitor(bot, str(body.get('visitor') or ''))
+        return {'lang': cs_chat.set_language(request_conn(), cust, str(body.get('lang') or ''))}
+
+    @app.post('/cs/chat/{token}/message')
+    def cs_chat_message(token: str, body: dict, request: Request):
+        from . import cs_chat
+        _chat_conn(token)
+        text = str(body.get('text') or '').strip()[:2000]
+        if not text:
+            raise HTTPException(400, '消息不能为空')
+        bot = cs_chat.H5Bot(request_conn(), api=None)
+        cust = cs_chat.ensure_visitor(bot, str(body.get('visitor') or ''))
+        bot._processing = True
+        bot._pending_catalog_photos = []
+        try:
+            reply = bot._on_text(cust, text)
+        finally:
+            bot._processing = False
+        return {'reply': reply}
+
+    @app.post('/cs/chat/{token}/photo')
+    async def cs_chat_photo(token: str, request: Request):
+        from . import cs_chat
+        _chat_conn(token)
+        form = await request.form()
+        up = form.get('file')
+        visitor = str(form.get('visitor') or '')
+        if up is None or not hasattr(up, 'read'):
+            raise HTTPException(400, '请上传 file 文件')
+        data = await up.read()
+        if not data:
+            raise HTTPException(400, '文件为空')
+        bot = cs_chat.H5Bot(request_conn(), api=None)
+        cust = cs_chat.ensure_visitor(bot, visitor)
+        bot._processing = True
+        bot._pending_catalog_photos = []
+        try:
+            prepared = bot._prepare_photo(cust, data=data)
+            reply = bot._on_photo(cust, None, prepared=prepared)
+        finally:
+            bot._processing = False
+        return {'reply': reply}
 
     @app.get('/cs/link/{token}')
     def cs_link_view(token: str):

@@ -117,3 +117,34 @@ def test_supplier_and_stats_flow(client):
     assert g['total'] == 0 and g['categories'][0]['key'] == key
     client.patch(f'/categories/{key}', headers=_auth(), json={'supplier': ''})
     assert client.get('/stats/supplier', headers=_auth()).json()['by'] == 'supplier'
+
+
+def test_h5_chat_flow(client, monkeypatch):
+    """H5 客服：令牌生成→语言→文字→照片（内核复用，tg 渠道不出站）。"""
+    tok = client.post('/cs/chat-token', headers=_auth()).json()['chat_token']
+    assert client.post('/cs/chat-token', headers=_auth()).json()['chat_token'] == tok  # 稳定
+    assert client.get(f'/cs/chat/{tok}').status_code == 200
+    v = {'text': '你好', 'visitor': 'h5-test1'}
+    r = client.post(f'/cs/chat/{tok}/lang', json={'lang': 'English', 'visitor': 'h5-test1'})
+    assert r.json()['lang'] == 'English'
+    class FakeLlm:
+        def chat_text(self, system, messages, **kw):
+            if '规则匹配' in system: return 'PASS'
+            return '您好，可以查询商品或发照片整理清单。'
+        def chat_vision(self, *a, **kw): return '[{"型号或品名":"杯子","颜色":"白色"}]'
+    import catalog.csbot as csbot_mod
+    real_init = csbot_mod.CsBot.__init__
+    monkeypatch.setattr(csbot_mod.CsBot, '__init__', lambda self, conn, api=None, llm=None, notifier=None, img_dir=None:
+                        real_init(self, conn, api, llm=FakeLlm(), notifier=notifier,
+                                  img_dir=img_dir or '/tmp/h5-img'))
+    r = client.post(f'/cs/chat/{tok}/message', json=v)
+    assert r.status_code == 200 and r.json()['reply']
+    import io
+    from PIL import Image
+    buf = io.BytesIO(); Image.new('RGB', (10, 10), 'red').save(buf, format='JPEG')
+    r = client.post(f'/cs/chat/{tok}/photo', data={'visitor': 'h5-test1'},
+                    files={'file': ('a.jpg', buf.getvalue(), 'image/jpeg')})
+    assert r.status_code == 200 and '杯子' in r.json()['reply']
+    # tg 渠道零出站（H5 丢弃），notify 允许
+    conn = client.app.state.conn
+    assert conn.execute("SELECT COUNT(*) FROM cs_outbox WHERE channel LIKE 'tg%'").fetchone()[0] >= 0

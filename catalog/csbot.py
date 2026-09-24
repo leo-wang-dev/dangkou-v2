@@ -318,8 +318,9 @@ class CsBot:
 
     # ---------- 拍照整理 ----------
 
-    def _prepare_photo(self, cust, msg):
-        data = self.api.download_photo(msg['photo'])
+    def _prepare_photo(self, cust, msg=None, data=None):
+        if data is None:
+            data = self.api.download_photo(msg['photo'])
         fname = f"{cust['id']}_{secrets.token_hex(6)}.jpg"
         path = os.path.join(self.img_dir, fname)
         open(path, 'wb').write(data)

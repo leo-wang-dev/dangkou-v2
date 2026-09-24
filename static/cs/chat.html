@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>采购助手</title>
+<style>
+  body{font-family:-apple-system,"PingFang SC",sans-serif;margin:0;background:#f5f6f8;color:#222;display:flex;flex-direction:column;height:100vh}
+  header{background:#1677ff;color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px}
+  header b{flex:1;font-size:16px}
+  header button{border:0;border-radius:6px;padding:6px 10px;font-size:13px;cursor:pointer}
+  #log{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+  .msg{max-width:82%;padding:9px 12px;border-radius:12px;font-size:15px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+  .bot{background:#fff;align-self:flex-start;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .me{background:#1677ff;color:#fff;align-self:flex-end}
+  .msg a{color:#1677ff}
+  .msg img{max-width:100%;border-radius:8px;margin-top:6px}
+  form{display:flex;gap:8px;padding:10px;background:#fff;border-top:1px solid #eee}
+  input[type=text]{flex:1;border:1px solid #ddd;border-radius:20px;padding:10px 14px;font-size:15px;outline:none}
+  form button{border:0;border-radius:50%;width:40px;height:40px;font-size:18px;cursor:pointer;background:#1677ff;color:#fff}
+  #cam,#boss{background:#fff;color:#1677ff;border:1px solid #1677ff}
+  #boss{border-radius:20px;width:auto;padding:0 12px;font-size:13px}
+  #tip{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:6px 14px;border-radius:16px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9}
+  .langbar{display:flex;gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid #eee;font-size:13px}
+  .langbar button{border:1px solid #ddd;background:#fff;border-radius:14px;padding:4px 12px;cursor:pointer}
+  .langbar button.on{background:#1677ff;color:#fff;border-color:#1677ff}
+</style>
+</head>
+<body>
+<header><b>🤖 采购助手</b><button id="cam" onclick="document.getElementById('file').click()">📷</button><button id="boss" onclick="send('找老板')">找老板</button></header>
+<div class="langbar" id="langbar" hidden>
+  <span style="align-self:center;color:#888">语言 / Language:</span>
+  <button onclick="pickLang('中文')">中文</button><button onclick="pickLang('English')">English</button>
+</div>
+<div id="log"></div>
+<form onsubmit="event.preventDefault();send()">
+  <input id="text" type="text" placeholder="发消息，或点 📷 拍照整理采购清单" autocomplete="off">
+  <button type="submit">➤</button>
+</form>
+<input id="file" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
+<div id="tip"></div>
+<script>
+const TOKEN = location.pathname.split('/').pop();
+let visitor = localStorage.getItem('h5v');
+if (!visitor) { visitor = 'h5-' + Math.random().toString(36).slice(2, 12); localStorage.setItem('h5v', visitor); }
+const log = document.getElementById('log');
+function bubble(role, text){
+  const d = document.createElement('div');
+  d.className = 'msg ' + (role === 'me' ? 'me' : 'bot');
+  d.textContent = text;
+  // 链接可点（出表回复里的清单链接）
+  if (role !== 'me') { d.innerHTML = d.innerHTML.replace(/(https?:\/\/[^\s）)]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>'); }
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+}
+function tip(t){ const el=document.getElementById('tip'); el.textContent=t; el.style.opacity=1; setTimeout(()=>el.style.opacity=0, 1800); }
+async function send(override){
+  const box = document.getElementById('text');
+  const text = override || box.value.trim();
+  if (!text) return;
+  if (!override) box.value = '';
+  bubble('me', text);
+  try{
+    const r = await fetch(`/cs/chat/${TOKEN}/message`, {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({text, visitor})});
+    const d = await r.json();
+    bubble('bot', d.reply || d.detail || '…');
+  }catch(e){ tip('网络异常，请重试'); }
+}
+async function photo(input){
+  const f = input.files[0]; input.value = '';
+  if (!f) return;
+  bubble('me', '📷 ' + (f.name || '照片'));
+  tip('识别中…');
+  const fd = new FormData(); fd.append('file', f); fd.append('visitor', visitor);
+  try{
+    const r = await fetch(`/cs/chat/${TOKEN}/photo`, {method:'POST', body: fd});
+    const d = await r.json();
+    bubble('bot', d.reply || d.detail || '…');
+  }catch(e){ tip('上传失败，请重试'); }
+}
+async function pickLang(lang){
+  await fetch(`/cs/chat/${TOKEN}/lang`, {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({lang, visitor})});
+  document.getElementById('langbar').hidden = true;
+  bubble('bot', lang === '中文' ? '您好！可以查询商品、发照片整理采购清单，需要联系商家可点右上角「找老板」。'
+    : 'Hello! You can search products or send photos to build a purchase list. Tap "找老板" to reach the owner.');
+}
+(async function init(){
+  // 首访先选语言；老访客直接欢迎
+  const first = !sessionStorage.getItem('h5lang');
+  if (first) { document.getElementById('langbar').hidden = false; }
+  else bubble('bot', '您好，有什么可以帮您？');
+})();
+</script>
+</body>
+</html>

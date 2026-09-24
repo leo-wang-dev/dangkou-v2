@@ -53,6 +53,8 @@ def _migrate(conn):
     for field in ('address', 'business_hours', 'shipping_info', 'faq'):
         if field not in shop_cols:
             conn.execute(f"ALTER TABLE shop_profile ADD COLUMN {field} TEXT NOT NULL DEFAULT ''")
+    if shop_cols and 'chat_token' not in shop_cols:
+        conn.execute("ALTER TABLE shop_profile ADD COLUMN chat_token TEXT NOT NULL DEFAULT ''")
     cust_cols = {r[1] for r in conn.execute('PRAGMA table_info(cs_customer)')}
     if cust_cols and 'lang' not in cust_cols:
         conn.execute("ALTER TABLE cs_customer ADD COLUMN lang TEXT NOT NULL DEFAULT ''")
