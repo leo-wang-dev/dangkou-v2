@@ -274,8 +274,9 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
 
     _page = os.path.join(_ROOT, 'static', 'tool', 'index.html')
 
-    @app.get('/tool')
-    @app.get('/tool/')
+    @app.get('/', include_in_schema=False)
+    @app.get('/tool', include_in_schema=False)
+    @app.get('/tool/', include_in_schema=False)
     def tool_page():
         return FileResponse(_page, headers={'Cache-Control': 'no-cache'})
 
