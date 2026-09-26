@@ -1,6 +1,5 @@
 from unittest.mock import Mock
 from catalog import cs
-from catalog.csbot import CsBot
 from tests.test_release_gates import env,auth
 
 
@@ -17,16 +16,30 @@ def test_shop_facts_require_approval_and_are_answered_verbatim(env):
     assert '老板' in bot._on_text({'id':'a'},'可以月结后发货吗')
 
 
-def test_notification_worker_delivers_merchant_queue(env,monkeypatch,tmp_path):
-    """删C 后出站只剩 notify*：worker 独立进程即可全量消费商家队列。"""
-    conn,_,bot=env
+def test_notification_worker_delivers_merchant_queue(env):
+    """删D 通知合一：notify/notify_file/notify_import 全渠道由同一投递循环消费。"""
+    import json as _json
+    from catalog import notify
+    conn,_,_=env
     conn.execute("INSERT INTO cs_outbox(channel,body) VALUES('notify','merchant message')")
-    conn.commit()
-    sender=Mock()
-    worker=CsBot(conn,None,llm=bot.llm,notifier=sender,img_dir=str(tmp_path))
-    worker.flush_outbox()
-    sender.assert_called_once_with('merchant message')
+    notify.push(3,4,'approval-token',{'categories':['测试品类'],'new':2},conn=conn)
+    notify.push_file('报价单','/tmp/test-quote.xlsx',conn=conn)
+    sent,files=[],[]
+    notify.deliver(conn,notifier=sent.append,file_sender=files.append)
+    assert 'merchant message' in sent                     # notify：原文直发
+    assert any('导入完成' in t and '测试品类' in t for t in sent)   # notify_import：投递时才渲染
+    assert _json.loads(files[0])['file_path']=='/tmp/test-quote.xlsx'
     assert conn.execute('SELECT COUNT(*) FROM cs_outbox WHERE sent=0').fetchone()[0]==0
+
+
+def test_run_notifications_script_is_sole_delivery_loop(env,monkeypatch):
+    """独立通知进程的循环体就是 notify.deliver（不再有任何 bot 侧投递路径）。"""
+    from catalog import notify
+    import scripts.run_notifications as worker
+    calls=[]
+    monkeypatch.setattr(notify,'deliver',lambda conn:calls.append(1))
+    worker.run(env[0],rounds=1)
+    assert calls==[1]
 
 
 def test_index_failure_is_persisted_and_recovers(env,tmp_path,monkeypatch):

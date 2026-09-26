@@ -76,7 +76,7 @@ def run(out, real_model=False):
     model=RecordedModel(out) if real_model else ReplayModel(dataset['cases'],images)
     notices=[]
     photo_dir=(out/'photos').resolve()
-    bot=CsBot(conn,None,llm=model,notifier=lambda text:notices.append(text),img_dir=str(photo_dir))
+    bot=CsBot(conn,None,llm=model,img_dir=str(photo_dir))
     app=FastAPI();app.state.conn=conn;app.state.token='local-test-only';app.state.storage=LocalStorage(str(out/'images'));app.state.callback=None
     register_routes(app)
     results=[]
@@ -118,6 +118,8 @@ def run(out, real_model=False):
             results.append({'photo':case['id'],'elapsed_sec':elapsed,'sha256':hashlib.sha256(images[case['id']]).hexdigest(),'term_checks':checks,'fields':recent})
         for text in ['1 颜色改成黑色','第1条起订量一箱起','你们在哪条街','确认','出表','这些样品有货吗？找老板询价']:
             replies.append(bot._on_text(cust,text))
+        from catalog import notify as notify_mod
+        notify_mod.deliver(conn,notifier=notices.append,file_sender=lambda body:None)   # 通知合一：内核只入队，投递统一走 notify.deliver
         fields=json.loads(conn.execute('SELECT fields_json FROM cs_note WHERE customer_id=? ORDER BY id LIMIT 1',(cust['id'],)).fetchone()[0])
         assert fields['颜色']=='黑色' and fields['起订量']=='一箱起'
         token=conn.execute('SELECT token FROM cs_link WHERE customer_id=?',(cust['id'],)).fetchone()[0]

@@ -1,8 +1,9 @@
 """C端客服内核：拍照整理 + persona 询价 + 红线转人工（TG 传输已拆，2026-09-27 删C）。
 
 入口只剩 H5 直调（catalog/cs_chat.py 的 H5Bot 路由）：_on_text/_on_photo 等
-内核方法由 HTTP 路由直接调用，回复随请求返回；出站仅剩 notify* 渠道（微信
-提醒）。测试直调内核，不打网络。
+内核方法由 HTTP 路由直接调用，回复随请求返回。商家提醒只经 _enqueue 写
+cs_outbox（notify* 渠道），投递由 catalog/notify.deliver（run_notifications
+进程）统一完成——本内核不负责发送。测试直调内核，不打网络。
 """
 import json
 import os
@@ -73,12 +74,11 @@ EDIT_JUDGE_SYSTEM = (
 
 
 class CsBot:
-    def __init__(self, conn, api, llm=None, notifier=None, img_dir=None):
+    def __init__(self, conn, api, llm=None, img_dir=None):
         self.conn = conn
         self.api = api
         from . import llm as _llm
         self.llm = llm or _llm
-        self.notifier = notifier or self._wechat_remind
         self.img_dir = img_dir or os.environ.get('CATALOG_CS_PHOTOS') or os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'cs_photos')
         os.makedirs(self.img_dir, exist_ok=True)
@@ -127,42 +127,10 @@ class CsBot:
         return recorded + '\n\n' + reply
 
     def _enqueue(self, channel, recipient, body):
+        """只写队列；投递统一由 catalog/notify.deliver（run_notifications 进程）完成。"""
         self.conn.execute('INSERT INTO cs_outbox(channel,recipient,body) VALUES(?,?,?)',
                           (channel, recipient, body))
         self._commit()
-
-    def flush_outbox(self):
-        """出站仅剩微信通知渠道（notify/notify_file/notify_import），由 run_notifications 消费。"""
-        rows = self.conn.execute(
-            "SELECT *, next_attempt_at<=datetime('now') AS due FROM cs_outbox "
-            'WHERE sent=0 ORDER BY id').fetchall()
-        blocked = set()
-        for row in rows:
-            # Keep retries isolated by delivery type; a failing channel must not
-            # block the other notifications from being delivered.
-            key = (row['channel'], row['recipient'])
-            if key in blocked:
-                continue
-            if not row['due']:
-                blocked.add(key)
-                continue
-            try:
-                if row['channel'] == 'notify_import':
-                    from .notify import render_import
-                    if self.notifier(render_import(json.loads(row['body']))) is False:
-                        raise RuntimeError('通知未成功')
-                elif row['channel'] == 'notify_file':
-                    self._wechat_file(row['body'])
-                else:
-                    if self.notifier(row['body']) is False:
-                        raise RuntimeError('通知未成功')
-                self.conn.execute('UPDATE cs_outbox SET sent=1,last_error=NULL WHERE id=?', (row['id'],))
-            except Exception as exc:
-                blocked.add(key)
-                self.conn.execute("UPDATE cs_outbox SET attempts=attempts+1,last_error=?, next_attempt_at=datetime('now','+30 seconds') WHERE id=?",
-                                  (type(exc).__name__, row['id']))
-                print(f"[cs-bot] 待发送消息 {row['id']} 失败，已保留重试", flush=True)
-            self.conn.commit()
 
     # ---------- 拍照整理 ----------
 
@@ -700,12 +668,12 @@ class CsBot:
         url = f'{base}/cs/list.html?k={token}'
         self._log(cust['id'], 'assistant', f'[出表] {url}')
         return (f'{summary}\n'
-                f'清单链接（2天内有效，含待确认条目）：\n{url}\n'
+                f'点本页顶部「📋 我的清单」可直接查看、编辑并导出Excel；链接也可保存使用（2天内有效，含待确认条目）：\n{url}\n'
                 + ('当前为本机测试链接，手机无法直接访问。'
                    if urlparse(base).hostname in ('127.0.0.1', 'localhost', '::1')
-                   else '打开可查看、编辑清单并导出Excel。')
+                   else '打开链接同样可查看、编辑清单并导出Excel。')
                 + '\n补档口请用清单序号，例如：清单第1、2条 档口：A档口。'
-                + ('\n草稿已包含在附件中，标为待确认；核对后回复“确认”可标记为已确认。' if drafts else ''))
+                + ('\n清单含待确认条目；核对后回复“确认”可标记为已确认。' if drafts else ''))
 
     # ---------- 基础设施 ----------
 
@@ -736,27 +704,3 @@ class CsBot:
             'INSERT INTO cs_conversation_log(customer_id, role, content) VALUES(?,?,?)',
             (cust_id, role, content))
         self._commit()
-
-    @staticmethod
-    def _wechat_remind(text):
-        """生产：微信推送（复用 catalog-notify 直连发送器）。本地未配 token 时落盘。"""
-        url = os.environ.get('CATALOG_NOTIFY_URL', 'http://127.0.0.1:17606/notify')
-        token = os.environ.get('CATALOG_NOTIFY_TOKEN', '')
-        try:
-            import requests
-            response = requests.post(url, json={'text': text}, timeout=15,
-                          headers={'Authorization': f'Bearer {token}'})
-            response.raise_for_status()
-        except Exception as e:  # noqa: BLE001
-            print(f'[cs-remind] 微信提醒发送失败：{type(e).__name__}，待发送队列保留全文', flush=True)
-            return False
-
-    @staticmethod
-    def _wechat_file(body):
-        import requests
-        url = os.environ.get('CATALOG_NOTIFY_URL', 'http://127.0.0.1:17606/notify').rstrip('/')
-        token = os.environ.get('CATALOG_NOTIFY_TOKEN', '')
-        response = requests.post(url.removesuffix('/notify') + '/notify-file',
-                                 json=json.loads(body), timeout=30,
-                                 headers={'Authorization': f'Bearer {token}'})
-        response.raise_for_status()

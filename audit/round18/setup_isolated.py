@@ -18,7 +18,7 @@ side.update(CATALOG_V2_DB=str(root/'data/catalog.db'),CATALOG_V2_IMG=str(root/'d
  CATALOG_CS_API_URL='http://127.0.0.1:19010',MERCHANT_HUB_ENABLED='0',WECHAT_CUSTOMER_BOT_ENABLED='1',
  WECHAT_MERCHANT_OWNER_IDS='PENDING_MANUAL_LOGIN',WECHAT_RESERVED_TG_BOT_IDS=reserved,
  WECHAT_CUSTOMER_STATE=str(root/'data/customer-runtime'),CATALOG_NOTIFY_URL='http://127.0.0.1:17616/notify',
- CATALOG_NOTIFY_TOKEN=notify,CATALOG_NOTIFY_WORKER='1',TG_PROXY_URL='http://127.0.0.1:17891')
+ CATALOG_NOTIFY_TOKEN=notify)
 (root/'data').mkdir(exist_ok=True)
 if (root/'.env').exists():raise SystemExit('already configured; preserve existing test state')
 envwrite(root/'.env',side)

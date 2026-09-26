@@ -110,7 +110,7 @@ def test_customer_photo_is_scoped_to_own_link(env, tmp_path):
 
 def test_merchant_notifications_and_files_are_durable(env, monkeypatch):
     from catalog import notify
-    conn, _, bot = env
+    conn, _, _ = env
     notify.push(3,4,'approval-token',{'categories':['审计品类'],'new':2},conn=conn)
     notify.push_file('报价单','/tmp/test-quote.xlsx',conn=conn)
     rows = conn.execute('SELECT * FROM cs_outbox ORDER BY id').fetchall()
@@ -119,12 +119,13 @@ def test_merchant_notifications_and_files_are_durable(env, monkeypatch):
     response.raise_for_status.side_effect = RuntimeError('500')
     post = Mock(return_value=response)
     monkeypatch.setattr('requests.post',post)
-    bot.flush_outbox()
-    assert '导入完成' in bot.notifier.call_args.args[0]
+    notify.deliver(conn)   # 引擎桥 HTTP 失败 → 全渠道留队重试（默认发送器走 catalog-notify 桥）
+    assert '导入完成' in post.call_args_list[0].kwargs['json']['text']   # notify_import 投递时才渲染
     assert conn.execute("SELECT sent FROM cs_outbox WHERE channel='notify_file'").fetchone()[0] == 0
     assert json.loads(rows[1]['body'])['file_path'] == '/tmp/test-quote.xlsx'
     response.raise_for_status.side_effect = None
     conn.execute("UPDATE cs_outbox SET next_attempt_at=datetime('now')")
     conn.commit()
-    bot.flush_outbox()
+    notify.deliver(conn)
     assert conn.execute("SELECT sent FROM cs_outbox WHERE channel='notify_file'").fetchone()[0] == 1
+    assert conn.execute('SELECT COUNT(*) FROM cs_outbox WHERE sent=0').fetchone()[0] == 0

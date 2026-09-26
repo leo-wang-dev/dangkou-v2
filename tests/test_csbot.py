@@ -51,9 +51,7 @@ class FakeLlm:
 @pytest.fixture()
 def bot(conn):
     llm = FakeLlm()
-    notified = []
-    b = CsBot(conn, None, llm=llm, notifier=notified.append)
-    b.notified = notified
+    b = CsBot(conn, None, llm=llm)
     # H5 路由同款预置：客户 tg_id 固定 100，语言预置“中文”，用例只关心业务行为。
     from catalog import cs_i18n
     b._ensure_customer({'id': 100, 'username': 'buyer'})
@@ -259,10 +257,12 @@ def test_transfer_escalates_with_rule_citation(bot, conn, cust):
     reply = bot._on_text(cust, '30个多少钱')
     # 客户侧：顶话术，不硬答
     assert '老板' in reply
-    # 商家侧：微信提醒含客户原话+红线原文（内核不自动外发，flush 才投递）
-    bot.flush_outbox()
-    assert len(bot.notified) == 1
-    remind = bot.notified[0]
+    # 商家侧：微信提醒含客户原话+红线原文（内核只入队，投递统一走 notify.deliver）
+    from catalog import notify
+    notified = []
+    notify.deliver(conn, notifier=notified.append, file_sender=lambda body: None)
+    assert len(notified) == 1
+    remind = notified[0]
     assert '30个多少钱' in remind and '数量少于50的转人工' in remind
 
 

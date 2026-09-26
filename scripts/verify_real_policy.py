@@ -33,7 +33,7 @@ def run(out):
    {'key':'price','label':'价格','type':'money','visibility':'internal','searchable':False,'role':'price','required':False}]})
   dynamic_catalog.upsert_approved_products(conn,'verify_cat',[{'id':'p1','inner_code':'TEST-1','data':{'model':'TEST-01','price':'8'},'cs_visible':1}])
   conn.commit()
-  bot=CsBot(conn,None,llm=llm,notifier=lambda _:None,img_dir=str(out/'photos'))
+  bot=CsBot(conn,None,llm=llm,img_dir=str(out/'photos'))
   started=time.monotonic()
   try:
    reply=bot._on_text({'id':'buyer'},text)

@@ -16,10 +16,21 @@ class H5Bot(CsBot):
 
 def ensure_visitor(bot: H5Bot, visitor: str) -> dict:
     """访客 id（页面 localStorage 生成）→ 稳定 customer 行。"""
+    return bot._ensure_customer({'id': normalize_visitor(visitor)})
+
+
+def normalize_visitor(visitor: str) -> str:
+    """页面 visitor 原始串 → cs_customer.tg_id 同一口径（ensure_visitor 的只读半段）。"""
     visitor = ''.join(ch for ch in str(visitor or '') if ch.isalnum() or ch == '-')[:40]
     if not visitor.startswith('h5-'):
         visitor = 'h5-' + (visitor or secrets.token_hex(6))
-    return bot._ensure_customer({'id': visitor})
+    return visitor
+
+
+def lookup_visitor(conn, visitor: str):
+    """只读解析访客 → customer 行（不存在返回 None，不落库；GET 清单令牌用）。"""
+    return conn.execute('SELECT * FROM cs_customer WHERE tg_id=?',
+                        (normalize_visitor(visitor),)).fetchone()
 
 
 def set_language(conn, cust: dict, lang: str) -> str:

@@ -23,22 +23,22 @@ python3 -m venv .venv
 .venv/bin/python scripts/preflight.py
 umask 077
 # Stop writers before creating a consistent archive of existing data and WAL.
+# dangkou-cs ran the deleted TG poller (scripts/run_cs_bot.py); stop and retire it.
 for service in dangkou2 dangkou-cs dangkou-notify dangkou-index; do
   if systemctl is-active --quiet "$service"; then sudo systemctl stop "$service"; fi
 done
+sudo systemctl disable --now dangkou-cs >/dev/null 2>&1 || true
 if [ -d data ]; then
   tar -czf "$HOME/dangkou-backups/data-$(date +%Y%m%d-%H%M%S).tgz" data
 fi
-for pair in 'dangkou2:sidecar' 'dangkou-cs:bot' 'dangkou-notify:notifications' 'dangkou-index:index'; do
+for pair in 'dangkou2:sidecar' 'dangkou-notify:notifications' 'dangkou-index:index'; do
   name=${pair%:*}; role=${pair#*:}
   if [ "$role" = sidecar ]; then
     command="$HOME/dangkou-v2/.venv/bin/python -m uvicorn catalog.main:app --host 127.0.0.1 --port 8890"
   elif [ "$role" = index ]; then
     command="$HOME/dangkou-v2/.venv/bin/python scripts/rebuild_search_index.py"
-  elif [ "$role" = notifications ]; then
-    command="$HOME/dangkou-v2/.venv/bin/python scripts/run_notifications.py"
   else
-    command="$HOME/dangkou-v2/.venv/bin/python scripts/run_cs_bot.py"
+    command="$HOME/dangkou-v2/.venv/bin/python scripts/run_notifications.py"
   fi
   sudo tee "/etc/systemd/system/$name.service" >/dev/null <<EOF
 [Unit]
@@ -48,7 +48,6 @@ After=network-online.target
 User=$(id -un)
 WorkingDirectory=$HOME/dangkou-v2
 EnvironmentFile=$HOME/dangkou-v2/.env
-Environment=CATALOG_NOTIFY_WORKER=1
 ExecStart=$command
 Restart=on-failure
 RestartSec=5
@@ -57,7 +56,7 @@ WantedBy=multi-user.target
 EOF
 done
 sudo systemctl daemon-reload
-sudo systemctl enable --now dangkou2 dangkou-cs dangkou-notify dangkou-index
+sudo systemctl enable --now dangkou2 dangkou-notify dangkou-index
 curl --fail --silent http://127.0.0.1:8890/health
 printf '\nCode deployed. Configure HTTPS reverse proxy and register engine-plugin/catalog-v2.mjs using the installed engine configuration.\n'
 REMOTE

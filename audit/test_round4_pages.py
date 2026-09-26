@@ -20,7 +20,7 @@ def test_customer_real_photos_edit_and_download(page, site):
     dataset=json.loads((ROOT/'tests/fixtures/customer_photos.json').read_text())
     images={c['id']:(Path(dataset['source_dir'])/c['file']).read_bytes() for c in dataset['cases']}
     model=ReplayModel(dataset['cases'],images)
-    bot=CsBot(site['conn'],None,llm=model,notifier=Mock(),img_dir=str(site['photo'].parent))
+    bot=CsBot(site['conn'],None,llm=model,img_dir=str(site['photo'].parent))
     cust=bot._ensure_customer({'id':'987'})
     for case in dataset['cases']:
         bot._on_photo(cust,None,prepared=bot._prepare_photo(cust,images[case['id']]))

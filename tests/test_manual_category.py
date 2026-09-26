@@ -122,8 +122,8 @@ def test_h5_chat_flow(client, monkeypatch):
         def chat_vision(self, *a, **kw): return '[{"型号或品名":"杯子","颜色":"白色"}]'
     import catalog.csbot as csbot_mod
     real_init = csbot_mod.CsBot.__init__
-    monkeypatch.setattr(csbot_mod.CsBot, '__init__', lambda self, conn, api=None, llm=None, notifier=None, img_dir=None:
-                        real_init(self, conn, api, llm=FakeLlm(), notifier=notifier,
+    monkeypatch.setattr(csbot_mod.CsBot, '__init__', lambda self, conn, api=None, llm=None, img_dir=None:
+                        real_init(self, conn, api, llm=FakeLlm(),
                                   img_dir=img_dir or '/tmp/h5-img'))
     r = client.post(f'/cs/chat/{tok}/message', json=v)
     assert r.status_code == 200 and r.json()['reply']
@@ -136,3 +136,11 @@ def test_h5_chat_flow(client, monkeypatch):
     # tg 渠道已随删C 拆除：内核永不写 tg* 渠道
     conn = client.app.state.conn
     assert conn.execute("SELECT COUNT(*) FROM cs_outbox WHERE channel LIKE 'tg%'").fetchone()[0] == 0
+    # 我的清单抽屉：出表后按访客取最近 cs_link token；他人/未出表拿空串
+    r = client.post(f'/cs/chat/{tok}/message', json={'text': '出表', 'visitor': 'h5-test1'})
+    assert '我的清单' in r.json()['reply']
+    token = conn.execute("SELECT token FROM cs_link WHERE customer_id=("
+                         "SELECT id FROM cs_customer WHERE tg_id='h5-test1')").fetchone()[0]
+    r = client.get(f'/cs/chat/{tok}/list-token', params={'visitor': 'h5-test1'})
+    assert r.status_code == 200 and r.json()['token'] == token
+    assert client.get(f'/cs/chat/{tok}/list-token', params={'visitor': 'someone-else'}).json()['token'] == ''

@@ -24,10 +24,20 @@
   .langbar{display:flex;gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid #eee;font-size:13px}
   .langbar button{border:1px solid #ddd;background:#fff;border-radius:14px;padding:4px 12px;cursor:pointer}
   .langbar button.on{background:#1677ff;color:#fff;border-color:#1677ff}
+  #drawer{position:fixed;inset:0;z-index:20}
+  #drawer .mask{position:absolute;inset:0;background:rgba(0,0,0,.35)}
+  #drawer aside{position:absolute;left:0;right:0;top:12%;bottom:0;background:#f5f6f8;
+                border-radius:12px 12px 0 0;display:flex;flex-direction:column;overflow:hidden}
+  .dhead{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#fff;border-bottom:1px solid #eee}
+  .dhead b{flex:1;font-size:15px}
+  .dhead button{border:0;background:#1677ff;color:#fff;border-radius:6px;padding:6px 10px;font-size:13px;cursor:pointer}
+  .dhead button.ghost{background:#fff;color:#1677ff;border:1px solid #1677ff}
+  #dempty{margin:24px 16px;padding:32px 16px;text-align:center;color:#999;background:#fff;border-radius:8px}
+  #listframe{flex:1;border:0;width:100%}
 </style>
 </head>
 <body>
-<header><b>🤖 采购助手</b><button id="cam" onclick="document.getElementById('file').click()">📷</button><button id="boss" onclick="send('找老板')">找老板</button></header>
+<header><b>🤖 采购助手</b><button id="mylist" onclick="openList()">📋 我的清单</button><button id="cam" onclick="document.getElementById('file').click()">📷</button><button id="boss" onclick="send('找老板')">找老板</button></header>
 <div class="langbar" id="langbar" hidden>
   <span style="align-self:center;color:#888">语言 / Language:</span>
   <button onclick="pickLang('中文')">中文</button><button onclick="pickLang('English')">English</button>
@@ -39,6 +49,14 @@
 </form>
 <input id="file" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
 <div id="tip"></div>
+<div id="drawer" hidden>
+  <div class="mask" onclick="closeList()"></div>
+  <aside>
+    <div class="dhead"><b>📋 我的清单</b><button class="ghost" onclick="openList()">↻ 刷新</button><button onclick="closeList()">✕ 关闭</button></div>
+    <div id="dempty" hidden>还没有清单——在对话里发照片整理条目，然后说「出表」生成清单。</div>
+    <iframe id="listframe" title="我的采购清单"></iframe>
+  </aside>
+</div>
 <script>
 const TOKEN = location.pathname.split('/').pop();
 let visitor = localStorage.getItem('h5v');
@@ -85,6 +103,24 @@ async function pickLang(lang){
   bubble('bot', lang === '中文' ? '您好！可以查询商品、发照片整理采购清单，需要联系商家可点右上角「找老板」。'
     : 'Hello! You can search products or send photos to build a purchase list. Tap "找老板" to reach the owner.');
 }
+// 我的清单抽屉：后端按访客取最近 cs_link token，iframe 复用 list.html 的表格/编辑/导出能力
+async function openList(){
+  const drawer = document.getElementById('drawer');
+  drawer.hidden = false;
+  document.getElementById('dempty').hidden = true;
+  const frame = document.getElementById('listframe');
+  frame.src = 'about:blank';
+  try{
+    const r = await fetch(`/cs/chat/${TOKEN}/list-token?visitor=${encodeURIComponent(visitor)}`);
+    const d = await r.json();
+    if (d.token){
+      frame.src = `/cs/list.html?k=${encodeURIComponent(d.token)}`;
+    } else {
+      document.getElementById('dempty').hidden = false;
+    }
+  }catch(e){ tip('网络异常，请重试'); }
+}
+function closeList(){ document.getElementById('drawer').hidden = true; }
 (async function init(){
   // 首访先选语言；老访客直接欢迎
   const first = !sessionStorage.getItem('h5lang');

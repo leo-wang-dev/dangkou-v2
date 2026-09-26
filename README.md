@@ -18,7 +18,6 @@ cp .env.example .env
 
 ```bash
 .venv/bin/python -m uvicorn catalog.main:app --host 127.0.0.1 --port 8890
-CATALOG_NOTIFY_WORKER=1 .venv/bin/python scripts/run_cs_bot.py
 .venv/bin/python scripts/run_notifications.py
 .venv/bin/python scripts/rebuild_search_index.py
 ```
@@ -39,7 +38,7 @@ CATALOG_NOTIFY_WORKER=1 .venv/bin/python scripts/run_cs_bot.py
 
 导入 `source_key` 是稳定的供应商/商品表来源标识，同一来源重导使用相同值；不同来源隔离。未提供时使用文件名，因此不同供应商同名文件必须显式区分来源。同型号多行按行匹配，不再覆盖成一行；仅换图片按文件内容识别。新导入工单保存来源商品快照，批准前校验；过期工单返回 409，需驳回后重新导入。逐行审批会更新本工单快照，不影响下一行操作。既有来源按 import_doc.filename 迁移；没有来源的手工商品不会被导入下架。
 
-TG 批次先存 `cs_inbox` 再推进 offset，处理成功与回复入队一起提交。`cs_outbox` 保存完整回复和转人工/红线审批通知，以及 B 端导入提醒和报价文件任务，失败后重试；同客户后续回复不越过失败的前一条。仅启动一个 bot 进程（入口带文件锁）。发送后、标记成功前的极短崩溃窗口仍可能重复投递，不能宣称网络发送 exactly-once。消息目前串行处理，失败按客户顺序退避重试，读取积压采用有界批次；尚未做真实负载验收。设置 `CATALOG_NOTIFY_WORKER=1` 后由独立通知进程消费商家消息，bot 只发 TG；必须同时启动通知进程。导入通知只持久化任务数据，发送时拼装链接。独立索引进程重试失败嵌入，失败次数与下次执行时间持久化。
+TG 批次先存 `cs_inbox` 再推进 offset，处理成功与回复入队一起提交。`cs_outbox` 保存转人工/红线审批通知，以及 B 端导入提醒和报价文件任务，失败后重试；同客户后续回复不越过失败的前一条。删C/删D 后 `cs_outbox` 只剩 notify/notify_file/notify_import 渠道，由 `scripts/run_notifications.py` 独立进程统一投递（catalog-notify 引擎桥是唯一微信直发通道）；客服内核（H5 路由）只写队列不发送，也没有分区消费者开关。通知进程入口带文件锁，同库仅一个实例。发送后、标记成功前的极短崩溃窗口仍可能重复投递，不能宣称网络发送 exactly-once。消息目前串行处理，失败按（渠道,收件人）退避重试；尚未做真实负载验收。导入通知只持久化任务数据，发送时拼装链接。独立索引进程重试失败嵌入，失败次数与下次执行时间持久化。
 
 ## 验证
 
@@ -89,7 +88,7 @@ docker build --build-arg CLAUDE_CODE_VERSION=2.1.236 -f deploy/Dockerfile.agent 
 
 通过商家插件 `shop_contact_set` 补充 `shop_name`（档口名称）、`stall_no`（档口号）、`contact_name`、老板 TG/微信等资料，并提交 `tg_bot_id`（机器人数字 ID）和可选 `tg_bot_username`。所有修改仍需商家审批；`tg_bot_id` 不是老板账号，也不是 Token。已经绑定的 bot ID 不可直接替换，避免复用另一机器人的消息 offset。两个并行工单修改同一字段时，过期工单不能覆盖新值。
 
-商家 API 与 `scripts/run_cs_bot.py` 必须设置同一个绝对路径 `CATALOG_V2_DB`；服务鉴权与 bot Token 留在本机 `.env`，不写入店铺资料。bot 启动会调用 `getMe` 核对审批过的 bot ID；档口名称/绑定缺失或 ID 不一致时拒绝收发。商家 API 不依赖这项启动校验，仍可先启动补资料、审批。
+商家 API 与 `scripts/run_notifications.py`（唯一出站投递进程）必须设置同一个绝对路径 `CATALOG_V2_DB`；服务鉴权令牌留在本机 `.env`，不写入店铺资料。
 
 服务器客户端还必须设置 `CATALOG_CS_API_URL` 指向原档口 API，并与 API 共用 `CATALOG_CS_SERVICE_TOKEN`（独立客户只读密钥）。`GET /cs/catalog` 和 `POST /cs/catalog/search` 仅提供已审批、对客可见的商品与匹配候选，过滤价格、历史阶梯价和内部备注；该密钥不能访问商家管理接口。商品目录、型号查询、采购笔记补全和照片找货走此接口，启动时再次核验接口返回的档口身份。接口失败不能回退到旧副本，也不能编造商品资料。
 

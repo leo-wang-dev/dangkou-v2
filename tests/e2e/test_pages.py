@@ -161,6 +161,36 @@ def test_list_page_click_edit_export(server):
         browser.close()
 
 
+def test_chat_page_list_drawer(server):
+    """删D 清单并入 H5：聊天页「📋 我的清单」抽屉 iframe 呈现 list.html 表格，导出走 /export.xlsx。"""
+    from playwright.sync_api import sync_playwright, expect
+    base, db_path = server
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE shop_profile SET chat_token='e2echattoken' WHERE id=1")
+    conn.execute("INSERT OR IGNORE INTO cs_customer(id,tg_id) VALUES('c3','h5-drawer1')")
+    conn.execute("INSERT INTO cs_note(customer_id,photo,fields_json,status) VALUES('c3','',?,'confirmed')",
+                 (json.dumps({'型号或品名': '抽屉测试杯', '价格': '9.9'}, ensure_ascii=False),))
+    conn.execute("INSERT INTO cs_link(token,customer_id) VALUES('e2edrawer','c3')")
+    conn.commit()
+    conn.close()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.add_init_script("localStorage.setItem('h5v','drawer1')")   # 访客 h5-drawer1 → c3
+        page.goto(f'{base}/cs/chat/e2echattoken')
+        page.get_by_role('button', name='📋 我的清单').click()
+        frame = page.frame_locator('#listframe')
+        expect(frame.locator('td[data-field="型号或品名"]')).to_have_text('抽屉测试杯')
+        with page.expect_download() as dl:      # 抽屉内导出沿用 /cs/link/{token}/export.xlsx
+            frame.get_by_role('button', name='⬇️ 导出 Excel').click()
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(open(dl.value.path(), 'rb').read()))
+        assert '抽屉测试杯' in str(list(wb.active.values))
+        page.get_by_role('button', name='✕ 关闭').click()
+        assert not page.locator('#listframe').is_visible()
+        browser.close()
+
+
 def test_direct_delist_disappears_from_management_page(server):
     from playwright.sync_api import sync_playwright
     base, path = server

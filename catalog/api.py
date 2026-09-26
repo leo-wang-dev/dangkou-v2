@@ -1214,6 +1214,19 @@ def register_routes(app: FastAPI):
             bot._processing = False
         return {'reply': reply}
 
+    @app.get('/cs/chat/{token}/list-token')
+    def cs_chat_list_token(token: str, visitor: str = ''):
+        """H5「我的清单」抽屉：返回该访客最近一条未过期 cs_link 的 token（无则空串）。"""
+        from . import cs_chat
+        _chat_conn(token)
+        cust = cs_chat.lookup_visitor(request_conn(), visitor)
+        if cust is None:
+            return {'token': ''}
+        row = request_conn().execute(
+            "SELECT token FROM cs_link WHERE customer_id=? AND datetime(expires_at)>datetime('now') "
+            'ORDER BY rowid DESC LIMIT 1', (cust['id'],)).fetchone()
+        return {'token': row['token'] if row else ''}
+
     @app.get('/cs/link/{token}')
     def cs_link_view(token: str):
         from .shop_link import customer_fields

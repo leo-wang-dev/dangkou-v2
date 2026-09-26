@@ -51,7 +51,7 @@ def env(tmp_path, monkeypatch):
     llm = Mock()
     llm.chat_vision.return_value = '[{"型号或品名":"A","价格":"12"}]'
     llm.chat_text.return_value = '<<PASS>>'
-    bot = CsBot(conn, api, llm=llm, notifier=Mock(), img_dir=str(tmp_path))
+    bot = CsBot(conn, api, llm=llm, img_dir=str(tmp_path))
     # H5 路由同款预置：买家 tg_id 固定 100/200，预置“中文”直接进入业务分支。
     from catalog import cs_i18n
     for tg in (100, 200):
@@ -190,9 +190,10 @@ def test_service_write_auth_is_enabled(env):
 
 
 def test_wechat_http_failure_is_detected(env, monkeypatch, capsys):
+    from catalog import notify
     response = Mock(status_code=500)
     response.raise_for_status.side_effect = RuntimeError('500 notification rejected')
     monkeypatch.setattr('requests.post', Mock(return_value=response))
-    CsBot._wechat_remind('offline audit notice')
+    notify.wechat_remind('offline audit notice')   # 删D：微信直发统一在 catalog/notify
     output = capsys.readouterr().out
     assert response.raise_for_status.called or '失败' in output, 'HTTP 500 is silently treated as successful notification'
