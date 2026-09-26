@@ -11,35 +11,20 @@ import json
 import re
 
 # 客户可能用来指定语言的说法 → 统一语言名（显示 + 提示词用）。
+# 只支持中文和 English 两组（2026-09 删A：其余语言候选砍掉，翻译机制保留）。
 _LANGUAGE_ALIASES = [
     (('中文', '汉语', '汉语拼音', 'zh', 'chinese', 'mandarin'), '中文'),
     (('english', 'en', '英语', '英文', '英文英语'), 'English'),
-    (('spanish', 'es', '西班牙语', 'español'), 'Español'),
-    (('french', 'fr', '法语', 'français'), 'Français'),
-    (('russian', 'ru', '俄语', 'русский'), 'Русский'),
-    (('portuguese', 'pt', '葡萄牙语', 'português'), 'Português'),
-    (('arabic', 'ar', '阿拉伯语', 'العربية'), 'العربية'),
-    (('japanese', 'ja', 'jp', '日语', '日本語'), '日本語'),
-    (('korean', 'ko', 'kr', '韩语', '朝鲜语', '한국어'), '한국어'),
-    (('german', 'de', '德语', 'deutsch'), 'Deutsch'),
-    (('italian', 'it', '意大利语', 'italiano'), 'Italiano'),
-    (('turkish', 'tr', '土耳其语', 'türkçe'), 'Türkçe'),
-    (('vietnamese', 'vi', '越南语', 'tiếng việt'), 'Tiếng Việt'),
-    (('thai', 'th', '泰语', 'ไทย'), 'ไทย'),
-    (('indonesian', 'id', '印尼语', '印尼', 'bahasa indonesia'), 'Bahasa Indonesia'),
-    (('hindi', 'hi', '印地语'), 'हिन्दी'),
 ]
 
 LANGUAGE_PROMPT = (
     '欢迎使用本店客服机器人！请选择您接下来对话使用的语言：\n'
-    'Welcome! Please choose your language (reply with its name, e.g. 中文 / English / Español):\n'
-    '中文 · English · Español · Français · Русский · Português · العربية · 日本語 · 한국어 · '
-    'Deutsch · Italiano · Türkçe · Tiếng Việt · ไทย · Bahasa Indonesia · हिन्दी\n'
-    '也可以直接回复其他语言名称（any other language name works too）。'
+    'Welcome! Please choose your language (reply with its name, e.g. 中文 / English):\n'
+    '中文 · English'
 )
 
 _SWITCH_WORDS = ('切换语言', '换语言', '换个语言', '转语言', 'switch language', 'change language')
-# 换语言的自然说法：动词 + （到/成/为）+ 语言名，如“我想转英文”“切换成 Español”。
+# 换语言的自然说法：动词 + （到/成/为）+ 语言名，如“我想转英文”“切换成 English”。
 _SWITCH_VERBS = r'切换|换|转|改|说|讲|用|切|回到|switch to|change to|speak'
 
 

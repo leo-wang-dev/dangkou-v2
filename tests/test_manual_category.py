@@ -67,14 +67,12 @@ def test_duplicate_name_conflicts(client):
     assert r.status_code == 409
 
 
-def test_ai_mapping_and_inference_fallback(client, monkeypatch):
-    """AI 不可用时模板/商品阶段回落代码推断，导入不硬失败。"""
+def test_ai_inference_fallback(client, monkeypatch):
+    """AI 不可用时模板阶段回落代码推断，导入不硬失败（商品阶段已无 AI 映射）。"""
     from catalog import ai_extract
     monkeypatch.setattr(ai_extract, '_enabled', lambda: False)
     assert ai_extract.infer_field_attributes([{'title': 'S', 'fields': [{'label': '型号'}]}]) == {}
-    assert ai_extract.map_rows({'fields': [{'key': 'model', 'label': '型号'}],
-                                'rows': [{'data': {'model': 'A1'}}]},
-                               {'fields': [{'key': 'm', 'label': '型号', 'role': 'spec'}]}) is None
+    assert ai_extract.guess_supplier('华悦报价表.xlsx', ['Sheet1']) == ''
 
 
 def test_ai_extract_parsing(monkeypatch):
@@ -90,16 +88,6 @@ def test_ai_extract_parsing(monkeypatch):
     attrs = ai_extract.infer_field_attributes(sheets)
     assert attrs['Sheet1']['产品型号']['role'] == 'model'
     assert attrs['Sheet1']['报价']['type'] == 'number'
-
-    discovered = {'fields': [{'key': 'src1', 'label': '货号'}, {'key': 'src2', 'label': '单价'}],
-                  'rows': [{'data': {'src1': 'A1', 'src2': '9.9'}, 'images': []}]}
-    template = {'fields': [{'key': 'm', 'label': '型号', 'role': 'model'},
-                           {'key': 'p', 'label': '价格', 'role': 'price'}]}
-    mapping = '[{"row":0,"values":{"型号":"A1","价格":"9.9"}}]'
-    monkeypatch.setattr(ai_extract.llm, 'chat_text', lambda *a, **kw: mapping)
-    out = ai_extract.map_rows(discovered, template)
-    assert out and out[0]['data'] == {'m': 'A1', 'p': '9.9'}
-    assert out[0]['images'] == []  # 行结构原样保留
 
 
 def test_supplier_and_stats_flow(client):

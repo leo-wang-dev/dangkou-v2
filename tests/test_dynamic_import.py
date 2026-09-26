@@ -47,7 +47,9 @@ def test_one_approval_atomically_creates_template_and_all_rows(conn, tmp_path):
     assert template['name'] == '吹风机' and template['version'] == 1
     assert len(rows) == 4
     model_key = next(field['key'] for field in template['fields'] if field['role'] == 'model')
-    assert [row['data'][model_key] for row in rows] == ['戴森款HD15', '戴森款HD15', '戴森款HD16', '']
+    # 子代理产出不带物理行号（source_row=None），列表顺序不再保证=Sheet 顺序，比对型号集合。
+    assert sorted(row['data'][model_key] for row in rows) == sorted(
+        ['戴森款HD15', '戴森款HD15', '戴森款HD16', ''])
     assert all(row['cs_visible'] == 1 for row in rows)
 
 

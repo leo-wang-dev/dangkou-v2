@@ -1,4 +1,4 @@
-"""动态分类的子代理（Claude/Docker）商品解析：产出形状、回落、提示词。"""
+"""动态分类的子代理（Claude/Docker）商品解析：产出形状、失败报错、提示词。"""
 import json
 
 import pytest
@@ -54,13 +54,17 @@ def test_agent_rows_shape_and_image_main_prepend(tmp_path, monkeypatch):
     assert set(row) >= {'data', 'images', 'source_row', 'row_fingerprint'}
 
 
-def test_agent_failure_falls_back(monkeypatch):
+def test_agent_failure_returns_none_and_import_raises(conn, tmp_path, monkeypatch):
+    """子代理失败/产出空 → _agent_rows 返回 None，导入直接报错（删A 后无代码回落）。"""
     def boom(*a, **kw):
         raise RuntimeError('docker 不可用')
     monkeypatch.setattr(agent, 'parse_dynamic', boom)
     assert dynamic_import._agent_rows(TEMPLATE, '/tmp/fake.xlsx', '/tmp') is None
     monkeypatch.setattr(agent, 'parse_dynamic', lambda *a, **kw: {'products': []})
     assert dynamic_import._agent_rows(TEMPLATE, '/tmp/fake.xlsx', '/tmp') is None
+    with pytest.raises(ValueError, match='解析服务暂不可用'):
+        dynamic_import.build_ticket_payload(
+            conn, blowdryer_fixture(tmp_path), tmp_path / 'work', source_key='vendor-a', doc_id=1)
 
 
 def test_legacy_payload_prefers_agent_rows(conn, tmp_path, monkeypatch):
@@ -77,9 +81,14 @@ def test_legacy_payload_prefers_agent_rows(conn, tmp_path, monkeypatch):
     assert 'T821' in models
 
 
-def test_legacy_payload_agent_down_falls_back_to_discovery(conn, tmp_path, monkeypatch):
+def test_legacy_payload_agent_down_raises(conn, tmp_path, monkeypatch):
+    """一阶段旧路径：子代理失败即报错，不再回落 discover 行直落。"""
     from catalog.dynamic_import import build_ticket_payload
     monkeypatch.setattr(agent, 'parse_dynamic', lambda *a, **kw: (_ for _ in ()).throw(RuntimeError('down')))
-    payload = build_ticket_payload(conn, blowdryer_fixture(tmp_path), tmp_path / 'work',
-                                   source_key='vendor-a', doc_id=1)
-    assert len(payload['sheets'][0]['drafts']['new']) >= 1
+    with pytest.raises(ValueError, match='解析服务暂不可用'):
+        build_ticket_payload(conn, blowdryer_fixture(tmp_path), tmp_path / 'work',
+                             source_key='vendor-a', doc_id=1)
+    monkeypatch.setattr(agent, 'parse_dynamic', lambda *a, **kw: {'vendor': None, 'products': []})
+    with pytest.raises(ValueError, match='解析服务暂不可用'):
+        build_ticket_payload(conn, blowdryer_fixture(tmp_path), tmp_path / 'work2',
+                             source_key='vendor-a', doc_id=1)

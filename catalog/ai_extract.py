@@ -1,17 +1,15 @@
 """LLM 参与的 Excel 理解（动态分类导入）。
 
 分工原则：结构（Sheet/表头/单元格值/图片锚点）由代码读取，保证值逐字忠实；
-AI 只做语义判断——表头字段属性推断（模板阶段）与 源行列值→模板字段对号入座
-（商品阶段，兼容列名对不上、规格跨列等非标准表）。
-AI 调用失败一律返回空/None，调用方回落代码推断，导入不因模型故障硬失败。
+AI 只做模板阶段的语义判断——表头字段属性推断与供应商推断。
+商品阶段解析只走子代理（见 catalog/agent.py），本模块不再参与。
+AI 调用失败一律返回空结果，调用方回落代码推断，导入不因模型故障硬失败。
 """
 import json
 import os
 import re
 
 from . import config, llm
-
-_CHUNK = 40  # 单次请求的行数上限，防止大表超上下文
 
 _ROLES = ('model', 'image', 'sequence', 'price', 'cost', 'stock', 'note', 'spec')
 
@@ -94,72 +92,6 @@ def apply_field_attributes(sheets: list[dict], attrs: dict) -> None:
             override = by_label.get(field.get('label'))
             if override:
                 field.update(override)
-
-
-def map_rows(discovered: dict, template: dict) -> list[dict] | None:
-    """商品阶段：AI 把源行列值对号入座到模板字段。
-
-    返回与 _map_rows_to_template 同构的行列表；失败返回 None（调用方回落
-    代码标签匹配）。行结构（图片、行号、指纹）原样保留，只重排 data 的键。
-    """
-    if not _enabled():
-        return None
-    source_fields = [f for f in discovered.get('fields', []) if f.get('label')]
-    label_of = {f['key']: f['label'] for f in source_fields}
-    target_fields = [f for f in template.get('fields', []) if f.get('role') != 'image']
-    rows = discovered.get('rows') or []
-    if not rows or not target_fields:
-        return None
-    mapped = []
-    for start in range(0, len(rows), _CHUNK):
-        batch = rows[start:start + _CHUNK]
-        cells = []
-        for i, row in enumerate(batch):
-            data = row.get('data') or {}
-            cells.append({'row': start + i,
-                          'cells': {label_of[key]: value for key, value in data.items()
-                                    if key in label_of and str(value or '').strip()}})
-        out = _ask_mapping(target_fields, cells)
-        if out is None:
-            return None
-        by_index = {i: {} for i in range(len(batch))}
-        for item in out:
-            try:
-                idx = int(item.get('row'))
-            except (TypeError, ValueError):
-                continue
-            if idx not in by_index or not isinstance(item.get('values'), dict):
-                continue
-            by_index[idx] = {str(k): v for k, v in item['values'].items()
-                             if v is not None and not isinstance(v, (dict, list))}
-        for i, row in enumerate(batch):
-            data = {}
-            for field in target_fields:
-                value = by_index[i].get(field['label'])
-                data[field['key']] = '' if value is None else str(value)
-            mapped.append({**row, 'data': data})
-    return mapped
-
-
-def _ask_mapping(target_fields: list[dict], cells: list[dict]):
-    spec = [{'label': f['label'], 'type': f.get('type', 'text'), 'role': f.get('role', 'spec')}
-            for f in target_fields]
-    system = (
-        '你是商品数据整理员。把每行原始单元格值对号入座到目标字段。规则：'
-        '值必须逐字来自该行的原始单元格，禁止编造、改写、翻译或补单位；'
-        '可以把同一行的多个单元格原文组合进一个目标字段（用换行分隔）；'
-        '行里没有对应内容的字段留空字符串；型号字段(role=model)尽量不空。'
-        '输出 JSON 数组，每项 {"row": 行号, "values": {"目标字段label": "值"}}。'
-        '行号取输入里的 row 原值。只输出 JSON。\n目标字段：'
-        + json.dumps(spec, ensure_ascii=False)
-    )
-    try:
-        raw = llm.chat_text(
-            system, [{'role': 'user', 'content': json.dumps(cells, ensure_ascii=False)}],
-            temperature=0.1)
-        return _parse_json_array(raw)
-    except Exception:
-        return None
 
 
 def guess_supplier(source_key: str, sheet_names: list) -> str:
