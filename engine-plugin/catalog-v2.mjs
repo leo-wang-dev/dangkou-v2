@@ -380,8 +380,8 @@ export async function apply(ctx, _config = {}) {
   })
 
   ctx.tools.register({
-    name: 'catalog_stats',
-    description: '在售商品统计。按供应商聚合（默认）：商家问“XX供应商还有多少货”“多少款在推广/对客户可见、属于哪些商家”时用；'
+    name: 'supplier_stats',
+    description: '供应商维度统计。按供应商聚合（默认）：商家问“XX供应商还有多少货”“多少款在推广/对客户可见、属于哪些商家”时用；'
       + 'by=category 按分类聚合。推广口径=对客户可见（cs_visible）。数字必须来自本工具，不能靠记忆。',
     parameters: {
       type: 'object',
