@@ -8,7 +8,6 @@ import struct
 import requests
 
 from . import config
-from .templates import TEMPLATES
 
 _MM_URL = (config.BAILIAN_BASE_URL.replace('/compatible-mode/v1', '')
            + '/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding')
@@ -49,21 +48,15 @@ def query(conn, vec, category=None, top_k=5, exclude=()):
     hits.sort(key=lambda x: -x[0])
     out = []
     for score, row in hits:
-        t = TEMPLATES.get(row['category'])
-        if t:
-            p = conn.execute(f'SELECT * FROM {t.table} WHERE id=?',
-                             (row['product_id'],)).fetchone()
-            fields = {label: p[col] for col, label in t.fields} if p else {}
-        else:
-            from . import dynamic_catalog
-            try:
-                template = dynamic_catalog.get_template(conn, row['category'])
-            except KeyError:
-                continue
-            p = conn.execute('SELECT * FROM product_dynamic WHERE id=? AND category_key=?',
-                             (row['product_id'], row['category'])).fetchone()
-            data = json.loads(p['data_json'] or '{}') if p else {}
-            fields = {field['label']: data.get(field['key'], '') for field in template['fields']}
+        from . import dynamic_catalog
+        try:
+            template = dynamic_catalog.get_template(conn, row['category'])
+        except KeyError:
+            continue
+        p = conn.execute('SELECT * FROM product_dynamic WHERE id=? AND category_key=?',
+                         (row['product_id'], row['category'])).fetchone()
+        data = json.loads(p['data_json'] or '{}') if p else {}
+        fields = {field['label']: data.get(field['key'], '') for field in template['fields']}
         if p is None or p['status'] == 'delisted':
             continue
         if any(hit['product_id'] == row['product_id'] for hit in out):
@@ -79,19 +72,13 @@ def query(conn, vec, category=None, top_k=5, exclude=()):
 
 def reindex(conn, storage, category) -> int:
     """为有主图但无向量的商品补嵌入（审批通过/图片落位后调用）。幂等。"""
-    t = TEMPLATES.get(category)
+    from . import dynamic_catalog
+    dynamic_catalog.get_template(conn, category)
     n = 0
-    if t:
-        table = t.table
-        products = conn.execute(f"SELECT id, image_main FROM {table} "
-                                f"WHERE image_main != '' AND status != 'delisted'").fetchall()
-    else:
-        from . import dynamic_catalog
-        dynamic_catalog.get_template(conn, category)
-        table = 'product_dynamic'
-        products = conn.execute(
-            "SELECT id,image_main FROM product_dynamic WHERE category_key=? "
-            "AND image_main != '' AND status != 'delisted'", (category,)).fetchall()
+    table = 'product_dynamic'
+    products = conn.execute(
+        "SELECT id,image_main FROM product_dynamic WHERE category_key=? "
+        "AND image_main != '' AND status != 'delisted'", (category,)).fetchall()
     for p in products:
         if conn.execute('SELECT 1 FROM embedding WHERE product_id=?',
                         (p['id'],)).fetchone():

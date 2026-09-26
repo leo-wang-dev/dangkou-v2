@@ -190,7 +190,7 @@ def _template_sections(conn, discovered_sheets: list[dict], *, source_key: str,
         except KeyError as exc:
             raise ValueError('未知目标分类，请先从商品管理中选择已有分类') from exc
         if target['storage'] != 'dynamic':
-            raise ValueError(f'分类 {target["name"]} 是预置分类，请继续使用原品类导入入口')
+            raise ValueError(f'分类 {target["name"]} 是旧版固定分类，已下线；请新建动态分类导入')
         discovered = discovered_sheets[0] if discovered_sheets else {}
         return [{'template': target, 'template_action': 'reuse',
                  'expected_version': target['version'],
@@ -215,7 +215,7 @@ def _template_sections(conn, discovered_sheets: list[dict], *, source_key: str,
             action, expected = 'create', 0
         else:
             if current['storage'] != 'dynamic':
-                raise ValueError(f'分类 {current["name"]} 是预置分类，请继续使用原品类导入入口')
+                raise ValueError(f'分类 {current["name"]} 是旧版固定分类，已下线；请新建动态分类导入')
             expected = current['version']
             action = 'reuse' if _field_signature(current['fields']) == _field_signature(template['fields']) else 'update'
         sections.append({'template': template, 'template_action': action,
@@ -374,7 +374,7 @@ def build_ticket_payload(conn, xlsx_path, work_dir, *, source_key: str,
         except KeyError as exc:
             raise ValueError('未知目标分类，请先从商品管理中选择已有分类') from exc
         if target['storage'] != 'dynamic':
-            raise ValueError(f'分类 {target["name"]} 是预置分类，请继续使用原品类导入入口')
+            raise ValueError(f'分类 {target["name"]} 是旧版固定分类，已下线；请新建动态分类导入')
         incoming = []
         for discovered in discovered_sheets:
             incoming = _agent_rows(target, xlsx_path, work_dir, sheet=discovered.get('title') or '')
@@ -412,7 +412,7 @@ def build_ticket_payload(conn, xlsx_path, work_dir, *, source_key: str,
             source_rows = []
         else:
             if current['storage'] != 'dynamic':
-                raise ValueError(f'分类 {current["name"]} 是预置分类，请继续使用原品类导入入口')
+                raise ValueError(f'分类 {current["name"]} 是旧版固定分类，已下线；请新建动态分类导入')
             expected = current['version']
             action = 'reuse' if _field_signature(current['fields']) == _field_signature(template['fields']) else 'update'
             source_rows = _source_rows(conn, current['key'], source_key, discovered['source_sheet'])
@@ -555,10 +555,12 @@ def _apply_ticket_payload(conn, payload: dict, decisions: dict | None = None,
             raise TicketConflict(str(exc)) from exc
         allowed = {field['key'] for field in approved['fields']}
         sheet_name = section.get('source_sheet') or template.get('source_sheet') or template['name']
-        for draft in section['drafts'].get('new', []):
-            if str(draft.get('_rid')) in rejected:
+        for index, draft in enumerate(section['drafts'].get('new', [])):
+            # 行钥匙与审批页/草稿编辑同源：_rid 优先，否则按段内序号 n{index}
+            key = draft.get('_rid') or f'n{index}'
+            if str(key) in rejected:
                 continue
-            draft = _edited(draft, edits)
+            draft = _edited(draft, edits, key)
             product_id = secrets.token_hex(8)
             row = {'id': product_id, 'inner_code': inner_code.gen(), 'cs_visible': 1,
                    'data': {key: value for key, value in draft.get('data', {}).items() if key in allowed},
@@ -571,10 +573,12 @@ def _apply_ticket_payload(conn, payload: dict, decisions: dict | None = None,
             created_rows.append({'id': product_id, '_category': approved['key'],
                                  '_table': 'product_dynamic', 'images': row['images'],
                                  'image_main': row['images'][0] if row['images'] else ''})
-        for old, incoming in section['drafts'].get('update', []):
-            if str(old['id']) in rejected or str(incoming.get('_rid')) in rejected:
+        for index, pair in enumerate(section['drafts'].get('update', [])):
+            old, incoming = pair if isinstance(pair, list) else (pair, pair)
+            keys = {str(old.get('id') or ''), str(incoming.get('_rid') or ''), f'u{index}'}
+            if keys & rejected:
                 continue
-            incoming = _edited(incoming, edits, old['id'])
+            incoming = _edited(incoming, edits, old.get('id'), f'u{index}')
             images = incoming['images'] if 'images' in incoming else (old.get('images') or [])
             row = {'id': old['id'], 'inner_code': old['inner_code'], 'cs_visible': old['cs_visible'],
                    'status': 'approved',

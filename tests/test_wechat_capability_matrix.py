@@ -50,8 +50,10 @@ def test_wechat_management_endpoints_reject_empty_or_unknown_operations(env):
     assert client.patch('/shop', headers=auth(), json={'changes': {}}).status_code == 400
     assert client.post('/products/not-a-category', headers=auth(), json={
         'changes': {'型号': 'X'}}).status_code == 404
-    assert client.patch('/products/curler/missing', headers=auth(), json={
-        'changes': {'颜色': '蓝色'}}).status_code == 400
+    assert client.patch('/products/audit_cat/missing', headers=auth(), json={
+        'changes': {'颜色': '蓝色'}}).status_code == 404
+    assert client.patch('/products/audit_cat/p1', headers=auth(), json={
+        'changes': {'随便字段': '蓝色'}}).status_code == 400
     assert client.post('/quote', headers=auth(), json={'items': []}).status_code == 400
 
 
@@ -63,6 +65,6 @@ def test_all_wechat_management_endpoints_require_service_identity(env, tmp_path)
         client.get('/shop'),
         client.post('/import', json={'path': str(image)}),
         client.post('/search', json={'image_path': str(image), 'top_k': 3}),
-        client.post('/quote', json={'items': [{'category': 'curler', 'product_id': 'p1'}]}),
+        client.post('/quote', json={'items': [{'category': 'audit_cat', 'product_id': 'p1'}]}),
     ]
     assert all(response.status_code in (401, 403) for response in probes)

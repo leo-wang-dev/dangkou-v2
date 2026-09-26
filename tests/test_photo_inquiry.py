@@ -12,15 +12,15 @@ def test_photo_candidate_requires_selection_and_uses_store_tier(env):
     customer=dict(conn.execute("SELECT * FROM cs_customer WHERE tg_id='100'").fetchone())
     reply=bot._on_text(customer,'询价1 60个')
     assert '老板' not in reply and '¥11/个' not in reply and '0.01' not in reply
-    assert conn.execute('SELECT COUNT(*) FROM product_curler').fetchone()[0]==1
+    assert conn.execute("SELECT COUNT(*) FROM product_dynamic WHERE category_key='audit_cat'").fetchone()[0]==1
 
 
 def test_candidate_selection_rechecks_visibility_expiry_and_customer(env):
     conn,_,bot=env
-    photo_inquiry.save(conn,'a',[{'category':'curler','product_id':'p1','name':'MODEL-1'}])
+    photo_inquiry.save(conn,'a',[{'category':'audit_cat','product_id':'p1','name':'MODEL-1'}])
     conn.commit()
     assert '¥' not in bot._on_text({'id':'b'},'询价1 60个')
-    conn.execute("UPDATE product_curler SET cs_visible=0 WHERE id='p1'")
+    conn.execute("UPDATE product_dynamic SET cs_visible=0 WHERE id='p1'")
     conn.commit()
     assert '老板' in bot._on_text({'id':'a'},'询价1 60个')
     conn.execute("UPDATE cs_photo_candidates SET expires_at=datetime('now','-1 second')")
@@ -31,24 +31,24 @@ def test_candidate_selection_rechecks_visibility_expiry_and_customer(env):
 def test_image_retrieval_candidates_never_expose_cost(env,monkeypatch):
     from catalog import config, search
     conn,_,bot=env
-    conn.execute("INSERT INTO embedding(product_id,category,image_path,vec) VALUES('p1','curler','x',X'00000000')")
+    conn.execute("INSERT INTO embedding(product_id,category,image_path,vec) VALUES('p1','audit_cat','x',X'00000000')")
     conn.commit()
     monkeypatch.setattr(config,'BAILIAN_API_KEY','offline-stub')
     monkeypatch.setattr(search,'embed_image',lambda _: [1])
-    monkeypatch.setattr(search,'query',lambda *a,**k:[{'category':'curler','product_id':'p1','score':0.91,'fields':{'价格':'7.35'}}])
+    monkeypatch.setattr(search,'query',lambda *a,**k:[{'category':'audit_cat','product_id':'p1','score':0.91,'fields':{'价格':'7.35'}}])
     found=photo_inquiry.candidates(conn,[{'型号或品名':'sample'}],b'photo')
-    assert found==[{'category':'curler','product_id':'p1','name':'MODEL-1'}]
+    assert found==[{'category':'audit_cat','product_id':'p1','name':'MODEL-1'}]
 
 
 def test_low_similarity_image_does_not_suggest_unrelated_product(env,monkeypatch):
     from catalog import config, search
     conn,_,_=env
-    conn.execute("INSERT INTO embedding(product_id,category,image_path,vec) VALUES('p1','curler','x',X'00000000')")
+    conn.execute("INSERT INTO embedding(product_id,category,image_path,vec) VALUES('p1','audit_cat','x',X'00000000')")
     conn.commit()
     monkeypatch.setattr(config,'BAILIAN_API_KEY','offline-stub')
     monkeypatch.setattr(search,'embed_image',lambda _: [1])
     monkeypatch.setattr(search,'query',lambda *a,**k:[
-        {'category':'curler','product_id':'p1','score':0.12}])
+        {'category':'audit_cat','product_id':'p1','score':0.12}])
     assert photo_inquiry.local_candidates(conn,[{'型号或品名':'unrelated'}],b'photo')==[]
 
 

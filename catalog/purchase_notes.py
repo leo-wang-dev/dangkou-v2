@@ -232,11 +232,7 @@ def attach(bot,note,product):
             if fields.get(key) == old_value:
                 fields.pop(key, None)
     fields.update({'商品编号':str(product['id']),'商品类别':product['_category'], '型号或品名':product['name']})
-    specs=product.get('specs')
-    if specs is None:
-        from .templates import TEMPLATES
-        template=TEMPLATES.get(product['_category'])
-        specs=customer_catalog.public_product(template,product)['specs'] if template else {}
+    specs=product.get('specs') or {}
     added={}
     for k,v in specs.items():
         if k not in fields or fields[k] in ('未拍到','模糊','待补充',''):

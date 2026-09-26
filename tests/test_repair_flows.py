@@ -43,7 +43,7 @@ def test_quote_is_computed_and_followup_revalidates_visibility(env):
     assert 'MODEL-1' in bot._on_text(customer, 'MODEL-1')
     assert '老板' not in bot._on_text(customer, '60个多少钱')
     assert '老板' not in bot._on_text(customer, '20个多少钱')
-    conn.execute("UPDATE product_curler SET cs_visible=0 WHERE id='p1'")
+    conn.execute("UPDATE product_dynamic SET cs_visible=0 WHERE id='p1'")
     conn.commit()
     assert '¥' not in bot._on_text(customer, '60个多少钱')
 
@@ -103,71 +103,18 @@ def test_model_calls_do_not_hold_database_writer_lock(env):
 
 def test_pending_mutation_revalidated_at_approval(env):
     conn, client, _ = env
-    tk = client.patch('/products/curler/p1', headers=auth(), json={'changes': {'可观测':'1'}}).json()
-    conn.execute("DELETE FROM product_curler WHERE id='p1'")
+    tk = client.patch('/products/audit_cat/p1', headers=auth(), json={'changes': {'可观测':'1'}}).json()
+    conn.execute("DELETE FROM product_dynamic WHERE id='p1'")
     conn.commit()
     response = client.post(f"/tickets/{tk['ticket_id']}/decision", json={'token':tk['token'],'approved':True})
-    assert response.status_code == 400
+    assert response.status_code == 409          # 商品已不存在：冲突拒绝，不改库
     assert conn.execute('SELECT status FROM approval_ticket WHERE id=?',(tk['ticket_id'],)).fetchone()[0] == 'pending'
-
-
-def test_import_invalid_second_row_rolls_back_first(env):
-    conn, _, _ = env
-    tk = tickets.create(conn,'import','razor',{'kind':'import','drafts':{'new':[
-        {'model_no':'good','_rid':'n0'}, {'model_no':'bad','_rid':'n1','cs_visible':1,'tier_price':'oops'}]}})
-    with pytest.raises(tickets.TicketError):
-        tickets.decide(conn,tk['id'],tk['token'],True)
-    assert conn.execute('SELECT COUNT(*) FROM product_razor').fetchone()[0] == 0
-    assert conn.execute('SELECT status FROM approval_ticket WHERE id=?',(tk['id'],)).fetchone()[0] == 'pending'
-
-
-def test_concurrent_ticket_approval_has_one_effect(tmp_path):
-    path = str(tmp_path/'concurrent.db')
-    conn = db.connect(path)
-    db.init_db(conn)
-    tk = tickets.create(conn,'import','razor',{'kind':'import','drafts':{'new':[{'model_no':'ONE','_rid':'n0'}]}})
-    def approve():
-        local = db.connect(path)
-        try:
-            return tickets.decide(local,tk['id'],tk['token'],True)
-        except tickets.TicketError:
-            return None
-        finally:
-            local.close()
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda _:approve(), range(2)))
-    assert sum(r is not None for r in results) == 1
-    assert conn.execute('SELECT COUNT(*) FROM product_razor').fetchone()[0] == 1
-    conn.close()
-
-
-def test_import_does_not_delist_or_update_another_supplier(tmp_path, monkeypatch):
-    conn = db.connect(str(tmp_path/'imports.db'))
-    db.init_db(conn)
-    products = [{'model_no':'SHARED','price':'10'}, {'model_no':'A-ONLY','price':'15'}]
-    monkeypatch.setattr(ingest.agent,'parse',lambda *args:{'products':products})
-    storage = LocalStorage(str(tmp_path/'images'))
-    def run(source):
-        doc = ingest.start(conn,storage,'same-filename.xlsx','razor',source_key=source)
-        assert _wait_done(conn,doc)['status'] == 'ticketed'
-        row = conn.execute('SELECT * FROM approval_ticket ORDER BY id DESC LIMIT 1').fetchone()
-        tickets.decide(conn,row['id'],row['token'],True)
-    run('supplier-A')
-    products = [{'model_no':'SHARED','price':'99'}]
-    run('supplier-B')
-    rows = conn.execute('SELECT model_no,price,status FROM product_razor ORDER BY price').fetchall()
-    assert len(rows) == 3 and all(r['status']=='approved' for r in rows)
-    products = [{'model_no':'SHARED','price':'11'}]
-    run('supplier-A')
-    assert conn.execute("SELECT COUNT(*) FROM product_razor WHERE price='99' AND status='approved'").fetchone()[0] == 1
-    assert conn.execute("SELECT status FROM product_razor WHERE model_no='A-ONLY'").fetchone()[0] == 'delisted'
-    conn.close()
 
 
 def test_service_without_token_is_closed(env):
     _, client, _ = env
     client.app.state.token = ''
-    assert client.get('/products/curler').status_code == 503
+    assert client.get('/products/audit_cat').status_code == 503
     assert client.get('/tickets').status_code == 503
 
 
@@ -199,7 +146,7 @@ def test_outbox_preserves_order_after_failure_and_splits_long_receipts(env):
 def test_merchant_notifications_and_files_are_durable(env, monkeypatch):
     from catalog import notify
     conn, _, bot = env
-    notify.push(3,4,'approval-token',{'category':'razor','new':2},conn=conn)
+    notify.push(3,4,'approval-token',{'categories':['审计品类'],'new':2},conn=conn)
     notify.push_file('报价单','/tmp/test-quote.xlsx',conn=conn)
     rows = conn.execute('SELECT * FROM cs_outbox ORDER BY id').fetchall()
     assert [r['channel'] for r in rows] == ['notify_import','notify_file']

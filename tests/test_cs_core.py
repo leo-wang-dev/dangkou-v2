@@ -67,10 +67,11 @@ def test_summarize_passthrough_and_compress(conn):
 
 
 def test_product_columns_migrated(conn):
-    """老库补列：tier_price / cs_visible。"""
-    for tbl in ('product_razor', 'product_curler'):
-        cols = {r[1] for r in conn.execute(f'PRAGMA table_info({tbl})')}
-        assert 'tier_price' in cols and 'cs_visible' in cols, tbl
+    """老库补列：product_dynamic.shop_id（一店一库归属）+ cs_customer.lang。"""
+    cols = {r[1] for r in conn.execute('PRAGMA table_info(product_dynamic)')}
+    assert 'shop_id' in cols and 'cs_visible' in cols
+    cols = {r[1] for r in conn.execute('PRAGMA table_info(cs_customer)')}
+    assert 'lang' in cols
 
 
 def test_cs_customer_note_tables(conn):

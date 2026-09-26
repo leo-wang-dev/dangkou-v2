@@ -62,49 +62,17 @@ def _build_import(path, prefix):
 def _imports(session, base, token, out):
     listed = _request(session, "GET", base + "/tickets", token).json()["tickets"]
     before = {x["id"] for x in listed}
-    completed = {}
-    for ticket in listed:
-        if ticket["status"] not in ("approved", "rejected"):
-            continue
-        detail = _request(session, "GET", f"{base}/tickets/{ticket['id']}", token).json()
-        source_key = detail["payload"].get("source_key")
-        if source_key in ("acceptance-A", "acceptance-B"):
-            completed[source_key] = {
-                "ticket": ticket["id"],
-                "doc_id": detail["payload"]["doc_id"],
-                "approved": ticket["status"] == "approved",
-            }
-    if set(completed) == {"acceptance-A", "acceptance-B"}:
-        decisions = [completed[key] for key in sorted(completed)]
-        if sorted(value["approved"] for value in decisions) != [False, True]:
-            raise AssertionError("existing concurrent import decisions are not one approval and one rejection")
-        statuses = {
-            str(value["doc_id"]): _request(
-                session, "GET", f"{base}/import/{value['doc_id']}", token
-            ).json()
-            for value in decisions
-        }
-        if any(value["status"] != "ticketed" for value in statuses.values()):
-            raise AssertionError({"existing_imports": statuses})
-        return {"docs": statuses, "decisions": decisions, "reused": True}
     docs = []
+    template_docs = {}
     for suffix in ("A", "B"):
         path = out / f"concurrent-import-{suffix}.xlsx"
         _build_import(path, "TEST-IMPORT-" + suffix)
         result = _request(session, "POST", base + "/import", token,
-                          json={"path": str(path), "category": "curler",
-                                "source_key": "acceptance-" + suffix}).json()
+                          json={"path": str(path), "phase": "template", "mode": "new",
+                                "source_key": "acceptance-" + suffix, "wait": True}).json()
+        assert result.get("status") == "ticketed", result
         docs.append(result["doc_id"])
-    deadline = time.monotonic() + 1200
-    statuses = {}
-    while time.monotonic() < deadline:
-        statuses = {doc: _request(session, "GET", f"{base}/import/{doc}", token).json()
-                    for doc in docs}
-        if all(value["status"] in ("ticketed", "failed") for value in statuses.values()):
-            break
-        time.sleep(3)
-    if any(value["status"] != "ticketed" for value in statuses.values()):
-        raise AssertionError({"imports": statuses})
+        template_docs[result["doc_id"]] = str(path)
     tickets = [x for x in _request(session, "GET", base + "/tickets", token).json()["tickets"]
                if x["id"] not in before and x["status"] == "pending"]
     selected = []
@@ -113,16 +81,39 @@ def _imports(session, base, token, out):
         if detail["payload"].get("doc_id") in docs:
             selected.append(ticket)
     if len(selected) != 2:
-        raise AssertionError("two concurrent imports did not produce two independent tickets")
+        raise AssertionError("two concurrent template imports did not produce two independent tickets")
     decisions = []
+    approved_doc = None
     for index, ticket in enumerate(sorted(selected, key=lambda x: x["id"])):
         result = session.post(f"{base}/tickets/{ticket['id']}/decision",
                               json={"token": ticket["token"], "approved": index == 0},
                               timeout=180)
         result.raise_for_status()
+        if index == 0:
+            # 批准的那张模板工单对应的 doc（进入商品阶段要用）
+            approved_detail = _request(session, "GET", f"{base}/tickets/{ticket['id']}", token).json()
+            approved_doc = approved_detail["payload"]["doc_id"]
         decisions.append({"ticket": ticket["id"], "approved": index == 0,
                           "result": result.json()})
-    return {"docs": statuses, "decisions": decisions}
+    # 模板批准后：再次上传同一份 Excel 进入商品阶段并批准
+    product_result = _request(session, "POST", base + "/import", token,
+                              json={"path": template_docs[approved_doc], "phase": "products",
+                                    "mode": "new", "template_doc_id": approved_doc,
+                                    "source_key": "acceptance-A", "wait": True}).json()
+    assert product_result.get("status") == "ticketed", product_result
+    product_ticket = next(
+        x for x in _request(session, "GET", base + "/tickets", token).json()["tickets"]
+        if x["status"] == "pending"
+        and _request(session, "GET", f"{base}/tickets/{x['id']}", token).json()["payload"].get("doc_id") == product_result["doc_id"])
+    applied = session.post(f"{base}/tickets/{product_ticket['id']}/decision",
+                           json={"token": product_ticket["token"], "approved": True}, timeout=180)
+    applied.raise_for_status()
+    statuses = {str(doc): _request(session, "GET", f"{base}/import/{doc}", token).json()
+                for doc in docs + [product_result["doc_id"]]}
+    if any(value["status"] != "ticketed" for value in statuses.values()):
+        raise AssertionError({"imports": statuses})
+    return {"docs": statuses, "decisions": decisions,
+            "products_doc": product_result["doc_id"]}
 
 
 def run(merchant_id, photos_dir, out, with_imports=False):
@@ -150,7 +141,7 @@ def run(merchant_id, photos_dir, out, with_imports=False):
     probe = db.connect(database)
     try:
         exact_rel = probe.execute(
-            "SELECT image_main FROM product_curler WHERE id='test-curl-2026'"
+            "SELECT image_main FROM product_dynamic WHERE id='test-curl-2026'"
         ).fetchone()[0]
     finally:
         probe.close()
@@ -163,16 +154,16 @@ def run(merchant_id, photos_dir, out, with_imports=False):
     if not exact_match or exact_match[0]["product_id"] != "test-curl-2026":
         raise AssertionError({"exact_image_match": exact_match})
 
-    created = _request(session, "POST", base + "/products/razor/direct", token,
-                       json={"changes": {"model_no": "TEST-CRUD-TEMP",
-                                          "description": "贯通测试临时商品",
-                                          "color": "蓝色", "cs_visible": "1"}}).json()
+    created = _request(session, "POST", base + "/products/test_cat/direct", token,
+                       json={"changes": {"model": "TEST-CRUD-TEMP",
+                                          "spec": "贯通测试临时商品 蓝色",
+                                          "cs_visible": "1"}}).json()
     temporary_id = created["id"]
-    _request(session, "PATCH", f"{base}/products/razor/{temporary_id}/direct", token,
-             json={"changes": {"color": "绿色"}})
+    _request(session, "PATCH", f"{base}/products/test_cat/{temporary_id}/direct", token,
+             json={"changes": {"spec": "贯通测试临时商品 绿色"}})
     after_create = _request(session, "GET", base + "/cs/catalog", token).json()
     assert "TEST-CRUD-TEMP" in {item["name"] for item in after_create["products"]}
-    _request(session, "DELETE", f"{base}/products/razor/{temporary_id}/direct", token)
+    _request(session, "DELETE", f"{base}/products/test_cat/{temporary_id}/direct", token)
     after_delete = _request(session, "GET", base + "/cs/catalog", token).json()
     assert "TEST-CRUD-TEMP" not in {item["name"] for item in after_delete["products"]}
 

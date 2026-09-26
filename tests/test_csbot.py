@@ -179,27 +179,26 @@ def test_non_edit_message_falls_to_persona(bot, conn):
 
 
 def test_catalog_brief_carries_cost_price(bot, conn):
-    """底价红线可判：商品简表带出厂价（标注内部禁报）。"""
-    conn.execute(
-        "INSERT INTO product_curler(id, inner_code, item_no, price, tier_price, cs_visible) "
-        "VALUES('p1','KS-X','8226','10','20:12',1)")
-    conn.commit()
+    """底价红线可判：商品简表带出厂价（内部价不外报）。"""
+    from tests.conftest import seed_products
+    seed_products(conn, [{'id': 'p1', 'inner_code': 'KS-X',
+                          'data': {'model': '8226', 'price': '10'}, 'cs_visible': 1}])
     brief = bot._catalog_brief()
-    assert '8226' in brief and '成本价' not in brief and '20:12' not in brief
+    assert '8226' in brief and '成本价' not in brief and '10' not in brief
 
 
 def test_catalog_query_sends_only_three_spec_cards_and_photos_without_link_or_price(bot, conn, tmp_path, monkeypatch):
     from catalog.storage import LocalStorage
     monkeypatch.setenv('CATALOG_V2_IMG', str(tmp_path / 'images'))
     storage = LocalStorage(str(tmp_path / 'images'))
-    for index in range(4):
-        pid = f'p{index}'
-        photo = storage.save('curler', pid, 'main.jpg', b'photo-' + bytes([index]))
-        conn.execute(
-            "INSERT INTO product_curler(id,inner_code,item_no,price,voltage,material,cs_visible,image_main) "
-            "VALUES(?,?,?,?,?,?,1,?)",
-            (pid, f'KS-{index}', f'MODEL-{index}', f'{99 + index}.99', '220V', '黑色', photo))
-    conn.commit()
+    from tests.conftest import seed_products
+    seed_products(conn, [
+        {'id': f'p{index}', 'inner_code': f'KS-{index}',
+         'data': {'model': f'MODEL-{index}', 'price': f'{99 + index}.99',
+                  'voltage': '220V', 'color': '黑色'},
+         'images': [storage.save('test_cat', f'p{index}', 'main.jpg',
+                                 b'photo-' + bytes([index]))], 'cs_visible': 1}
+        for index in range(4)])
 
     bot.handle_update(_text_upd('有哪些商品'))
 
@@ -256,7 +255,7 @@ def test_managed_photo_match_does_not_promise_an_unconfigured_handoff(bot, conn,
         {'id': 'buyer'},
         {},
         prepared=(str(photo_path), [{'型号或品名': 'MODEL-1'}], [
-            {'category': 'curler', 'product_id': 'p1', 'name': 'MODEL-1'},
+            {'category': 'test_cat', 'product_id': 'p1', 'name': 'MODEL-1'},
         ], []),
     )
 
@@ -266,7 +265,7 @@ def test_managed_photo_match_does_not_promise_an_unconfigured_handoff(bot, conn,
 
 def test_removed_product_photo_does_not_block_later_customer_messages(bot, conn):
     conn.execute("INSERT INTO cs_outbox(channel,recipient,body) VALUES('tg_photo','100',?)",
-                 (json.dumps({'id': 'gone', '_category': 'razor', 'name': '已下架商品'}),))
+                 (json.dumps({'id': 'gone', '_category': 'test_cat', 'name': '已下架商品'}),))
     conn.execute("INSERT INTO cs_outbox(channel,recipient,body) VALUES('tg','100','后续消息')")
     conn.commit()
 
@@ -286,7 +285,7 @@ def test_oversized_product_photo_does_not_block_later_customer_messages(bot, con
     bot.api.send_photo = lambda chat_id, filename, content, caption='': (
         TgApi.send_photo(object(), chat_id, filename, content, caption))
     conn.execute("INSERT INTO cs_outbox(channel,recipient,body) VALUES('tg_photo','100',?)",
-                 (json.dumps({'id': 'large', '_category': 'razor', 'name': '超大图片商品'}),))
+                 (json.dumps({'id': 'large', '_category': 'test_cat', 'name': '超大图片商品'}),))
     conn.execute("INSERT INTO cs_outbox(channel,recipient,body) VALUES('tg','100','后续消息')")
     conn.commit()
 

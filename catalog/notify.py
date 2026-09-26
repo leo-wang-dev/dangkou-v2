@@ -4,8 +4,6 @@ import os
 
 from . import config, db
 
-CAT_NAME = {'razor': '剃须刀', 'curler': '卷发棒'}
-
 
 def _queue(channel, body, conn=None):
     own = conn is None
@@ -30,9 +28,7 @@ def push(doc_id, ticket_id, token, stats, conn=None):
 def render_import(payload):
     # Materialize the service credential only in memory at delivery, never in the queue.
     stats = payload['stats']
-    cat = CAT_NAME.get(stats.get('category'), '')
-    if not cat and stats.get('categories'):
-        cat = '、'.join(str(name) for name in stats['categories'])
+    cat = '、'.join(str(name) for name in (stats.get('categories') or []))
     from urllib.parse import quote
     base = (os.environ.get('CATALOG_V2_MANAGE_URL') or
             os.environ.get('CATALOG_V2_PUBLIC_URL', 'http://127.0.0.1:8890')).rstrip('/')

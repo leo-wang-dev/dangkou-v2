@@ -16,17 +16,17 @@ def migrate(conn):
     conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS shop_identity ON shop_profile(shop_id)')
     conn.execute("""CREATE TRIGGER IF NOT EXISTS immutable_shop_identity BEFORE UPDATE OF shop_id ON shop_profile
       WHEN NEW.shop_id != OLD.shop_id BEGIN SELECT RAISE(ABORT,'shop identity is immutable'); END""")
-    from .templates import TEMPLATES
-    for t in TEMPLATES.values():
-        cols = {r[1] for r in conn.execute(f'PRAGMA table_info({t.table})')}
-        if 'shop_id' not in cols:
-            conn.execute(f'ALTER TABLE {t.table} ADD COLUMN shop_id TEXT REFERENCES shop_profile(shop_id)')
-        conn.execute(f'UPDATE {t.table} SET shop_id=(SELECT shop_id FROM shop_profile WHERE id=1) WHERE shop_id IS NULL')
-        conn.execute(f"""CREATE TRIGGER IF NOT EXISTS {t.table}_owner_insert AFTER INSERT ON {t.table}
-          BEGIN UPDATE {t.table} SET shop_id=COALESCE(NEW.shop_id,(SELECT shop_id FROM shop_profile WHERE id=1)) WHERE id=NEW.id; END""")
-        conn.execute(f"""CREATE TRIGGER IF NOT EXISTS {t.table}_owner_guard BEFORE UPDATE OF shop_id ON {t.table}
-          WHEN NEW.shop_id IS NULL OR NEW.shop_id != (SELECT shop_id FROM shop_profile WHERE id=1)
-          BEGIN SELECT RAISE(ABORT,'product belongs to another shop'); END""")
+    # 动态分类商品归属：建列+触发器（一店一库架构下统一强制本店身份）。
+    # （旧版固定品类的商品表已废弃、不再写入，无需补列。）
+    cols = {r[1] for r in conn.execute('PRAGMA table_info(product_dynamic)')}
+    if 'shop_id' not in cols:
+        conn.execute('ALTER TABLE product_dynamic ADD COLUMN shop_id TEXT REFERENCES shop_profile(shop_id)')
+    conn.execute('UPDATE product_dynamic SET shop_id=(SELECT shop_id FROM shop_profile WHERE id=1) WHERE shop_id IS NULL')
+    conn.execute("""CREATE TRIGGER IF NOT EXISTS product_dynamic_owner_insert AFTER INSERT ON product_dynamic
+      BEGIN UPDATE product_dynamic SET shop_id=COALESCE(NEW.shop_id,(SELECT shop_id FROM shop_profile WHERE id=1)) WHERE id=NEW.id; END""")
+    conn.execute("""CREATE TRIGGER IF NOT EXISTS product_dynamic_owner_guard BEFORE UPDATE OF shop_id ON product_dynamic
+      WHEN NEW.shop_id IS NULL OR NEW.shop_id != (SELECT shop_id FROM shop_profile WHERE id=1)
+      BEGIN SELECT RAISE(ABORT,'product belongs to another shop'); END""")
     cols = {r[1] for r in conn.execute('PRAGMA table_info(cs_note)')}
     for key, sql_type in (
         ('received_shop_id', 'TEXT REFERENCES shop_profile(shop_id)'),

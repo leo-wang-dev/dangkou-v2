@@ -62,28 +62,6 @@ def validate_template(draft: dict) -> dict:
             'storage': str(draft.get('storage') or 'dynamic')}
 
 
-def seed_legacy_templates(conn) -> None:
-    from .templates import TEMPLATES
-    for template in TEMPLATES.values():
-        fields = []
-        for col, label in template.fields:
-            lowered = label.casefold()
-            role = 'model' if col == template.dedup_field else ('cost' if '成本' in label else 'spec')
-            visibility = 'internal' if role == 'cost' else 'public'
-            fields.append({'key': col, 'label': label, 'type': 'money' if ('价格' in label or '报价' in label) else 'text',
-                           'required': False, 'visibility': visibility,
-                           'searchable': col == template.dedup_field or any(x in lowered for x in ('颜色', '型号')),
-                           'role': role})
-        snapshot = {'key': template.key, 'name': template.name, 'fields': fields,
-                    'source_sheet': template.name, 'storage': 'legacy'}
-        encoded = json.dumps(fields, ensure_ascii=False)
-        conn.execute('INSERT OR IGNORE INTO category_template(key,name,version,fields_json,status,storage,source_sheet) '
-                     "VALUES(?,?,1,?,'approved','legacy',?)",
-                     (template.key, template.name, encoded, template.name))
-        conn.execute('INSERT OR IGNORE INTO category_template_version(category_key,version,snapshot_json) VALUES(?,1,?)',
-                     (template.key, json.dumps(snapshot, ensure_ascii=False)))
-
-
 def _template(row) -> dict:
     return {'key': row['key'], 'name': row['name'],
             'supplier': _safe_col(row, 'supplier') or '', 'version': row['version'],
@@ -163,7 +141,7 @@ def quotable(template: dict) -> bool:
 def set_quote_map(conn, key: str, mapping: dict) -> dict:
     template = get_template(conn, key)
     if template['storage'] != 'dynamic':
-        raise ValueError('预置分类的报价映射是固定配置，不能修改')
+        raise ValueError('旧版固定分类已下线，仅保留历史数据')
     by_key = {field['key']: field for field in template['fields']}
     by_label = {field['label'].casefold(): field for field in template['fields']}
     resolved = {}
@@ -192,7 +170,7 @@ def rename_template(conn, key: str, name: str) -> dict:
         raise ValueError('分类名称不能为空')
     template = get_template(conn, key)
     if template['storage'] != 'dynamic':
-        raise ValueError('预置分类名称是固定配置，不能修改')
+        raise ValueError('旧版固定分类已下线，名称不能修改')
     conn.execute("UPDATE category_template SET name=?, updated_at=datetime('now') WHERE key=?",
                  (name, key))
     conn.commit()
@@ -240,7 +218,7 @@ def upsert_approved_products(conn, category_key: str, rows: list[dict], *,
                              source_doc: int | None = None) -> dict:
     template = get_template(conn, category_key)
     if template['storage'] != 'dynamic':
-        raise ValueError('预置分类继续使用原商品表')
+        raise ValueError('旧版固定分类已下线，不能写入商品；请使用动态分类')
     allowed = {field['key'] for field in template['fields']}
     created = updated = 0
     for raw in rows:

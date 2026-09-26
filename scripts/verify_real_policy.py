@@ -27,7 +27,11 @@ def run(out):
   name,text,transfer,price=case
   conn=sqlite3.connect(':memory:',check_same_thread=False);conn.row_factory=sqlite3.Row;db.init_db(conn)
   conn.execute("UPDATE shop_profile SET owner_tg_username='test_owner',owner_wechat='TEST-WECHAT'")
-  conn.execute("INSERT INTO product_curler(id,inner_code,item_no,price,cs_visible) VALUES('p1','TEST-1','TEST-01','8',1)")
+  from catalog import dynamic_catalog
+  dynamic_catalog.approve_template(conn,{'key':'verify_cat','name':'验收品类','storage':'dynamic','source_sheet':'验收品类','fields':[
+   {'key':'model','label':'型号','type':'text','visibility':'public','searchable':True,'role':'model','required':False},
+   {'key':'price','label':'价格','type':'money','visibility':'internal','searchable':False,'role':'price','required':False}]})
+  dynamic_catalog.upsert_approved_products(conn,'verify_cat',[{'id':'p1','inner_code':'TEST-1','data':{'model':'TEST-01','price':'8'},'cs_visible':1}])
   conn.commit()
   bot=CsBot(conn,None,llm=llm,notifier=lambda _:None,img_dir=str(out/'photos'))
   started=time.monotonic()

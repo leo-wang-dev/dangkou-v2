@@ -3,6 +3,8 @@ import sqlite3
 import pytest
 
 from catalog import db, tickets
+from tests.conftest import DYNAMIC_FIELDS
+from tests.test_workbook_templates import blowdryer_fixture
 
 
 @pytest.fixture()
@@ -13,41 +15,45 @@ def conn():
     return c
 
 
-def test_import_ticket_creates_products_with_inner_code(conn):
-    t = tickets.create(conn, 'import', 'razor',
-                       {'kind': 'import', 'work_dir': None,
-                        'drafts': {'new': [{'model_no': '8225', 'price': '21.5'}],
-                                   'update': [], 'delist': []}})
+def _import_ticket(conn, tmp_path):
+    from catalog.dynamic_import import build_ticket_payload
+    payload = build_ticket_payload(conn, blowdryer_fixture(tmp_path), tmp_path / 'work',
+                                   source_key='tickets')
+    return tickets.create(conn, 'template_import', None, payload), payload
+
+
+def test_import_ticket_creates_products_with_inner_code(conn, tmp_path):
+    t, _ = _import_ticket(conn, tmp_path)
     r = tickets.decide(conn, t['id'], t['token'], approved=True)
-    assert r['created'] == 1 and r['created_rows'][0]['image_main'] == ''
-    row = conn.execute('SELECT * FROM product_razor').fetchone()
-    assert row['model_no'] == '8225' and row['inner_code'].startswith('KS-')
+    assert r['created'] == 4
+    rows = conn.execute('SELECT * FROM product_dynamic').fetchall()
+    assert all(row['inner_code'].startswith('KS-') for row in rows)
 
 
-def test_token_is_one_time(conn):
-    t = tickets.create(conn, 'import', 'razor',
-                       {'kind': 'import', 'work_dir': None,
-                        'drafts': {'new': [], 'update': [], 'delist': []}})
+def test_token_is_one_time(conn, tmp_path):
+    t, _ = _import_ticket(conn, tmp_path)
     tickets.decide(conn, t['id'], t['token'], approved=True)
     with pytest.raises(tickets.TicketError):
         tickets.decide(conn, t['id'], t['token'], approved=True)
 
 
-def test_reject_leaves_db_untouched(conn):
-    t = tickets.create(conn, 'import', 'razor',
-                       {'kind': 'import', 'work_dir': None,
-                        'drafts': {'new': [{'model_no': '8225'}],
-                                   'update': [], 'delist': []}})
+def test_reject_leaves_db_untouched(conn, tmp_path):
+    t, _ = _import_ticket(conn, tmp_path)
     tickets.decide(conn, t['id'], t['token'], approved=False)
-    assert conn.execute('SELECT COUNT(*) c FROM product_razor').fetchone()['c'] == 0
+    assert conn.execute('SELECT COUNT(*) c FROM product_dynamic').fetchone()['c'] == 0
 
 
 def test_mutate_update_ticket(conn):
-    conn.execute("INSERT INTO product_razor(id, inner_code, model_no, price) "
-                 "VALUES('p1','KS-AAAAAAAA','8225','20')")
-    conn.commit()
-    t = tickets.create(conn, 'mutate', 'razor',
-                       {'kind': 'mutate', 'action': 'update', 'product_id': 'p1',
-                        'changes': {'price': '23'}})
+    from tests.conftest import seed_products
+    seed_products(conn, [{'id': 'p1', 'inner_code': 'KS-AAAAAAAA',
+                          'data': {'model': '8225', 'price': '20'}}])
+    row = next(r for r in __import__('catalog').dynamic_catalog.list_products(conn, 'test_cat')
+               if r['id'] == 'p1')
+    t = tickets.create(conn, 'mutate', 'test_cat',
+                       {'kind': 'dynamic_mutate', 'action': 'update', 'product_id': 'p1',
+                        'template_version': 1, 'changes': {'price': '23'},
+                        'before_snapshot': tickets._dynamic_product_snapshot(row)})
     tickets.decide(conn, t['id'], t['token'], approved=True)
-    assert conn.execute("SELECT price FROM product_razor WHERE id='p1'").fetchone()['price'] == '23'
+    data = __import__('json').loads(conn.execute(
+        "SELECT data_json FROM product_dynamic WHERE id='p1'").fetchone()[0])
+    assert data['price'] == '23'

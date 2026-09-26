@@ -67,14 +67,14 @@ def test_index_failure_is_persisted_and_recovers(env,tmp_path,monkeypatch):
     from catalog import search
     from catalog.storage import LocalStorage
     conn,_,_=env
-    st=LocalStorage(str(tmp_path));rel=st.save('curler','p1','photo.jpg',b'fixture')
-    conn.execute('UPDATE product_curler SET image_main=? WHERE id=?',(rel,'p1'));conn.commit()
+    st=LocalStorage(str(tmp_path));rel=st.save('audit_cat','p1','photo.jpg',b'fixture')
+    conn.execute('UPDATE product_dynamic SET image_main=? WHERE id=?',(rel,'p1'));conn.commit()
     embedding=Mock(side_effect=RuntimeError('network'))
     monkeypatch.setattr(search,'embed_image',embedding)
-    assert search.reindex(conn,st,'curler')==0
+    assert search.reindex(conn,st,'audit_cat')==0
     assert conn.execute('SELECT attempts FROM embedding_retry').fetchone()[0]==1
-    search.reindex(conn,st,'curler');assert embedding.call_count==1
+    search.reindex(conn,st,'audit_cat');assert embedding.call_count==1
     conn.execute("UPDATE embedding_retry SET next_attempt_at=datetime('now','-1 second')");conn.commit()
     embedding.side_effect=None;embedding.return_value=[1.,0.]
-    assert search.reindex(conn,st,'curler')==1
+    assert search.reindex(conn,st,'audit_cat')==1
     assert conn.execute('SELECT COUNT(*) FROM embedding_retry').fetchone()[0]==0

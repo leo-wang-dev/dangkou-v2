@@ -22,7 +22,8 @@ DB = os.environ.get('RESET_DB', '/home/ubuntu/dangkou-wechat-test/data/catalog.d
 ENGINE_STATE = os.environ.get('RESET_ENGINE_STATE', '/home/ubuntu/dsh-wechat-test/state')
 ENGINE_SERVICE = os.environ.get('RESET_ENGINE_SERVICE', 'dangkou-wechat-test-engine')
 
-BASE_TABLES = ['product_dynamic', 'product_razor', 'product_curler', 'import_doc',
+# 旧版固定品类商品表已废弃（仅存量历史数据），重置不再清理
+BASE_TABLES = ['product_dynamic', 'import_doc',
                'embedding', 'cs_note', 'cs_conversation_log', 'cs_customer', 'cs_link']
 TICKET_TYPES_BASE = "('import','template_import','product_import','mutate')"
 

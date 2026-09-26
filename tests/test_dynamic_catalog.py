@@ -32,12 +32,14 @@ def hairdryer_draft():
     }
 
 
-def test_database_seeds_legacy_categories_through_dynamic_registry(conn):
+def test_new_database_has_no_preset_categories(conn):
+    """删B 后无预置品类：新库不播种任何固定分类模板。"""
     from catalog import dynamic_catalog
 
-    keys = {item['key'] for item in dynamic_catalog.list_templates(conn)}
-    assert {'razor', 'curler'} <= keys
-    assert dynamic_catalog.get_template(conn, 'razor')['storage'] == 'legacy'
+    assert dynamic_catalog.list_templates(conn, approved_only=False) == []
+    for key in ('razor', 'curler'):
+        with pytest.raises(KeyError):
+            dynamic_catalog.get_template(conn, key)
 
 
 def test_approved_template_versions_are_immutable(conn):

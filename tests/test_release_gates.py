@@ -17,6 +17,7 @@ from PIL import Image
 from catalog import cs, db, tickets
 from catalog.api import register_routes
 from catalog.csbot import CsBot
+from tests.conftest import seed_products
 
 
 @pytest.fixture
@@ -34,8 +35,9 @@ def env(tmp_path, monkeypatch):
     app.state.storage = None
     app.state.callback = None
     register_routes(app)
-    conn.execute("INSERT INTO product_curler(id,inner_code,item_no,price,tier_price,cs_visible) "
-                 "VALUES('p1','AUDIT-1','MODEL-1','7.35','20:12;50:11',1)")
+    seed_products(conn, [{'id': 'p1', 'inner_code': 'AUDIT-1',
+                          'data': {'model': 'MODEL-1', 'price': '7.35'},
+                          'cs_visible': 1}], key='audit_cat', name='审计品类')
     for cid in ('a', 'b'):
         conn.execute('INSERT INTO cs_customer(id,tg_id) VALUES(?,?)', (cid, cid))
         conn.execute("INSERT INTO cs_note(customer_id,fields_json,status) VALUES(?,?,'confirmed')",
@@ -90,7 +92,7 @@ def test_unauthenticated_ticket_cannot_be_approved(env):
     assert response.status_code in (401, 403), 'anonymous reader obtained approval token and approved ticket'
 
 
-@pytest.mark.parametrize('path', ['/products/curler', '/stats?full=true'])
+@pytest.mark.parametrize('path', ['/products/audit_cat', '/stats?full=true'])
 def test_internal_cost_not_public(env, path):
     _, client, _ = env
     response = client.get(path)
@@ -145,7 +147,7 @@ def test_persona_quote_uses_code_tier_selection(env, monkeypatch):
 
 def test_visible_product_cannot_lose_valid_tiers(env):
     _, client, _ = env
-    response=client.patch('/products/curler/p1',headers=auth(),json={'changes':{'阶梯价':'20:12'}})
+    response=client.patch('/products/audit_cat/p1',headers=auth(),json={'changes':{'阶梯价':'20:12'}})
     assert response.status_code==400
 
 
@@ -185,7 +187,7 @@ def test_customer_links_still_read_own_notes(env):
 
 def test_service_write_auth_is_enabled(env):
     _, client, _ = env
-    assert client.patch('/products/curler/p1', json={'changes': {'价格': '1'}}).status_code == 401
+    assert client.patch('/products/audit_cat/p1', json={'changes': {'价格': '1'}}).status_code == 401
 
 
 def test_failed_update_does_not_discard_rest_of_batch(env, monkeypatch):

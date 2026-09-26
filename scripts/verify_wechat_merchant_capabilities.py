@@ -201,18 +201,28 @@ def main() -> None:
                 'owner_wechat': 'bad\nwechat'}}).status_code == 400
             record('CONTACT-NEG', '档口资料', 'negative', '空操作、非法 TG、带换行微信号均未建工单')
 
-            from catalog import quote as quote_mod
+            from catalog import dynamic_catalog, quote as quote_mod
             quote_template = OUT / 'test-quote-template.xlsx'
             build_quote_template(quote_template)
             quote_mod.TEMPLATE_V2_PATH = str(quote_template)
-            quote_photo = storage.save('curler', 'quote-p1', 'product.jpg', known)
-            conn.execute("INSERT INTO product_curler(id,inner_code,item_no,price,ctn_qty,ctn_size,"
-                         "image_main,status,cs_visible) VALUES(?,?,?,?,?,?,?,?,?)",
-                         ('quote-p1', 'WX-Q-1', 'WX-CURL-Q1', '10', '40', '50*40*30',
-                          quote_photo, 'approved', 1))
+            quote_photo = storage.save('quote_cat', 'quote-p1', 'product.jpg', known)
+            dynamic_catalog.approve_template(conn, {
+                'key': 'quote_cat', 'name': '报价验收分类', 'storage': 'dynamic',
+                'source_sheet': '报价验收分类', 'fields': [
+                    {'key': 'model', 'label': '型号', 'type': 'text', 'visibility': 'public',
+                     'searchable': True, 'role': 'model', 'required': False},
+                    {'key': 'price', 'label': '价格', 'type': 'money', 'visibility': 'internal',
+                     'searchable': False, 'role': 'price', 'required': False},
+                    {'key': 'ctn', 'label': '箱规', 'type': 'text', 'visibility': 'public',
+                     'searchable': False, 'role': 'spec', 'required': False}]})
+            dynamic_catalog.upsert_approved_products(conn, 'quote_cat', [{
+                'id': 'quote-p1', 'inner_code': 'WX-Q-1',
+                'data': {'model': 'WX-CURL-Q1', 'price': '10',
+                         'ctn': 'QTY: 40 PCS MEAS: 50*40*30 CM'},
+                'images': [quote_photo], 'cs_visible': 1}])
             conn.commit()
             quotation = client.post('/quote', json={'items': [{
-                'category': 'curler', 'product_id': 'quote-p1', 'quantity': 81}],
+                'category': 'quote_cat', 'product_id': 'quote-p1', 'quantity': 81}],
                 'price_adjustment_pct': 0, 'deposit_pct': 20})
             assert quotation.status_code == 200, quotation.text
             quote_path = Path(quotation.json()['path'])
@@ -225,9 +235,9 @@ def main() -> None:
 
             assert client.post('/quote', json={'items': []}).status_code == 400
             assert client.post('/quote', json={'items': [{
-                'category': 'curler', 'product_id': 'quote-p1', 'quantity': 0}]}).status_code == 422
+                'category': 'quote_cat', 'product_id': 'quote-p1', 'quantity': 0}]}).status_code == 422
             assert client.post('/quote', json={'items': [{
-                'category': 'curler', 'product_id': 'missing', 'quantity': 1}]}).status_code == 400
+                'category': 'quote_cat', 'product_id': 'missing', 'quantity': 1}]}).status_code == 400
             assert client.post('/quote', json={'items': [{
                 'category': category, 'product_id': rows[0]['id'], 'quantity': 1}]}).status_code == 400
             record('QUOTE-NEG', '商家正式报价单', 'negative',

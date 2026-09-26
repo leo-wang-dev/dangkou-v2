@@ -194,16 +194,20 @@ def test_hidden_or_expired_selection_does_not_apply_product_rule(client, monkeyp
 @pytest.mark.parametrize('query', ['查询商品', '查看商品', '商品列表', '商品目录', '有哪些商品'])
 def test_catalog_query_returns_only_approved_visible_products(client, query, monkeypatch):
     from catalog.csbot import CsBot
+    from tests.conftest import seed_products
     monkeypatch.delenv('CATALOG_CS_API_URL', raising=False)
     conn = app.state.conn
-    for pid, visible, status in [('visible', 1, 'approved'), ('hidden', 0, 'approved'), ('pending', 1, 'pending')]:
-        conn.execute('INSERT INTO product_razor(id,inner_code,model_no,status,cs_visible) VALUES(?,?,?,?,?)',
-                     (pid, pid, pid, status, visible))
+    seed_products(conn, [
+        {'id': 'visible', 'inner_code': 'visible', 'data': {'model': 'visible'}, 'cs_visible': 1},
+        {'id': 'hidden', 'inner_code': 'hidden', 'data': {'model': 'hidden'}, 'cs_visible': 0},
+        {'id': 'pending', 'inner_code': 'pending', 'data': {'model': 'pending'},
+         'status': 'pending', 'cs_visible': 1},
+    ])
     bot = SimpleNamespace(conn=conn, _resolve_product=lambda *a, **kw: (None, None))
     bot._catalog_brief = lambda query='', require_category=False: CsBot._catalog_brief(
         bot, query, require_category)
     reply = merchant_policy.answer(bot, {'id': 'buyer'}, query, False)
     assert 'visible' in reply
     assert 'hidden' not in reply and 'pending' not in reply
-    conn.execute("UPDATE product_razor SET cs_visible=0")
+    conn.execute("UPDATE product_dynamic SET cs_visible=0")
     assert merchant_policy.answer(bot, {'id': 'buyer'}, query, False) == '当前没有在线商品。'

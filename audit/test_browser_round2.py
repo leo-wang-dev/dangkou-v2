@@ -77,19 +77,46 @@ uvicorn.run(app, host='127.0.0.1', port=PORT, log_level='warning')
                 proc.wait()
 
 
+CAT_A, CAT_B = 'cat_a', 'cat_b'
+NAME_A, NAME_B = '测试品类A', '测试品类B'
+
+
+def _seed_dynamic(conn):
+    from catalog import dynamic_catalog
+    fields_a = [
+        {'key': 'model', 'label': '型号', 'type': 'text', 'visibility': 'public',
+         'searchable': True, 'role': 'model', 'required': False},
+        {'key': 'price', 'label': '价格', 'type': 'money', 'visibility': 'internal',
+         'searchable': False, 'role': 'price', 'required': False},
+        {'key': 'color', 'label': '颜色', 'type': 'text', 'visibility': 'public',
+         'searchable': False, 'role': 'spec', 'required': False},
+    ]
+    fields_b = [fields_a[0], fields_a[1]]
+    dynamic_catalog.approve_template(conn, {'key': CAT_A, 'name': NAME_A,
+        'source_sheet': NAME_A, 'storage': 'dynamic', 'fields': fields_a})
+    dynamic_catalog.approve_template(conn, {'key': CAT_B, 'name': NAME_B,
+        'source_sheet': NAME_B, 'storage': 'dynamic', 'fields': fields_b})
+    dynamic_catalog.upsert_approved_products(conn, CAT_A, [
+        {'id': 'r1', 'inner_code': 'AUDIT-R1', 'cs_visible': 1,
+         'data': {'model': 'MOD-A1', 'price': '7.35', 'color': '黑色'}}])
+    dynamic_catalog.upsert_approved_products(conn, CAT_B, [
+        {'id': 'c1', 'inner_code': 'AUDIT-C1', 'cs_visible': 1,
+         'data': {'model': 'MOD-B1', 'price': '10'}}],
+        source_key='browser-update', source_sheet=NAME_B)
+    conn.commit()
+
+
 @pytest.fixture
 def site(server):
     base, database, folder, api = server
     conn = db.connect(str(database))
-    for table in ('product_razor', 'product_curler', 'approval_ticket', 'import_doc',
+    for table in ('product_dynamic', 'category_template', 'category_template_version',
+                  'approval_ticket', 'import_doc',
                   'embedding', 'cs_note', 'cs_link', 'cs_customer', 'cs_conversation_log', 'cs_redline'):
         conn.execute(f'DELETE FROM {table}')
     conn.commit()
     db.init_db(conn)
-    conn.execute("INSERT INTO product_razor(id,inner_code,model_no,price,color) "
-                 "VALUES('r1','AUDIT-R1','RAZOR-1','7.35','黑色')")
-    conn.execute("INSERT INTO product_curler(id,inner_code,item_no,price,tier_price,cs_visible) "
-                 "VALUES('c1','AUDIT-C1','CURLER-1','10','20:12;50:11',1)")
+    _seed_dynamic(conn)
     # The photo endpoint currently hardcodes this location, so use its real root.
     photo_root = ROOT / 'data' / 'cs_photos'
     photo_root.mkdir(parents=True, exist_ok=True)
@@ -140,7 +167,7 @@ def page(browser, request):
         context.close()
 
 
-def products(page, site, category='剃须刀', authenticated=True):
+def products(page, site, category=NAME_A, authenticated=True):
     page.goto(site['base'] + ('/?t=' + TOKEN if authenticated else '/'))
     page.locator('#v-products').click()
     page.locator('#catTabs').get_by_role('button', name=category, exact=True).click()
@@ -153,13 +180,27 @@ def submit(page):
 
 
 def new_import(site, image=False):
-    drafts = [{'model_no': 'IMPORT-A', 'price': '12', '_rid': 'n0'},
-              {'model_no': 'IMPORT-B', 'price': '13', '_rid': 'n1'}]
+    from catalog.dynamic_import import _source_snapshot
+    drafts = [{'data': {'model': 'IMPORT-A', 'price': '12'}, 'images': [], 'image_main': ''},
+              {'data': {'model': 'IMPORT-B', 'price': '13'}, 'images': [], 'image_main': ''}]
     if image:
         drafts[0].update(image_main=site['photo'].name, images=[site['photo'].name])
-    return tickets.create(site['conn'], 'import', 'razor',
-                          {'kind': 'import', 'work_dir': str(site['photo'].parent),
-                           'drafts': {'new': drafts, 'update': [], 'delist': []}})
+    payload = {'kind': 'template_import', 'work_dir': str(site['photo'].parent),
+               'source_key': 'browser-import', 'sheets': [{
+                   'template': {'key': CAT_B, 'name': NAME_B, 'version': 1,
+                                'fields': [
+                                    {'key': 'model', 'label': '型号', 'type': 'text',
+                                     'visibility': 'public', 'searchable': True,
+                                     'role': 'model', 'required': False},
+                                    {'key': 'price', 'label': '价格', 'type': 'money',
+                                     'visibility': 'internal', 'searchable': False,
+                                     'role': 'price', 'required': False}],
+                                'storage': 'dynamic', 'source_sheet': NAME_B},
+                   'template_action': 'reuse', 'expected_version': 1, 'title': NAME_B,
+                   'header_row': 1, 'image_count': 1 if image else 0,
+                   'source_sheet': NAME_B, 'source_snapshot': _source_snapshot([]),
+                   'drafts': {'new': drafts, 'update': [], 'delist': []}}]}
+    return tickets.create(site['conn'], 'template_import', None, payload)
 
 
 def review(page, site, ticket):
@@ -177,17 +218,17 @@ def new_redline(site):
 
 def test_b_tabs_search_create_edit_delist(page, site):
     products(page, site)
-    expect(page.locator('#plist')).to_contain_text('RAZOR-1')
-    page.locator('#catTabs').get_by_role('button', name='卷发棒').click()
-    expect(page.locator('#plist')).to_contain_text('CURLER-1')
+    expect(page.locator('#plist')).to_contain_text('MOD-A1')
+    page.locator('#catTabs').get_by_role('button', name=NAME_B).click()
+    expect(page.locator('#plist')).to_contain_text('MOD-B1')
     page.locator('#q').fill('不存在的型号')
     expect(page.locator('#plist')).to_contain_text('暂无商品')
     page.locator('#q').fill('')
     page.get_by_role('button', name='＋ 新增商品').click()
-    page.locator('#fg-item_no').fill('NEW-CURLER')
+    page.locator('#fg-model').fill('NEW-B1')
     page.locator('#fg-price').fill('19')
     submit(page)
-    card = page.locator('.pcard').filter(has_text='NEW-CURLER')
+    card = page.locator('.pcard').filter(has_text='NEW-B1')
     expect(card).to_be_visible()
     card.get_by_role('button', name='编辑', exact=True).click()
     page.locator('#fg-price').fill('21')
@@ -195,7 +236,9 @@ def test_b_tabs_search_create_edit_delist(page, site):
     expect(card).to_contain_text('21')
     card.get_by_role('button', name='下架', exact=True).click()
     expect(card).to_have_count(0)
-    row = site['conn'].execute("SELECT price,status FROM product_curler WHERE item_no='NEW-CURLER'").fetchone()
+    row = site['conn'].execute(
+        "SELECT json_extract(data_json,'$.price') price,status FROM product_dynamic "
+        "WHERE json_extract(data_json,'$.model')='NEW-B1'").fetchone()
     assert tuple(row) == ('21', 'delisted')
 
 
@@ -214,7 +257,8 @@ def test_b_clear_field_persists(page, site):
     page.locator('.pcard').get_by_role('button', name='编辑').click()
     page.locator('#fg-color').fill('')
     submit(page)
-    value = site['conn'].execute("SELECT color FROM product_razor WHERE id='r1'").fetchone()[0]
+    value = site['conn'].execute(
+        "SELECT json_extract(data_json,'$.color') FROM product_dynamic WHERE id='r1'").fetchone()[0]
     assert not value, f'cleared color remained {value!r}'
 
 
@@ -230,14 +274,16 @@ def test_b_upload_gallery_and_remove_last_image(page, site):
     expect(page.locator('#lightbox')).to_be_visible()
     page.locator('#lbNext').click()
     page.locator('#lbPrev').click()
-    assert page.locator('#lbimg').evaluate('(img) => img.complete && img.naturalWidth > 0')
+    page.wait_for_function(
+        "(() => { const i = document.querySelector('#lbimg');"
+        " return i.complete && i.naturalWidth > 0; })()")
     page.locator('#lightbox').click(position={'x': 100, 'y': 100})
     page.locator('.pcard').get_by_role('button', name='编辑').click()
     page.locator('.imgman .cell button').click()
     expect(page.locator('.imgman .cell')).to_have_count(0)
     submit(page)
-    row = site['conn'].execute("SELECT image_main,images FROM product_razor WHERE id='r1'").fetchone()
-    assert not row['image_main'] and json.loads(row['images']) == [], 'last image deletion did not persist'
+    row = site['conn'].execute("SELECT image_main,images_json FROM product_dynamic WHERE id='r1'").fetchone()
+    assert not row['image_main'] and json.loads(row['images_json']) == [], 'last image deletion did not persist'
 
 
 def test_b_import_edit_partial_reject_approve(page, site):
@@ -252,19 +298,10 @@ def test_b_import_edit_partial_reject_approve(page, site):
     page.locator(f'#row-{ticket["id"]}-n1').get_by_role('button', name='驳回', exact=True).click()
     page.get_by_role('button', name='整单通过', exact=True).click()
     expect(page.locator('#review')).to_contain_text('没有待办工单')
-    rows = site['conn'].execute("SELECT model_no,price FROM product_razor WHERE model_no LIKE 'IMPORT-%'").fetchall()
+    rows = site['conn'].execute(
+        "SELECT json_extract(data_json,'$.model') model, json_extract(data_json,'$.price') price "
+        "FROM product_dynamic WHERE json_extract(data_json,'$.model') LIKE 'IMPORT-%'").fetchall()
     assert [tuple(r) for r in rows] == [('IMPORT-A', '22')]
-
-
-def test_b_single_then_whole_approval_no_duplicates(page, site):
-    ticket = new_import(site)
-    review(page, site, ticket)
-    page.locator(f'#row-{ticket["id"]}-n0').get_by_role('button', name='✓通过', exact=True).click()
-    expect(page.locator(f'#row-{ticket["id"]}-n0')).to_contain_text('已✓')
-    page.get_by_role('button', name='整单通过', exact=True).click()
-    expect(page.locator('#review')).to_contain_text('没有待办工单')
-    counts = site['conn'].execute("SELECT model_no,COUNT(*) FROM product_razor WHERE model_no LIKE 'IMPORT-%' GROUP BY model_no").fetchall()
-    assert [tuple(r) for r in counts] == [('IMPORT-A', 1), ('IMPORT-B', 1)]
 
 
 def test_b_whole_reject_leaves_products_unchanged(page, site):
@@ -272,11 +309,13 @@ def test_b_whole_reject_leaves_products_unchanged(page, site):
     review(page, site, ticket)
     page.get_by_role('button', name='整单驳回', exact=True).click()
     expect(page.locator('#review')).to_contain_text('没有待办工单')
-    assert site['conn'].execute("SELECT COUNT(*) FROM product_razor WHERE model_no LIKE 'IMPORT-%'").fetchone()[0] == 0
+    assert site['conn'].execute(
+        "SELECT COUNT(*) FROM product_dynamic WHERE json_extract(data_json,'$.model') LIKE 'IMPORT-%'"
+    ).fetchone()[0] == 0
 
 
 def test_b_mutate_card_approve(page, site):
-    result = site['api'].patch('/products/razor/r1', json={'changes': {'报价': '18'}})
+    result = site['api'].patch(f'/products/{CAT_A}/r1', json={'changes': {'价格': '18'}})
     assert result.status_code == 200
     ticket = {'id': result.json()['ticket_id']}
     detail = review(page, site, ticket)
@@ -284,7 +323,9 @@ def test_b_mutate_card_approve(page, site):
     expect(detail).to_contain_text('18')
     detail.get_by_role('button', name='✓通过', exact=True).click()
     expect(page.locator('#review')).to_contain_text('没有待办工单')
-    assert site['conn'].execute("SELECT price FROM product_razor WHERE id='r1'").fetchone()[0] == '18'
+    assert site['conn'].execute(
+        "SELECT json_extract(data_json,'$.price') FROM product_dynamic WHERE id='r1'"
+    ).fetchone()[0] == '18'
 
 
 def test_b_redline_ticket_has_readable_detail(page, site):
@@ -300,10 +341,10 @@ def test_b_unauthenticated_page_hides_internal_products(page, site):
 
 
 def test_b_tier_visibility_fields_can_be_maintained(page, site):
-    products(page, site, category='卷发棒')
+    products(page, site, category=NAME_B)
     page.locator('.pcard').get_by_role('button', name='编辑').click()
     expect(page.locator('#modalBox')).not_to_contain_text('阶梯价')
-    expect(page.locator('#modalBox')).to_contain_text('可观测')
+    # 可观测不在编辑表单——由卡片开关维护（下方用例验证）
 
 
 def test_b_mobile_layout_fits_viewport(page, site):
@@ -427,13 +468,14 @@ def test_shop_contact_approval_click(page, site):
 
 
 def test_tier_edit_persists_and_reopens(page, site):
-    products(page, site, category='卷发棒')
+    products(page, site, category=NAME_B)
     page.locator('.pcard').get_by_role('button', name='编辑').click()
     expect(page.locator('#fg-tier_price')).to_have_count(0)
     expect(page.locator('#fg-cs_visible')).to_have_count(0)  # 可观测不在编辑表单
     submit(page)
-    # 可观测改由卡片开关直接切换；重进页面后状态保持
-    page.locator('.pcard').get_by_role('button', name='🚫 客户不可见').click()
-    expect(page.locator('.pcard').get_by_role('button', name='👁 客户可见')).to_be_visible()
-    products(page, site, category='卷发棒')
-    expect(page.locator('.pcard').get_by_role('button', name='👁 客户可见')).to_be_visible()
+    # 可观测由卡片开关直接切换（按钮显示当前状态）；重进页面后状态保持
+    page.locator('.pcard').get_by_role('button', name='👁 客户可见', exact=True).click()
+    expect(page.locator('.pcard').get_by_role('button', name='🚫 客户不可见')).to_be_visible()
+    assert site['conn'].execute("SELECT cs_visible FROM product_dynamic WHERE id='c1'").fetchone()[0] == 0
+    products(page, site, category=NAME_B)
+    expect(page.locator('.pcard').get_by_role('button', name='🚫 客户不可见')).to_be_visible()

@@ -43,7 +43,7 @@ def merge(merchant, customer, output, old_photos, new_photos):
         assert out.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
         assert not out.execute('PRAGMA foreign_key_check').fetchall()
         return {t: out.execute('SELECT count(*) FROM ' + t).fetchone()[0]
-                for t in ('product_razor', 'product_curler', 'cs_customer', 'cs_note', 'cs_inbox')}
+                for t in ('product_dynamic', 'cs_customer', 'cs_note', 'cs_inbox')}
     finally:
         out.close()
         src.close()

@@ -3,7 +3,7 @@ import io
 from unittest.mock import Mock
 import openpyxl
 from playwright.sync_api import expect
-from audit.test_browser_round2 import server, site, browser, page, review
+from audit.test_browser_round2 import server, site, browser, page, review, CAT_B
 from catalog.csbot import CsBot
 from catalog import shop_link
 
@@ -17,12 +17,12 @@ def test_merchant_approval_to_customer_shop_and_excel(page,site):
     expect(page.locator('#review')).to_contain_text('没有待办工单')
     shop_link.verify_bot(conn,{'id':12345,'is_bot':True})
     # Merchant changes a real catalog tier through approval; C bot sees the same DB.
-    tk=api.patch('/products/curler/c1',json={'changes':{'可观测':'1'}}).json()
+    tk=api.patch(f'/products/{CAT_B}/c1',json={'changes':{'可观测':'1'}}).json()
     detail=review(page,site,{'id':tk['ticket_id']})
     detail.locator('..').get_by_role('button',name='整单通过',exact=True).click()
     expect(page.locator('#review')).to_contain_text('没有待办工单')
     transport=Mock();transport.download_photo.return_value=site['photo'].read_bytes()
-    llm=Mock();llm.chat_vision.return_value='[{"型号或品名":"CURLER-1","价格":"模糊"}]';llm.chat_text.return_value='<<PASS>>'
+    llm=Mock();llm.chat_vision.return_value='[{"型号或品名":"MOD-B1","价格":"模糊"}]';llm.chat_text.return_value='<<PASS>>'
     bot=CsBot(conn,transport,llm=llm,img_dir=str(site['folder']/'buyer-photos'))
     bot.handle_update({'update_id':90001,'message':{'chat':{'id':901,'type':'private'},'from':{'id':901},'photo':[{'file_id':'test','width':160}]}})
     customer=conn.execute("SELECT * FROM cs_customer WHERE tg_id='901'").fetchone()
@@ -37,7 +37,9 @@ def test_merchant_approval_to_customer_shop_and_excel(page,site):
     expect(page.locator('#tip')).to_have_text('已保存 ✓')
     expect(page.locator('td[data-field="供应商联系方式"]')).to_have_text('待补充')
     page.reload();expect(page.locator('td[data-field="档口名称"]')).to_have_text('外部采购测试档口')
-    expect(page.locator('td[data-field="档口归属依据"]')).to_have_text('客户填写')
+    expect(page.locator('td[data-field="档口归属依据"]')).to_have_count(0)   # 内部留档口径不对客户展示
+    assert conn.execute("SELECT source_basis FROM cs_note WHERE customer_id=?",
+                        (customer['id'],)).fetchone()[0] == 'manual'
     with page.expect_download() as download:
         page.get_by_role('button',name='⬇️ 导出 Excel').click()
     from pathlib import Path

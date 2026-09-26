@@ -14,21 +14,51 @@ import pytest
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def test_two_expanded_imports_edit_the_clicked_ticket(server):
+E2E_FIELDS = [
+    {'key': 'model', 'label': '型号', 'type': 'text', 'visibility': 'public',
+     'searchable': True, 'role': 'model', 'required': False},
+    {'key': 'color', 'label': '颜色', 'type': 'text', 'visibility': 'public',
+     'searchable': False, 'role': 'spec', 'required': False}]
+
+
+def _ensure_e2e_category(conn):
+    from catalog import dynamic_catalog
+    conn.row_factory = sqlite3.Row
+    try:
+        dynamic_catalog.get_template(conn, 'cat_e2e')
+    except KeyError:
+        dynamic_catalog.approve_template(conn, {'key': 'cat_e2e', 'name': '端到端品类',
+            'source_sheet': '端到端品类', 'storage': 'dynamic', 'fields': E2E_FIELDS})
+    conn.commit()
+
+
+def _e2e_ticket(conn, source_key, name, color):
     from catalog import tickets
+    from catalog.dynamic_import import _source_snapshot
+    payload = {'kind': 'template_import', 'source_key': source_key, 'work_dir': '',
+               'sheets': [{
+                   'template': {'key': 'cat_e2e', 'name': '端到端品类', 'version': 1,
+                                'fields': E2E_FIELDS, 'storage': 'dynamic',
+                                'source_sheet': '端到端品类'},
+                   'template_action': 'reuse', 'expected_version': 1, 'title': '端到端品类',
+                   'header_row': 1, 'image_count': 0, 'source_sheet': '端到端品类',
+                   'source_snapshot': _source_snapshot([]),
+                   'drafts': {'new': [{'data': {'model': name, 'color': color},
+                                       'images': [], 'image_main': ''}],
+                              'update': [], 'delist': []}}]}
+    return tickets.create(conn, 'template_import', None, payload)
+
+
+def test_two_expanded_imports_edit_the_clicked_ticket(server):
     from playwright.sync_api import sync_playwright
     base, path = server
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
+    conn.execute('DELETE FROM approval_ticket')
+    _ensure_e2e_category(conn)
     ids = []
     for name, color in [('CONCURRENT-A', '黑色'), ('CONCURRENT-B', '银色')]:
-        ticket = tickets.create(conn, 'import', 'razor', {
-            'kind': 'import', 'source_key': name,
-            'drafts': {'new': [{'_rid': 'n0', 'model_no': name,
-                               'color': color, 'images': []}],
-                       'update': [], 'delist': []},
-        })
-        ids.append(ticket['id'])
+        ids.append(_e2e_ticket(conn, name, name, color)['id'])
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
@@ -39,7 +69,7 @@ def test_two_expanded_imports_edit_the_clicked_ticket(server):
         # Both cards use row key n0. The first card must retain its own data
         # and submission target after the second card has been expanded.
         page.locator(f'#row-{ids[0]}-n0').get_by_role('button', name='编辑').click()
-        assert page.locator('#fg-model_no').input_value() == 'CONCURRENT-A'
+        assert page.locator('#fg-model').input_value() == 'CONCURRENT-A'
         assert page.locator('#fg-color').input_value() == '黑色'
         page.locator('#fg-color').fill('白色')
         with page.expect_response(lambda r: r.request.method == 'PATCH' and r.url.endswith('/draft')) as saved:
@@ -47,8 +77,8 @@ def test_two_expanded_imports_edit_the_clicked_ticket(server):
         assert saved.value.status == 200
         assert saved.value.url.endswith(f'/tickets/{ids[0]}/draft')
         payloads = [json.loads(conn.execute('SELECT payload FROM approval_ticket WHERE id=?', (tid,)).fetchone()[0]) for tid in ids]
-        assert payloads[0]['drafts']['new'][0]['color'] == '白色'
-        assert payloads[1]['drafts']['new'][0]['color'] == '银色'
+        assert payloads[0]['sheets'][0]['drafts']['new'][0]['data']['color'] == '白色'
+        assert payloads[1]['sheets'][0]['drafts']['new'][0]['data']['color'] == '银色'
         assert all(conn.execute('SELECT status FROM approval_ticket WHERE id=?', (tid,)).fetchone()[0] == 'pending' for tid in ids)
         browser.close()
     conn.close()
@@ -133,11 +163,14 @@ def test_list_page_click_edit_export(server):
 
 def test_direct_delist_disappears_from_management_page(server):
     from playwright.sync_api import sync_playwright
-    base, _ = server
+    base, path = server
+    conn = sqlite3.connect(path)
+    _ensure_e2e_category(conn)
+    conn.close()
     req = urllib.request.Request(
-        f'{base}/products/razor/direct', method='POST',
-        data=json.dumps({'changes': {'model_no': 'PAGE-DELIST-1',
-                                     'description': '下架页面回归'}}).encode(),
+        f'{base}/products/cat_e2e/direct', method='POST',
+        data=json.dumps({'changes': {'model': 'PAGE-DELIST-1',
+                                     'color': '下架页面回归'}}).encode(),
         headers={'Content-Type': 'application/json',
                  'X-Service-Token': 'e2e-service-token'})
     json.load(urllib.request.urlopen(req))

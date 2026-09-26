@@ -1,4 +1,4 @@
-// dsh-engine 商品插件 v2：微信入口 ⇄ 侧车 catalog-v2（预置分类 + Excel Sheet 动态分类）
+// dsh-engine 商品插件 v2：微信入口 ⇄ 侧车 catalog-v2（全动态分类：Excel Sheet / 手工创建）
 // env: CATALOG_V2_URL（默认 http://127.0.0.1:8890）、CATALOG_V2_SERVICE_TOKEN
 
 export const name = 'catalog-v2'
@@ -48,8 +48,7 @@ export async function apply(ctx, _config = {}) {
     name: 'catalog_import',
     description: '两阶段导入商家商品 Excel。phase=template：本次只识别并建立分类模板，不读取商品行入库；模板审批通过后必须提醒商家再次上传同一份商品 Excel。phase=products：必须使用模板阶段返回的 templateDocId，并且只按已审批模板解析商品。mode=new 时按“一个 Sheet=一个分类、识别到的表头=分类规格模板”；mode=existing 时按指定已有动态分类模板映射。模板和商品分开审批，商品不会在模板阶段入库。'
       + '模板阶段通常调用即已完成（status=ticketed，含审批入口，当条回复发给商家）；若返回仍在解析（status=parsing），等商家下次来问时再用 catalog_check 查询进度，不要承诺具体时长。template 阶段完成后明确提醒“请再次上传商品 Excel”，products 阶段 ticketed 后发商品审批入口。'
-      + '收到 Excel 后必须先让商家选择“新建分类”或“并入已有分类”，得到明确答复后再调用 phase=template；不要把第一次上传直接当商品导入。同一阶段、同一文件和同一模板会被服务端幂等去重。'
-      + '通常不要传 category；只有商家明确说这是旧版剃须刀或卷发棒固定模板时才传对应旧品类。',
+      + '收到 Excel 后必须先让商家选择“新建分类”或“并入已有分类”，得到明确答复后再调用 phase=template；不要把第一次上传直接当商品导入。同一阶段、同一文件和同一模板会被服务端幂等去重。',
     parameters: {
       type: 'object',
       properties: {
@@ -59,12 +58,11 @@ export async function apply(ctx, _config = {}) {
         categoryKey: { type: 'string', description: 'mode=existing 时必填：目标已有动态分类 key' },
         templateDocId: { type: 'number', description: 'phase=products 时必填：phase=template 返回且已审批通过的 docId' },
         sourceKey: { type: 'string', description: '供应商/商品表的稳定唯一来源标识；重导沿用，不同供应商不可复用。未传按文件名区分。' },
-        category: { type: 'string', enum: ['razor', 'curler'], description: '可选：仅旧版固定模板使用' },
       },
       required: ['path', 'phase', 'mode'],
     },
     output: OUT,
-    async execute({ path, phase, mode, categoryKey, templateDocId, category, sourceKey }) {
+    async execute({ path, phase, mode, categoryKey, templateDocId, sourceKey }) {
       requiredText(path, 'Excel 文件路径')
       if (!['template', 'products'].includes(phase)) throw new Error('phase 必须是 template 或 products')
       if (!['new', 'existing'].includes(mode)) throw new Error('mode 必须是 new 或 existing')
@@ -77,13 +75,9 @@ export async function apply(ctx, _config = {}) {
         throw new Error('template 阶段不能传 templateDocId')
       }
       optionalText(sourceKey, 'sourceKey')
-      if (category !== undefined && !['razor', 'curler'].includes(category)) {
-        throw new Error('category 仅支持旧版固定分类 razor 或 curler')
-      }
       const body = { path, source_key: sourceKey, mode, phase }
       if (categoryKey) body.category_key = categoryKey
       if (templateDocId !== undefined) body.template_doc_id = templateDocId
-      if (category) body.category = category
       // 两阶段解析实测都只要几秒：原地等结果，一条回复把结果和审批入口
       // 说清，避免“完成推送”抢在对话回复前落地造成消息倒序。
       body.wait = true
@@ -164,12 +158,12 @@ export async function apply(ctx, _config = {}) {
 
   ctx.tools.register({
     name: 'catalog_stats',
-    description: '每次回答商品、分类、型号、颜色或库存问题前必须调用本工具，不能凭历史对话回答。实时查询商品数据：总数指款数，不是库存件数；审批状态和客户可见性以本次工具数据为准；模板导入批准后商品默认可见，手工新增仍以可观测字段为准。返回 categories/category_keys，动态 Excel Sheet 分类也必须照此使用，禁止只列固定的剃须刀和卷发棒。full=true 时返回该品类全部在售商品（全字段）。'
-      + '问"有多少款产品""卷发棒有几个"→ 不传 full；'
+    description: '每次回答商品、分类、型号、颜色或库存问题前必须调用本工具，不能凭历史对话回答。实时查询商品数据：总数指款数，不是库存件数；审批状态和客户可见性以本次工具数据为准；模板导入批准后商品默认可见，手工新增仍以可观测字段为准。返回 categories/category_keys，一律以本次返回为准，不要凭记忆列举分类。full=true 时返回该品类全部在售商品（全字段）。'
+      + '问"有多少款产品""某分类有几个"→ 不传 full；'
       + '问"都有哪些型号/什么颜色/某款什么配置"→ full=true（品类≤200款，全量直接看）；'
       + '清单里查不到的型号=已下架或不存在，如实告诉用户。'
       + '报数量一律用返回里的 total，不要自己数行数。'
-      + '预置剃须刀/卷发棒出正式报价单：full=true 拿到全部 id → 数量向用户确认 → catalog_quote。动态分类未配置报价字段映射时不能生成正式报价单。',
+      + '出正式报价单：full=true 拿到全部 id → 数量向用户确认 → catalog_quote。分类未配置报价字段映射时不能生成正式报价单。',
     parameters: {
       type: 'object',
       properties: {
@@ -195,7 +189,7 @@ export async function apply(ctx, _config = {}) {
   ctx.tools.register({
     name: 'catalog_quote',
     description: '生成正式报价单 Excel（ELETRO BELEZA 全字段模板：14列含装箱物流+合计+定金，完成后系统自动推送文件）。'
-      + '支持预置剃须刀/卷发棒，以及已配置报价字段映射的动态分类（quotable=true，用 quote_map_get 查）；未配置映射的动态分类会返回明确错误，按提示用 quote_map_set 配置后即可出单。'
+      + '支持已配置报价字段映射的分类（quotable=true，用 quote_map_get 查）；未配置映射的分类会返回明确错误，按提示用 quote_map_set 配置后即可出单。'
       + 'items 每项含 product_id 和 quantity；price_adjustment_pct 正=上浮负=下浮（如 3=+3%, -5=下浮5%）。'
       + '用户说"出厂价加3个点"→ pct=3；"销售价下浮5%"→ pct=-5；"加3%佣金"→ pct=3。'
       + 'depositPercent=定金百分比：用户说"30%定金"传30、"两成定金"传20，不传默认30。'
@@ -208,7 +202,7 @@ export async function apply(ctx, _config = {}) {
           items: {
             type: 'object',
             properties: {
-              category: { type: 'string', description: '分类 key：razor、curler 或 catalog_stats 返回的动态分类 key' },
+              category: { type: 'string', description: '分类 key（catalog_stats 返回的 category_keys）' },
               product_id: { type: 'string' },
               quantity: { type: 'number', description: '数量（台/个）' },
             },
@@ -304,7 +298,7 @@ export async function apply(ctx, _config = {}) {
   ctx.tools.register({
     name: 'category_rename',
     description: '给动态分类改名（key 不变，商品不动）。Sheet 名是默认名（如 Sheet1/工作表1）或商家想换更好懂的分类名时调用，'
-      + '改名后向商家复述确认。预置剃须刀/卷发棒分类名称固定，不能改。',
+      + '改名后向商家复述确认。',
     parameters: {
       type: 'object',
       properties: {
@@ -408,7 +402,7 @@ export async function apply(ctx, _config = {}) {
     parameters: {
       type: 'object',
       properties: {
-        categoryKey: { type: 'string', description: '分类 key（预置 razor/curler 或动态分类 key）' },
+        categoryKey: { type: 'string', description: '分类 key' },
         visible: { type: 'boolean', description: 'true=对客户可见，false=整体不可见' },
       },
       required: ['categoryKey', 'visible'],
@@ -426,17 +420,14 @@ export async function apply(ctx, _config = {}) {
   ctx.tools.register({
     name: 'catalog_mutate',
     description: 'AI 代操作商品（改字段/下架/新增）——只生成审批工单不落库，返回含 approveUrl 发给用户。'
-      + '动态分类先调用 catalog_stats（full=true）读取 category_keys 和该分类实际表头；changes 只能使用返回的字段名或字段 key。'
-      + 'changes 的字段名必须用该品类清单里的名字（中文名或括号里的列名，二选一；用别的名字会被打回）：'
-      + '剃须刀：产品型号(model_no)/功能描述(description)/颜色(color)/产品尺寸(mm)(size_mm)/彩盒尺寸(mm)(giftbox_mm)/单套重量(g)(unit_weight_g)/箱规(ctn_spec)/报价(price)/备注(remark)；'
-      + '卷发棒：ITEM.NO 型号(item_no)/装箱尺寸(ctn_size)/装箱数量(ctn_qty)/价格(price)/电压(voltage)/功率(power)/发热体(heater)/材质(material)/频率(frequency)/备注(remark)。'
-      + '用户话里或图片上出现清单外的属性（如工作温度/净重/认证/包装尺寸）由你负责映射：同义的对上清单字段（"额定电压"→电压、"产品型号"→ITEM.NO 型号、"报价"对卷发棒是"价格"），'
-      + '对不上的全部拼进"备注"，格式如"工作温度：160-220℃｜净重：355g｜认证：CE"——不要发明清单外的字段名。'
+      + '先调用 catalog_stats（full=true）读取 category_keys 和该分类实际表头；changes 只能使用返回的字段名或字段 key（中文名或字段 key 二选一，用别的名字会被打回）。'
+      + '用户话里或图片上出现表头外的属性（如工作温度/净重/认证/包装尺寸）由你负责映射：同义的先看 quote_map_get/模板字段能否对上，'
+      + '对不上的拼进备注类字段（note 角色），格式如"工作温度：160-220℃｜净重：355g｜认证：CE"——不要发明表头外的字段名。'
       + '用户随消息发了图片时，必须把 [MEDIA:image] 后面的路径放进 imagePaths，图片会关联到商品。不传图片就丢了。',
     parameters: {
       type: 'object',
       properties: {
-        category: { type: 'string', description: '分类 key；支持固定分类和 Excel Sheet 创建的动态分类' },
+        category: { type: 'string', description: '分类 key（catalog_stats 返回的 category_keys）' },
         action: { type: 'string', enum: ['update', 'delete', 'create'] },
         productId: { type: 'string' },
         changes: { type: 'object', description: '字段名→新值（名字必须来自上方品类清单；'

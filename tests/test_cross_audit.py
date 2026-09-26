@@ -14,7 +14,7 @@ def test_export_does_not_bypass_merchant_redline(setup):
 
 def test_hidden_product_specs_never_disclosed_locally(setup,tmp_path,monkeypatch):
     c,b,m=setup;seed_product(c,tmp_path,monkeypatch)
-    c.execute("UPDATE product_curler SET cs_visible=0,voltage='SECRET-VOLTAGE'");c.commit()
+    c.execute("UPDATE product_dynamic SET cs_visible=0,data_json=json_set(data_json,'$.voltage','SECRET-VOLTAGE')");c.commit()
     send(b,'C001的电压是多少')
     assert 'SECRET-VOLTAGE' not in b.api.sent[-1][1]
 
@@ -45,9 +45,9 @@ def test_extraction_outage_records_clear_item_and_does_not_block_owner_contact(s
 
 def test_selected_catalog_specs_exported_without_price(setup,tmp_path,monkeypatch):
     c,b,m=setup;inquiry=seed_product(c,tmp_path,monkeypatch)
-    c.execute("UPDATE product_curler SET voltage='220V',price='5.00'");c.commit()
+    c.execute("UPDATE product_dynamic SET data_json=json_set(json_set(data_json,'$.voltage','220V'),'$.price','5.00')");c.commit()
     cust=b._ensure_customer({'id':100})
-    inquiry.save(c,cust['id'],[{'category':'curler','product_id':'p1','name':'C001'}]);c.commit()
+    inquiry.save(c,cust['id'],[{'category':'test_cat','product_id':'p1','name':'C001'}]);c.commit()
     send(b,'选1')
     assert fields(c)[0]['电压']=='220V'
     assert '5.00' not in json.dumps(fields(c))
@@ -57,10 +57,13 @@ def test_switching_selected_product_replaces_catalog_image_and_specs(setup,tmp_p
     from PIL import Image
     c,b,m=setup;inquiry=seed_product(c,tmp_path,monkeypatch)
     Image.new('RGB',(20,20),'red').save(tmp_path/'other.png')
-    c.execute("UPDATE product_curler SET voltage='220V'")
-    c.execute("INSERT INTO product_curler(id,inner_code,item_no,status,cs_visible,image_main,voltage) VALUES('p2','C002','C002','approved',1,'other.png','110V')")
+    from tests.conftest import seed_products
+    c.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.voltage','220V')")
+    seed_products(c, [{'id': 'p2', 'inner_code': 'C002',
+                       'data': {'model': 'C002', 'voltage': '110V'},
+                       'images': ['other.png']}])
     cust=b._ensure_customer({'id':100})
-    inquiry.save(c,cust['id'],[{'category':'curler','product_id':'p1','name':'C001'}, {'category':'curler','product_id':'p2','name':'C002'}]);c.commit()
+    inquiry.save(c,cust['id'],[{'category':'test_cat','product_id':'p1','name':'C001'}, {'category':'test_cat','product_id':'p2','name':'C002'}]);c.commit()
     send(b,'选1');send(b,'选2',2)
     assert fields(c)[0]['商品编号']=='p2'
     assert fields(c)[0]['电压']=='110V'
@@ -69,9 +72,9 @@ def test_switching_selected_product_replaces_catalog_image_and_specs(setup,tmp_p
 
 def test_repeated_selection_keeps_provenance_for_later_rename(setup,tmp_path,monkeypatch):
     c,b,m=setup;inquiry=seed_product(c,tmp_path,monkeypatch)
-    c.execute("UPDATE product_curler SET voltage='220V'")
+    c.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.voltage','220V')")
     cust=b._ensure_customer({'id':100})
-    inquiry.save(c,cust['id'],[{'category':'curler','product_id':'p1','name':'C001'}]);c.commit()
+    inquiry.save(c,cust['id'],[{'category':'test_cat','product_id':'p1','name':'C001'}]);c.commit()
     send(b,'选1');send(b,'选1',2)
     m.actions=[{'op':'update','index':1,'fields':{'型号或品名':'盘子'}}]
     send(b,'第一条换成盘子',3)
@@ -83,7 +86,7 @@ def test_renaming_preserves_customer_photo(setup,tmp_path,monkeypatch):
     send(b,photo=True)
     original=c.execute('SELECT photo FROM cs_note').fetchone()[0]
     cust=b._ensure_customer({'id':100})
-    inquiry.save(c,cust['id'],[{'category':'curler','product_id':'p1','name':'C001'}]);c.commit()
+    inquiry.save(c,cust['id'],[{'category':'test_cat','product_id':'p1','name':'C001'}]);c.commit()
     send(b,'选1',2)
     m.actions=[{'op':'update','index':1,'fields':{'型号或品名':'盘子'}}]
     send(b,'第一条换成盘子',3)

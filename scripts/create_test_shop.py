@@ -61,28 +61,37 @@ def create(owner: str):
                 (SHOP_NAME, values["owner_tg_username"], values["owner_wechat"]),
             )
             for filename, title, color in (
-                ("razor/test-rz-8226.jpg", "TEST-RZ-8226", "#345995"),
-                ("curler/test-curl-2026.jpg", "TEST-CURL-2026", "#9b5de5"),
+                ("test_shop/test-rz-8226.jpg", "TEST-RZ-8226", "#345995"),
+                ("test_shop/test-curl-2026.jpg", "TEST-CURL-2026", "#9b5de5"),
             ):
                 _placeholder(images / filename, title, color)
-            conn.execute(
-                """INSERT OR REPLACE INTO product_razor
-                (id,inner_code,model_no,description,color,size_mm,giftbox_mm,unit_weight_g,ctn_spec,price,remark,status,image_main,images,cs_visible)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
-                ("test-rz-8226", "TEST-INNER-RZ", "TEST-RZ-8226", "便携式剃须刀测试商品",
-                 "黑色/银色", "155×65×45mm", "170×80×60mm", "210g", "40 PCS/CTN",
-                 "12.80", "测试数据，不构成报价", "approved", "razor/test-rz-8226.jpg",
-                 json.dumps(["razor/test-rz-8226.jpg"])),
-            )
-            conn.execute(
-                """INSERT OR REPLACE INTO product_curler
-                (id,inner_code,item_no,ctn_size,ctn_qty,price,voltage,power,heater,material,frequency,remark,status,image_main,images,cs_visible)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
-                ("test-curl-2026", "TEST-INNER-CURL", "TEST-CURL-2026", "52×39×36cm", "24 PCS",
-                 "18.50", "110-240V", "44W", "PTC", "ABS+陶瓷", "50/60Hz",
-                 "测试数据，不构成报价", "approved", "curler/test-curl-2026.jpg",
-                 json.dumps(["curler/test-curl-2026.jpg"])),
-            )
+            # 测试商品走动态分类（与生产同一条链路）
+            from catalog import dynamic_catalog
+            fields = [
+                {"key": "model", "label": "型号", "type": "text", "visibility": "public",
+                 "searchable": True, "role": "model", "required": False},
+                {"key": "price", "label": "价格", "type": "money", "visibility": "internal",
+                 "searchable": False, "role": "price", "required": False},
+                {"key": "spec", "label": "规格", "type": "text", "visibility": "public",
+                 "searchable": False, "role": "spec", "required": False},
+                {"key": "ctn", "label": "箱规", "type": "text", "visibility": "public",
+                 "searchable": False, "role": "spec", "required": False},
+            ]
+            dynamic_catalog.approve_template(conn, {
+                "key": "test_cat", "name": "全链路测试品类", "storage": "dynamic",
+                "source_sheet": "全链路测试品类", "fields": fields})
+            dynamic_catalog.upsert_approved_products(conn, "test_cat", [
+                {"id": "test-rz-8226", "inner_code": "TEST-INNER-RZ",
+                 "data": {"model": "TEST-RZ-8226", "price": "12.80",
+                          "spec": "便携式测试商品 黑色/银色 155×65×45mm",
+                          "ctn": "QTY: 40 PCS/CTN"},
+                 "images": ["test_shop/test-rz-8226.jpg"], "cs_visible": 1},
+                {"id": "test-curl-2026", "inner_code": "TEST-INNER-CURL",
+                 "data": {"model": "TEST-CURL-2026", "price": "18.50",
+                          "spec": "测试商品 110-240V 44W",
+                          "ctn": "QTY: 24 PCS/CTN MEAS:52*39*36cm"},
+                 "images": ["test_shop/test-curl-2026.jpg"], "cs_visible": 1},
+            ])
             merchant_policy.apply(conn, values, 1)
             conn.commit()
         finally:

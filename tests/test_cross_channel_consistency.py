@@ -78,4 +78,5 @@ def test_arbitrary_sheet_name_creates_a_queryable_dynamic_category(conn, tmp_pat
     category = payload['sheets'][0]['template']['key']
     assert payload['sheets'][0]['template']['name'] == '配件-2026'
     assert len(dynamic_catalog.list_products(conn, category, public_only=True)) == 1
-    assert dynamic_catalog.list_products(conn, 'razor', public_only=True) == []
+    with pytest.raises(KeyError):
+        dynamic_catalog.list_products(conn, 'razor', public_only=True)   # 无预置品类

@@ -2,7 +2,7 @@
 import json
 
 from playwright.sync_api import expect
-from audit.test_browser_round2 import server, site, browser, page, TOKEN
+from audit.test_browser_round2 import server, site, browser, page, TOKEN, NAME_B
 
 
 def test_customer_bot_guide_navigation_and_safe_status(page, site):
@@ -28,8 +28,8 @@ def test_customer_bot_guide_navigation_and_safe_status(page, site):
     expect(page.locator('#tg-bot-status')).to_contain_text('运行中')
     expect(page.locator('#tg-bot-link')).to_have_attribute('href', 'https://t.me/TestShop_bot')
     assert seen == [TOKEN]
-    page.locator('#catTabs').get_by_text('卷发棒', exact=True).click()
-    expect(page.locator('#plist')).to_contain_text('CURLER-1')
+    page.locator('#catTabs').get_by_text(NAME_B, exact=True).click()
+    expect(page.locator('#plist')).to_contain_text('MOD-B1')
     page.locator('#v-review').click()
     expect(page.locator('#products')).to_be_hidden()
     page.locator('#v-products').click()
@@ -45,7 +45,7 @@ def test_unavailable_status_keeps_guide_and_product_management(page, site):
     expect(page.locator('#tg-bot-status')).to_contain_text('暂无法读取')
     page.get_by_text('开通客户 Telegram Bot', exact=True).click()
     expect(page.locator('#tg-guide')).to_contain_text('BotFather')
-    expect(page.locator('#plist')).to_contain_text('RAZOR-1')
+    expect(page.locator('#plist')).to_contain_text('MOD-A1')
 
 
 import os

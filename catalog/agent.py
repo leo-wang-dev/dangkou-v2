@@ -1,4 +1,4 @@
-"""AI Agent 解析：在隔离容器内运行 claude -p，提示词=品类模板字段+实战验证的硬约束方法论。
+"""AI Agent 解析：在隔离容器内运行 claude -p，提示词=已审批动态分类字段+实战验证的硬约束方法论。
 
 超时拯救：到 AGENT_TIMEOUT 但结果文件已写出 → 收用（doc7 教训）。
 """
@@ -9,20 +9,13 @@ import subprocess
 import uuid
 
 from . import config
-from .templates import TEMPLATES
-
-def build_prompt(template_key, xlsx_path, out_json) -> str:
-    t = TEMPLATES[template_key]
-    return (t.prompt
-            .replace('__FILE__', xlsx_path)
-            .replace('__OUT__', out_json))
 
 
 def build_dynamic_prompt(template: dict, xlsx_path: str, out_json: str, sheet: str = '') -> str:
     """动态分类提示词：已审批字段注入 B端同款方法论，另补乱表规则。
 
-    与固定品类的差别：表头位置不定、表可能极宽、商品跨行、图片行不是商品——
-    这些是动态商家真实表（如 84 列吹风机表 18 商品被代码按物理行切成 34）的实测坑。
+    真实商家表的坑：表头位置不定、表可能极宽、商品跨行、图片行不是商品
+    （如 84 列吹风机表 18 商品被代码按物理行切成 34）。
     """
     lines = []
     for f in template['fields']:
@@ -58,11 +51,6 @@ def build_dynamic_prompt(template: dict, xlsx_path: str, out_json: str, sheet: s
 {{"vendor":"厂家名或null","products":[{{...模板字段...,"image_main":"主图文件名","images":["该商品全部图片文件名"],"image_count":N}}]}}
 用 python 的 json.dump(..., ensure_ascii=False, indent=1) 写入输出文件。
 完成后只回一行：DONE N（N=商品数）"""
-
-
-def parse(template_key, xlsx_path, work_dir) -> dict:
-    prompt = build_prompt(template_key, '/input/source.xlsx', '/work/products.json')
-    return _run_container(prompt, xlsx_path, work_dir)
 
 
 def parse_dynamic(template: dict, xlsx_path: str, work_dir: str, *, sheet: str = '') -> dict:

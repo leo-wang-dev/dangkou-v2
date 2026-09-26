@@ -4,17 +4,16 @@ from pathlib import Path
 import sys
 import time
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from catalog import config, db, search
+from catalog import config, db, dynamic_catalog, search
 from catalog.storage import LocalStorage
-from catalog.templates import TEMPLATES
 
 
 def main():
     conn=db.connect();db.init_db(conn)
     try:
         while True:
-            for category in TEMPLATES:
-                search.reindex(conn,LocalStorage(config.IMG_DIR),category)
+            for template in dynamic_catalog.list_templates(conn):
+                search.reindex(conn,LocalStorage(config.IMG_DIR),template['key'])
             time.sleep(30)
     finally:conn.close()
 

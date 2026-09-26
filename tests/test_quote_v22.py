@@ -2,7 +2,7 @@
 
 验收口径（用户拍板）：
 - 离线测试用用户授权生成的标注测试模板；显式配置时可验收商家原模板；
-- 14 列逐属性断言，物流数据来自箱规解析（剃须刀）或结构化字段（卷发棒），没有的留空；
+- 14 列逐属性断言，物流数据来自箱规文本解析（parse_ctn_spec），没有的留空；
 - 行数=商品数（>6插行、<6删空行），收款码/合并单元格/行高跟着搬；
 - 合计/DEPOSIT/BALANCE 公式按实际行数重写，定金比例动态（默认30%）。
 """
@@ -15,6 +15,7 @@ import pytest
 
 from catalog import db, quote
 from catalog.storage import LocalStorage
+from tests.conftest import seed_products
 
 PNG = base64.b64decode(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
@@ -49,7 +50,7 @@ REAL_CTN = [
 
 
 @pytest.mark.parametrize('text,pcs,nw,gw,dims', REAL_CTN)
-def test_parse_all_real_razor_specs(text, pcs, nw, gw, dims):
+def test_parse_all_real_ctn_specs(text, pcs, nw, gw, dims):
     out = quote.parse_ctn_spec(text)
     assert out['pcs'] == pcs
     assert out['nw'] == nw
@@ -72,48 +73,66 @@ def test_parse_garbage_returns_empty():
     ('40', None),
     ('', None),
 ])
-def test_parse_curler_dims(text, dims):
-    assert quote.parse_dims(text) == dims
+def test_parse_bare_dims_from_ctn_text(text, dims):
+    """纯尺寸文本（无 QTY/N.W./G.W. 前缀）也能解出 MEAS——卷发棒旧结构化字段删除后，
+    动态分类只有箱规文本一列，裸尺寸是常见形态。"""
+    out = quote.parse_ctn_spec(text)
+    assert out.get('dims') == dims
 
 
 # ---------- E2E：逐属性断言 ----------
 
-def _mkdb(tmp_path, n_razor=3, curler=True):
+FIELDS = [
+    {'key': 'model', 'label': '型号', 'type': 'text', 'visibility': 'public',
+     'searchable': True, 'role': 'model', 'required': False},
+    {'key': 'spec', 'label': '描述', 'type': 'text', 'visibility': 'public',
+     'searchable': False, 'role': 'spec', 'required': False},
+    {'key': 'color', 'label': '颜色', 'type': 'text', 'visibility': 'public',
+     'searchable': False, 'role': 'spec', 'required': False},
+    {'key': 'price', 'label': '出厂价', 'type': 'money', 'visibility': 'internal',
+     'searchable': False, 'role': 'price', 'required': False},
+    {'key': 'ctn', 'label': '箱规', 'type': 'text', 'visibility': 'public',
+     'searchable': False, 'role': 'spec', 'required': False},
+]
+
+
+def _mkdb(tmp_path, n=3, dims_only=True):
     conn = sqlite3.connect(':memory:', check_same_thread=False)
     conn.row_factory = sqlite3.Row
     db.init_db(conn)
     st = LocalStorage(str(tmp_path))
-    for i in range(n_razor):
-        rel = st.save('razor', f'r{i}', 'm.png', PNG)
-        conn.execute(
-            "INSERT INTO product_razor(id, inner_code, model_no, description, color, "
-            "ctn_spec, price, image_main) VALUES(?,?,?,?,?,?,?,?)",
-            (f'r{i}', f'KS-R{i}', f'M{i}', f'描述{i}', '黑色',
-             REAL_CTN[i][0], str(10 + i * 5), rel))
-    if curler:
-        rel = st.save('curler', 'c0', 'm.png', PNG)
-        conn.execute(
-            "INSERT INTO product_curler(id, inner_code, item_no, ctn_size, ctn_qty, "
-            "price, image_main) VALUES(?,?,?,?,?,?,?)",
-            ('c0', 'KS-C0', '8226', '60*40*40', '40', '21.5', rel))
-    conn.commit()
+    rows = [{'id': f'r{i}', 'inner_code': f'KS-R{i}',
+             'data': {'model': f'M{i}', 'spec': f'描述{i}', 'color': '黑色',
+                      'ctn': REAL_CTN[i][0], 'price': str(10 + i * 5)},
+             'images': [st.save('test_cat', f'r{i}', 'm.png', PNG)]}
+            for i in range(n)]
+    seed_products(conn, rows, key='test_cat', name='测试品类', fields=FIELDS)
+    if dims_only:
+        # 第二个分类：只有 型号/出厂价/箱规（无描述颜色、箱规文本无重量）
+        seed_products(conn, [{
+            'id': 'c0', 'inner_code': 'KS-C0',
+            'data': {'model': '8226', 'price': '21.5',
+                     'ctn': 'QTY：40 PCS\nMEAS：60*40*40 CM'},
+            'images': [st.save('test_dims', 'c0', 'm.png', PNG)]}],
+            key='test_dims', name='裸箱规品类',
+            fields=[FIELDS[0], FIELDS[3], FIELDS[4]])
     return conn, st
 
 
 def test_full_fields_three_items(tmp_path):
     """3款（删空行路径）：14列逐格断言 + 公式 + 图片 + 结构搬移。"""
-    conn, st = _mkdb(tmp_path, n_razor=2)
+    conn, st = _mkdb(tmp_path, n=2)
     out = str(tmp_path / 'q3.xlsx')
     quote.generate_v2(conn, st, [
-        {'category': 'razor', 'product_id': 'r0', 'quantity': 100},   # 40/箱 → 3箱
-        {'category': 'razor', 'product_id': 'r1', 'quantity': 60},    # 60/箱 → 1箱
-        {'category': 'curler', 'product_id': 'c0', 'quantity': 80},   # 40/箱 → 2箱（无重量）
+        {'category': 'test_cat', 'product_id': 'r0', 'quantity': 100},   # 40/箱 → 3箱
+        {'category': 'test_cat', 'product_id': 'r1', 'quantity': 60},    # 60/箱 → 1箱
+        {'category': 'test_dims', 'product_id': 'c0', 'quantity': 80},   # 40/箱 → 2箱（无重量）
     ], 3, out, deposit_pct=20)
     ws = openpyxl.load_workbook(out).active
     # 表头不动
     assert ws.cell(17, 1).value == 'ITEM NO.'
     assert ws.cell(17, 14).value == 'T-CBM'
-    # 行1：razor r0（40/箱 毛重17.7 净重16.9 38.5*37.5*42.5，+3% 单价 round(10*1.03)=10）
+    # 行1：r0（40/箱 毛重17.7 净重16.9 38.5*37.5*42.5，+3% 单价 round(10*1.03)=10）
     r = 18
     assert ws.cell(r, 1).value == 'M0'
     assert ws.cell(r, 3).value == '描述0'
@@ -128,11 +147,11 @@ def test_full_fields_three_items(tmp_path):
     assert ws.cell(r, 12).value == '38.5*37.5*42.5'        # L MEAS
     assert ws.cell(r, 13).value == round(3 * 17.7, 2)      # M 总毛重 53.1
     assert ws.cell(r, 14).value == round(3 * (38.5 * 37.5 * 42.5) / 1e6, 3)  # N 总体积
-    # 行2：razor r1（60/箱 → 1箱）
+    # 行2：r1（60/箱 → 1箱）
     r = 19
     assert ws.cell(r, 9).value == 1
     assert ws.cell(r, 13).value == round(1 * 19.0, 2)
-    # 行3：curler（缺重量留空、描述颜色留空）
+    # 行3：裸箱规分类（缺重量留空、描述颜色留空）
     r = 20
     assert ws.cell(r, 3).value in (None, '')               # C 描述空
     assert ws.cell(r, 4).value in (None, '')               # D 颜色空
@@ -165,8 +184,8 @@ def test_full_fields_three_items(tmp_path):
 
 def test_twenty_items_insert_path(tmp_path):
     """20款（插行路径）：行数对、合计范围对、收款码下移14行。"""
-    conn, st = _mkdb(tmp_path, n_razor=20, curler=False)
-    items = [{'category': 'razor', 'product_id': f'r{i}', 'quantity': 10 + i}
+    conn, st = _mkdb(tmp_path, n=20, dims_only=False)
+    items = [{'category': 'test_cat', 'product_id': f'r{i}', 'quantity': 10 + i}
              for i in range(20)]
     out = str(tmp_path / 'q20.xlsx')
     quote.generate_v2(conn, st, items, 0, out)
@@ -186,15 +205,15 @@ def test_twenty_items_insert_path(tmp_path):
 
 
 def test_deposit_default_and_edges(tmp_path):
-    conn, st = _mkdb(tmp_path, n_razor=1, curler=False)
+    conn, st = _mkdb(tmp_path, n=1, dims_only=False)
     out = str(tmp_path / 'qd.xlsx')
-    quote.generate_v2(conn, st, [{'category': 'razor', 'product_id': 'r0', 'quantity': 100}], 0, out)
+    quote.generate_v2(conn, st, [{'category': 'test_cat', 'product_id': 'r0', 'quantity': 100}], 0, out)
     ws = openpyxl.load_workbook(out).active
     T = next(r for r in range(19, 30) if ws.cell(r, 1).value == 'TOTAL')
     assert ws.cell(T + 1, 7).value == round(10 * 120 * 0.3, 2)      # 默认30%（整箱120台）
     # 定金100%（尾款0）与0%（定金0）不炸
     for pct in (0, 100):
-        quote.generate_v2(conn, st, [{'category': 'razor', 'product_id': 'r0', 'quantity': 7}],
+        quote.generate_v2(conn, st, [{'category': 'test_cat', 'product_id': 'r0', 'quantity': 7}],
                           0, str(tmp_path / f'q{pct}.xlsx'), deposit_pct=pct)
     ws2 = openpyxl.load_workbook(str(tmp_path / 'q100.xlsx')).active
     T2 = next(r for r in range(19, 30) if ws2.cell(r, 1).value == 'TOTAL')
@@ -210,9 +229,9 @@ def test_ceil_edges():
 
 def test_discount_negative_adjustment(tmp_path):
     """折扣场景：出厂价下浮 5%（单价=round(base×0.95)，与生产同款公式）。"""
-    conn, st = _mkdb(tmp_path, n_razor=1, curler=False)
+    conn, st = _mkdb(tmp_path, n=1, dims_only=False)
     out = str(tmp_path / 'qdisc.xlsx')
-    quote.generate_v2(conn, st, [{'category': 'razor', 'product_id': 'r0', 'quantity': 100}],
+    quote.generate_v2(conn, st, [{'category': 'test_cat', 'product_id': 'r0', 'quantity': 100}],
                       -5, out)
     ws = openpyxl.load_workbook(out).active
     assert ws.cell(18, 5).value == round(10 * (1 + (-5) / 100))
@@ -221,11 +240,11 @@ def test_discount_negative_adjustment(tmp_path):
 
 def test_discount_plus_custom_deposit_combo(tmp_path):
     """组合场景：下浮5% + 定金20%（用户最常改的三件套之二）。"""
-    conn, st = _mkdb(tmp_path, n_razor=2, curler=False)
+    conn, st = _mkdb(tmp_path, n=2, dims_only=False)
     out = str(tmp_path / 'qcombo.xlsx')
     quote.generate_v2(conn, st, [
-        {'category': 'razor', 'product_id': 'r0', 'quantity': 100},
-        {'category': 'razor', 'product_id': 'r1', 'quantity': 60},
+        {'category': 'test_cat', 'product_id': 'r0', 'quantity': 100},
+        {'category': 'test_cat', 'product_id': 'r1', 'quantity': 60},
     ], -5, out, deposit_pct=20)
     ws = openpyxl.load_workbook(out).active
     u0, u1 = round(10 * 0.95), round(15 * 0.95)
@@ -242,10 +261,10 @@ def test_discount_plus_custom_deposit_combo(tmp_path):
 
 def test_price_zero_and_tiny(tmp_path):
     """边界：出厂价 0 / 大幅上浮 50%。"""
-    conn, st = _mkdb(tmp_path, n_razor=1, curler=False)
-    conn.execute("UPDATE product_razor SET price='0' WHERE id='r0'")
+    conn, st = _mkdb(tmp_path, n=1, dims_only=False)
+    conn.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.price','0') WHERE id='r0'")
     conn.commit()
     out = str(tmp_path / 'q0.xlsx')
-    quote.generate_v2(conn, st, [{'category': 'razor', 'product_id': 'r0', 'quantity': 50}], 50, out)
+    quote.generate_v2(conn, st, [{'category': 'test_cat', 'product_id': 'r0', 'quantity': 50}], 50, out)
     ws = openpyxl.load_workbook(out).active
     assert ws.cell(18, 5).value == 0

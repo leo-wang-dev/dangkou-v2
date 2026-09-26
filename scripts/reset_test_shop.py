@@ -15,7 +15,8 @@ import sqlite3
 import time
 
 
-PRODUCT_TABLES = ('product_razor', 'product_curler', 'product_dynamic', 'embedding', 'embedding_retry')
+# 旧版固定品类商品表已废弃（仅存量历史数据），重置不再清理
+PRODUCT_TABLES = ('product_dynamic', 'embedding', 'embedding_retry')
 SESSION_TABLES = (
     'approval_ticket', 'import_doc', 'cs_customer', 'cs_note', 'cs_conversation_log',
     'cs_link', 'cs_inbox', 'cs_outbox', 'cs_context', 'cs_photo_candidates',
@@ -46,8 +47,9 @@ def reset(database: Path, *, expected_shop_id: str | None, wechat_binding: Path 
             if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
                 counts[table] = conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
                 conn.execute(f'DELETE FROM {table}')
+        conn.execute("DELETE FROM category_template_version WHERE category_key IN "
+                     "(SELECT key FROM category_template WHERE storage='dynamic')")
         conn.execute("DELETE FROM category_template WHERE storage='dynamic'")
-        conn.execute("DELETE FROM category_template_version WHERE category_key NOT IN ('razor','curler')")
         fields = ('shop_name', 'stall_no', 'contact_name', 'tg_bot_id', 'tg_bot_username',
                   'owner_tg_username', 'owner_wechat', 'address', 'business_hours',
                   'shipping_info', 'faq')

@@ -103,12 +103,15 @@ def test_model_cannot_invent_quantity(setup):
 
 
 def seed_product(c, tmp_path, monkeypatch):
+    """动态分类测试商品：test_cat/p1（型号 C001，可观测，主图=IMG_DIR/sample.png）。"""
     from catalog import config, photo_inquiry
     from PIL import Image
-    monkeypatch.setattr(config,'IMG_DIR',str(tmp_path))
-    Image.new('RGB',(20,20),'blue').save(tmp_path/'sample.png')
-    c.execute("INSERT INTO product_curler(id,inner_code,item_no,status,cs_visible,image_main) VALUES('p1','C001','C001','approved',1,'sample.png')")
-    cust=CsBot._ensure_customer
+    from tests.conftest import seed_products
+    monkeypatch.setattr(config, 'IMG_DIR', str(tmp_path))
+    Image.new('RGB', (20, 20), 'blue').save(tmp_path / 'sample.png')
+    seed_products(c, [{'id': 'p1', 'inner_code': 'C001',
+                       'data': {'model': 'C001'}, 'cs_visible': 1,
+                       'images': ['sample.png']}])
     return photo_inquiry
 
 
@@ -116,7 +119,7 @@ def test_selected_photo_is_enriched_without_duplicate_and_excel_has_image(setup,
     c,b,m=setup; inquiry=seed_product(c,tmp_path,monkeypatch)
     send(b,photo=True)
     cust=b._ensure_customer({'id':100})
-    inquiry.save(c,cust['id'],[{'category':'curler','product_id':'p1','name':'C001'}]);c.commit()
+    inquiry.save(c,cust['id'],[{'category':'test_cat','product_id':'p1','name':'C001'}]);c.commit()
     m.actions=[];send(b,'选1',2)
     assert len(fields(c))==1
     assert fields(c)[0]['商品编号']=='p1'
@@ -166,8 +169,8 @@ def test_sheet_defined_product_can_be_attached_to_purchase_note(setup, tmp_path,
 def test_hidden_selection_cannot_enter_notes(setup,tmp_path,monkeypatch):
     c,b,m=setup; inquiry=seed_product(c,tmp_path,monkeypatch)
     cust=b._ensure_customer({'id':100})
-    inquiry.save(c,cust['id'],[{'category':'curler','product_id':'p1','name':'C001'}])
-    c.execute("UPDATE product_curler SET cs_visible=0");c.commit()
+    inquiry.save(c,cust['id'],[{'category':'test_cat','product_id':'p1','name':'C001'}])
+    c.execute("UPDATE product_dynamic SET cs_visible=0");c.commit()
     send(b,'选1')
     assert fields(c)==[]
     assert '尚未加入清单' in b.api.sent[-1][1]
@@ -198,7 +201,7 @@ def test_selection_with_many_drafts_requires_explicit_target(setup,tmp_path,monk
                {'op':'create','fields':{'型号或品名':'盘子','数量':'20件'}}]
     send(b,'杯子100个，盘子20件')
     cust=b._ensure_customer({'id':100})
-    inquiry.save(c,cust['id'],[{'category':'curler','product_id':'p1','name':'C001'}]);c.commit()
+    inquiry.save(c,cust['id'],[{'category':'test_cat','product_id':'p1','name':'C001'}]);c.commit()
     m.actions=[];send(b,'选1',2)
     assert all('商品编号' not in f for f in fields(c))
     assert '指定' in b.api.sent[-1][1]
@@ -209,7 +212,8 @@ def test_selection_with_many_drafts_requires_explicit_target(setup,tmp_path,monk
 
 def test_catalog_list_without_purchase_keyword_is_linked(setup,tmp_path,monkeypatch):
     c,b,m=setup;seed_product(c,tmp_path,monkeypatch)
-    c.execute("INSERT INTO product_curler(id,inner_code,item_no,status,cs_visible) VALUES('p2','C002','C002','approved',1)")
+    from tests.conftest import seed_products as _seed
+    _seed(c, [{'id': 'p2', 'inner_code': 'C002', 'data': {'model': 'C002'}}])
     c.commit()
     m.actions=[{'op':'create','fields':{'型号或品名':'C001','数量':'100个'}},
                {'op':'create','fields':{'型号或品名':'C002','数量':'20件'}}]
@@ -399,7 +403,7 @@ def test_duplicate_model_query_lists_public_variants_without_guessing(setup):
 def test_export_contains_catalog_enriched_and_unmatched_purchase_rows(setup, tmp_path, monkeypatch):
     c, bot, model = setup
     seed_product(c, tmp_path, monkeypatch)
-    c.execute("UPDATE product_curler SET voltage='220V' WHERE id='p1'")
+    c.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.voltage','220V') WHERE id='p1'")
     c.commit()
     model.actions = []
 
@@ -422,15 +426,16 @@ def test_export_contains_catalog_enriched_and_unmatched_purchase_rows(setup, tmp
 def test_export_refreshes_catalog_fields_and_enriches_a_previously_unmatched_note(setup, tmp_path, monkeypatch):
     c, bot, model = setup
     seed_product(c, tmp_path, monkeypatch)
-    c.execute("UPDATE product_curler SET voltage='220V' WHERE id='p1'")
+    c.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.voltage','220V') WHERE id='p1'")
     c.commit()
     model.actions = []
 
     send(bot, '我想采购100个c001')
     send(bot, '我想采购20个future-1', uid=2)
-    c.execute("UPDATE product_curler SET voltage='230V' WHERE id='p1'")
-    c.execute("INSERT INTO product_curler(id,inner_code,item_no,voltage,status,cs_visible) "
-              "VALUES('future','FUTURE','FUTURE-1','110V','approved',1)")
+    c.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.voltage','230V') WHERE id='p1'")
+    from tests.conftest import seed_products as _seed
+    _seed(c, [{'id': 'future', 'inner_code': 'FUTURE',
+               'data': {'model': 'FUTURE-1', 'voltage': '110V'}}])
     c.commit()
 
     send(bot, '出表', uid=3)
@@ -446,13 +451,13 @@ def test_export_refresh_preserves_customer_edited_field(setup, tmp_path, monkeyp
 
     c, bot, model = setup
     seed_product(c, tmp_path, monkeypatch)
-    c.execute("UPDATE product_curler SET voltage='220V' WHERE id='p1'")
+    c.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.voltage','220V') WHERE id='p1'")
     c.commit()
     model.actions = []
     send(bot, '我想采购100个c001')
     note = c.execute('SELECT * FROM cs_note').fetchone()
     shop_link.set_field(c, note, '电压', '客户确认240V')
-    c.execute("UPDATE product_curler SET voltage='230V' WHERE id='p1'")
+    c.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.voltage','230V') WHERE id='p1'")
     c.commit()
 
     send(bot, '出表', uid=2)
@@ -489,7 +494,8 @@ def test_category_model_query_only_shows_products_from_that_category(setup):
     from catalog import dynamic_catalog
 
     c, bot, model = setup
-    c.execute("INSERT INTO product_curler(id,inner_code,item_no,status,cs_visible) VALUES('other','C001','C001','approved',1)")
+    from tests.conftest import seed_products as _seed
+    _seed(c, [{'id': 'other', 'inner_code': 'C001', 'data': {'model': 'C001'}}], key='other_cat', name='其他品类')
     dynamic_catalog.approve_template(c, {
         'key': 'cat_hairdryer', 'name': '吹风机', 'source_sheet': '吹风机',
         'fields': [{'key': 'model', 'label': '产品型号', 'role': 'model', 'visibility': 'public'}],

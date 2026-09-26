@@ -6,28 +6,9 @@ SYSTEM_HARD_RULE = ''
 
 
 def reject_tiers(changes):
-    if any(k in changes for k in ('tier_price','阶梯价','阶梯报价')):
+    """已取消的阶梯报价在所有写入入口拒绝；客户是否转人工只按商家已审批红线判断。"""
+    if any(k in changes for k in ('tier_price', '阶梯价', '阶梯报价')):
         raise ValueError('阶梯报价已取消，不支持录入；客户是否转人工只按商家已审批红线判断')
-
-
-def normalize_visible(value):
-    text = str(value).strip().lower()
-    if text in ('1', 'true'):
-        return '1'
-    if text in ('0', 'false'):
-        return '0'
-    raise ValueError('可观测只能是 1 或 0')
-
-
-def validate_product(conn, template, pid, changes):
-    """Validate the merged state, both when creating a ticket and applying it."""
-    reject_tiers(changes)
-    current = conn.execute(f'SELECT * FROM {template.table} WHERE id=?', (pid,)).fetchone() if pid else None
-    if pid and current is None:
-        raise ValueError('商品不存在')
-    visible = normalize_visible(changes.get('cs_visible', current['cs_visible'] if current else 0))
-    if 'cs_visible' in changes:
-        changes['cs_visible'] = visible
 
 
 # ---------- 判定②：红线知识 ----------

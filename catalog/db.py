@@ -20,8 +20,6 @@ def init_db(conn):
     _migrate(conn)
     from . import shop_link
     shop_link.migrate(conn)
-    from . import dynamic_catalog
-    dynamic_catalog.seed_legacy_templates(conn)
     _seed_cs(conn)
     conn.commit()
 
@@ -39,6 +37,8 @@ def _migrate(conn):
             elif field == 'template_keys_json':
                 conn.execute("ALTER TABLE import_doc ADD COLUMN template_keys_json TEXT NOT NULL DEFAULT '[]'")
             elif field == 'phase':
+                # 存量兼容：给极老库补 phase 列时标 'legacy'，仅区分历史导入；
+                # 应用代码已无 legacy 分支，新导入一律显式写 template/products。
                 conn.execute("ALTER TABLE import_doc ADD COLUMN phase TEXT NOT NULL DEFAULT 'legacy'")
             else:
                 conn.execute(f"ALTER TABLE import_doc ADD COLUMN {field} TEXT NOT NULL DEFAULT ''")
@@ -62,15 +62,6 @@ def _migrate(conn):
     cust_cols = {r[1] for r in conn.execute('PRAGMA table_info(cs_customer)')}
     if cust_cols and 'lang' not in cust_cols:
         conn.execute("ALTER TABLE cs_customer ADD COLUMN lang TEXT NOT NULL DEFAULT ''")
-    from .templates import TEMPLATES
-    for t in TEMPLATES.values():
-        cols = {r[1] for r in conn.execute(f'PRAGMA table_info({t.table})')}
-        if cols and 'remark' not in cols:
-            conn.execute(f"ALTER TABLE {t.table} ADD COLUMN remark TEXT DEFAULT ''")
-        if cols and 'tier_price' not in cols:      # 历史兼容列：已停用，应用禁止读写和报价
-            conn.execute(f"ALTER TABLE {t.table} ADD COLUMN tier_price TEXT")
-        if cols and 'cs_visible' not in cols:      # C端：对客户可见（默认关）
-            conn.execute(f"ALTER TABLE {t.table} ADD COLUMN cs_visible INTEGER DEFAULT 0")
     # 动态分类报价映射：老库补列并按表头回填推荐值（价格列唯一才自动绑，
     # 多候选留给商家显式指定——不能猜价格口径）。
     import json as _json

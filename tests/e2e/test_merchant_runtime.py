@@ -69,6 +69,14 @@ def test_two_live_workers_pause_resume(tmp_path,monkeypatch):
             app=FastAPI();binding.register(app);client=TestClient(app,base_url='https://testserver')
             for owner in ('123456','234567'):
                 m=hub.account(c,owner);shop=db.connect(m['db_path'])
+                shop.row_factory=None
+                from catalog import dynamic_catalog
+                dynamic_catalog.approve_template(shop, {'key': 'test_cat', 'name': '全链路测试品类',
+                    'source_sheet': '全链路测试品类', 'storage': 'dynamic', 'fields': [
+                        {'key': 'model', 'label': '型号', 'role': 'model', 'visibility': 'public'},
+                        {'key': 'price', 'label': '价格', 'type': 'money', 'role': 'price',
+                         'visibility': 'internal'}]})
+                shop.commit()
                 shop.execute("INSERT INTO cs_customer(id,tg_id) VALUES('c1','999')")
                 shop.execute("INSERT INTO cs_note(customer_id,photo,fields_json,status) VALUES('c1','',?,'confirmed')",(json.dumps({'型号或品名':owner}),))
                 shop.execute("INSERT INTO cs_link(token,customer_id) VALUES(?,'c1')",(owner+'x'*24,));shop.commit();shop.close()
@@ -86,13 +94,13 @@ def test_two_live_workers_pause_resume(tmp_path,monkeypatch):
                 prefix=urlsplit(link).path.rstrip('/')
                 headers={'X-Service-Token':key}
                 assert client.get(link).status_code==200
-                assert client.get(prefix+'/products/razor',headers=headers).status_code==200
-                result=client.post(prefix+'/products/razor/direct',headers=headers,json={'changes':{'model_no':'ITEM-'+owner,'cs_visible':'1'}})
+                assert client.get(prefix+'/products/test_cat',headers=headers).status_code==200
+                result=client.post(prefix+'/products/test_cat/direct',headers=headers,json={'changes':{'model':'ITEM-'+owner,'cs_visible':'1'}})
                 assert result.status_code==200
                 assert client.get(prefix+'/import',headers=headers).status_code==404
                 assert client.get(prefix+'/products/%252e%252e/import',headers=headers).status_code==404
-                assert client.get(prefix+'/products/razor',headers={'X-Service-Token':'wrong'}).status_code==401
-            assert client.get(urlsplit(links[1]).path+'products/razor',headers={'X-Service-Token':parse_qs(urlsplit(links[0]).query)['t'][0]}).status_code==401
+                assert client.get(prefix+'/products/test_cat',headers={'X-Service-Token':'wrong'}).status_code==401
+            assert client.get(urlsplit(links[1]).path+'products/test_cat',headers={'X-Service-Token':parse_qs(urlsplit(links[0]).query)['t'][0]}).status_code==401
             # Click the actual merchant catalog UI through the scoped gateway.
             import socket,uvicorn
             from playwright.sync_api import sync_playwright
@@ -110,7 +118,7 @@ def test_two_live_workers_pause_resume(tmp_path,monkeypatch):
                     page.get_by_text('ITEM-123456',exact=True).wait_for()
                     assert page.get_by_text('ITEM-234567',exact=True).count()==0
                     page.get_by_role('button',name='新增商品').click()
-                    page.locator('#fg-model_no').fill('BROWSER-NEW')
+                    page.locator('#fg-model').fill('BROWSER-NEW')
                     page.locator('#modalBox').get_by_role('button',name='提交').click()
                     page.get_by_text('BROWSER-NEW',exact=True).wait_for()
                     # 可观测不再是表单字段：卡片上的开关控制，默认不可见就点开

@@ -11,7 +11,10 @@ from tests.test_release_gates import env, auth
 def test_customer_read_key_cannot_access_merchant_prices_or_writes(env, monkeypatch):
     conn, client, _ = env
     monkeypatch.setenv('CATALOG_CS_SERVICE_TOKEN', 'customer-reader')
-    conn.execute("INSERT INTO product_curler(id,inner_code,item_no,price,cs_visible) VALUES('hidden','HIDDEN','HIDDEN-MODEL','888.99',0)")
+    from tests.conftest import seed_products
+    seed_products(conn, [{'id': 'hidden', 'inner_code': 'HIDDEN',
+                          'data': {'model': 'HIDDEN-MODEL', 'price': '888.99'},
+                          'cs_visible': 0}], key='audit_cat', name='审计品类')
     conn.commit()
     h = {'X-Service-Token': 'customer-reader'}
     assert client.get('/cs/catalog').status_code == 401
@@ -36,15 +39,15 @@ def test_bot_calls_merchant_api_and_observes_live_changes(env, monkeypatch):
 
     monkeypatch.setattr('requests.sessions.Session.request', transport)
     assert 'MODEL-1' in bot._on_text({'id': 'a'}, '有哪些商品')
-    conn.execute("UPDATE product_curler SET voltage='230V' WHERE id='p1'")
+    conn.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.voltage','230V') WHERE id='p1'")
     conn.commit()
     assert '230V' in bot._on_text({'id': 'a'}, 'MODEL-1 电压是什么')
-    conn.execute("UPDATE product_curler SET voltage='110V' WHERE id='p1'")
+    conn.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.voltage','110V') WHERE id='p1'")
     conn.commit()
     assert '110V' in bot._on_text({'id': 'a'}, 'MODEL-1 电压是什么')
     assert 'MODEL-1' == photo_inquiry.candidates(conn, [{'型号或品名': 'MODEL-1'}], b'photo')[0]['name']
     assert '/cs/catalog/search' in calls and calls.count('/cs/catalog') >= 3
-    conn.execute("UPDATE product_curler SET status='delisted' WHERE id='p1'")
+    conn.execute("UPDATE product_dynamic SET status='delisted' WHERE id='p1'")
     conn.commit()
     assert 'MODEL-1' not in bot._on_text({'id': 'a'}, '有哪些商品')
     assert photo_inquiry.candidates(conn, [{'型号或品名': 'MODEL-1'}], b'photo') == []

@@ -5,12 +5,19 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import openpyxl
+import pytest
 from playwright.sync_api import expect
 from audit.test_browser_round2 import server, site, browser, page, ART, ROOT
 from catalog.csbot import CsBot
 from scripts.verify_customer_photos import ReplayModel
 
 
+def _photos_available():
+    dataset = json.loads((ROOT / 'tests/fixtures/customer_photos.json').read_text())
+    return all((Path(dataset['source_dir']) / c['file']).is_file() for c in dataset['cases'])
+
+
+@pytest.mark.skipif(not _photos_available(), reason='真实客户照片数据集只在采集机器上（绝对路径随机器），无图时跳过')
 def test_customer_real_photos_edit_and_download(page, site):
     dataset=json.loads((ROOT/'tests/fixtures/customer_photos.json').read_text())
     images={c['id']:(Path(dataset['source_dir'])/c['file']).read_bytes() for c in dataset['cases']}
@@ -42,16 +49,23 @@ def test_customer_real_photos_edit_and_download(page, site):
 
 
 def test_stale_import_approval_shows_conflict_without_duplicates(page,site,monkeypatch):
-    from catalog import ingest
-    from catalog.storage import LocalStorage
-    from tests.test_ingest import _wait_done
+    from catalog import agent, tickets
+    from catalog.dynamic_import import build_ticket_payload
     from audit.test_browser_round2 import review
-    monkeypatch.setattr(ingest.agent,'parse',lambda *a:{'products':[{'model_no':'CONCURRENT','price':'10'}]})
+    from openpyxl import Workbook
+    path=site['folder']/'source.xlsx'
+    wb=Workbook(); ws=wb.active; ws.title='冲突品类'
+    ws.append(['产品型号','价格']); ws.append(['CONCURRENT','10']); wb.save(path)
+
+    def fake_parse(template,xlsx,work_dir,*,sheet=''):
+        keys={f['label']:f['key'] for f in template['fields']}
+        return {'vendor':None,'products':[{keys['产品型号']:'CONCURRENT',keys['价格']:'10'}]}
+    monkeypatch.setattr(agent,'parse_dynamic',fake_parse)
     pending=[]
     for _ in range(2):
-        doc=ingest.start(site['conn'],LocalStorage(str(site['folder']/'images')),str(site['folder']/'source.xlsx'),'razor',source_key='browser-conflict')
-        assert _wait_done(site['conn'],doc)['status']=='ticketed'
-        pending.append(dict(site['conn'].execute("SELECT * FROM approval_ticket WHERE json_extract(payload,'$.doc_id')=?",(doc,)).fetchone()))
+        payload=build_ticket_payload(site['conn'],path,site['folder']/'work',source_key='browser-conflict')
+        tk=tickets.create(site['conn'],'template_import',None,payload)
+        pending.append(dict(site['conn'].execute('SELECT * FROM approval_ticket WHERE id=?',(tk['id'],)).fetchone()))
     first,second=pending
     assert site['api'].post(f"/tickets/{first['id']}/decision",json={'token':first['token'],'approved':True}).status_code==200
     detail=review(page,site,second)
@@ -59,5 +73,5 @@ def test_stale_import_approval_shows_conflict_without_duplicates(page,site,monke
         detail.locator('..').get_by_role('button',name='整单通过',exact=True).click()
     assert response.value.status==409
     assert '已变化' in response.value.json()['detail']
-    assert site['conn'].execute("SELECT COUNT(*) FROM product_razor WHERE model_no='CONCURRENT'").fetchone()[0]==1
+    assert site['conn'].execute("SELECT COUNT(*) FROM product_dynamic WHERE json_extract(data_json,'$.model')='CONCURRENT'").fetchone()[0]==1
     assert site['conn'].execute('SELECT status FROM approval_ticket WHERE id=?',(second['id'],)).fetchone()[0]=='pending'

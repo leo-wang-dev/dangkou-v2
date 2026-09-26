@@ -17,6 +17,7 @@ from PIL import Image
 from catalog import cs, db, tickets
 from catalog.api import register_routes
 from catalog.csbot import CsBot
+from tests.conftest import seed_products
 
 
 @pytest.fixture
@@ -34,8 +35,9 @@ def env(tmp_path, monkeypatch):
     app.state.storage = None
     app.state.callback = None
     register_routes(app)
-    conn.execute("INSERT INTO product_curler(id,inner_code,item_no,price,tier_price,cs_visible) "
-                 "VALUES('p1','AUDIT-1','MODEL-1','7.35','20:12;50:11',1)")
+    seed_products(conn, [{'id': 'p1', 'inner_code': 'AUDIT-1',
+                          'data': {'model': 'MODEL-1', 'price': '7.35'},
+                          'cs_visible': 1}], key='audit_cat', name='审计品类')
     for cid in ('a', 'b'):
         conn.execute('INSERT INTO cs_customer(id,tg_id) VALUES(?,?)', (cid, cid))
         conn.execute("INSERT INTO cs_note(customer_id,fields_json,status) VALUES(?,?,'confirmed')",
@@ -53,6 +55,15 @@ def env(tmp_path, monkeypatch):
     llm.chat_vision.return_value = '[{"型号或品名":"A","价格":"12"}]'
     llm.chat_text.return_value = '<<PASS>>'
     bot = CsBot(conn, api, llm=llm, notifier=Mock(), img_dir=str(tmp_path))
+    # 新版客户 bot 首条消息先问语言；离线审计里的买家 tg_id 固定 100/200，
+    # 预置“中文”让用例直接进入业务分支。
+    from catalog import cs_i18n
+    for tg in (100, 200):
+        bot._ensure_customer({'id': tg})
+        cs_i18n.set_language(
+            conn, conn.execute("SELECT id FROM cs_customer WHERE tg_id=?", (str(tg),)).fetchone()[0],
+            '中文')
+    conn.commit()
     with TestClient(app) as client:
         yield conn, client, bot
     conn.close()
@@ -81,7 +92,7 @@ def test_unauthenticated_ticket_cannot_be_approved(env):
     assert response.status_code in (401, 403), 'anonymous reader obtained approval token and approved ticket'
 
 
-@pytest.mark.parametrize('path', ['/products/curler', '/stats?full=true'])
+@pytest.mark.parametrize('path', ['/products/audit_cat', '/stats?full=true'])
 def test_internal_cost_not_public(env, path):
     _, client, _ = env
     response = client.get(path)
@@ -129,14 +140,14 @@ def test_product_redline_reaches_persona(env):
 def test_persona_quote_uses_code_tier_selection(env, monkeypatch):
     _, _, bot = env
     answer=bot._on_text({'id':'a'},'MODEL-1 60个多少钱')
-    assert '¥' not in answer
+    assert '老板' not in answer and '¥' not in answer
     assert not hasattr(cs,'pick_tier')
     assert bot.llm.chat_text.call_count == 1
 
 
 def test_visible_product_cannot_lose_valid_tiers(env):
     _, client, _ = env
-    response=client.patch('/products/curler/p1',headers=auth(),json={'changes':{'阶梯价':'20:12'}})
+    response=client.patch('/products/audit_cat/p1',headers=auth(),json={'changes':{'阶梯价':'20:12'}})
     assert response.status_code==400
 
 
@@ -176,7 +187,7 @@ def test_customer_links_still_read_own_notes(env):
 
 def test_service_write_auth_is_enabled(env):
     _, client, _ = env
-    assert client.patch('/products/curler/p1', json={'changes': {'价格': '1'}}).status_code == 401
+    assert client.patch('/products/audit_cat/p1', json={'changes': {'价格': '1'}}).status_code == 401
 
 
 def test_failed_update_does_not_discard_rest_of_batch(env, monkeypatch):

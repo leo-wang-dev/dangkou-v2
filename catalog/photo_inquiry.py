@@ -3,22 +3,15 @@ import json
 import os
 import re
 from . import config, search
-from .templates import TEMPLATES
 
 
 def product(conn, category, product_id):
-    t = TEMPLATES.get(category)
-    if not t:
-        from . import dynamic_catalog
-        try:
-            return next((value for value in dynamic_catalog.list_products(
-                conn, category, public_only=True) if value['id'] == product_id), None)
-        except KeyError:
-            return None
-    row = conn.execute(f"SELECT * FROM {t.table} WHERE id=? AND status='approved'", (product_id,)).fetchone()
-    if row is None:
+    from . import dynamic_catalog
+    try:
+        return next((value for value in dynamic_catalog.list_products(
+            conn, category, public_only=True) if value['id'] == product_id), None)
+    except KeyError:
         return None
-    return {**dict(row), '_category': category, 'name': str(row[t.dedup_field] or row['inner_code'])}
 
 
 def candidates(conn, fields, photo):

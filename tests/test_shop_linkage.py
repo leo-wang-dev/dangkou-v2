@@ -27,7 +27,7 @@ def test_merchant_approval_bot_photo_web_excel_same_identity(env):
     with pytest.raises(ValueError):shop_link.verify_bot(conn,{'id':12345,'is_bot':True})
     assert client.post(f"/tickets/{tk['ticket_id']}/decision",json={'token':tk['token'],'approved':True}).status_code==200
     assert shop_link.verify_bot(conn,{'id':12345,'is_bot':True})==shop_id
-    assert conn.execute("SELECT shop_id FROM product_curler WHERE id='p1'").fetchone()[0]==shop_id
+    assert conn.execute("SELECT shop_id FROM product_dynamic WHERE id='p1'").fetchone()[0]==shop_id
     bot.handle_update(photo(8101))
     note=conn.execute("SELECT * FROM cs_note WHERE status='draft'").fetchone()
     assert note['received_shop_id']==note['source_shop_id']==shop_id
@@ -53,7 +53,7 @@ def test_merchant_approval_bot_photo_web_excel_same_identity(env):
     # Already queued files retain their original snapshot rather than changing on retry.
     assert json.loads(document['notes'][0]['fields_json'])['档口名称']=='测试义乌美妆档口'
     linkage=client.get('/shop/linkage',headers=auth()).json()
-    assert linkage['shop_id']==shop_id and linkage['catalog_counts']['curler']==1
+    assert linkage['shop_id']==shop_id and linkage['catalog_counts']['audit_cat']==1
     assert client.get('/shop/linkage').status_code==401
 
 
@@ -84,7 +84,8 @@ def test_bot_binding_mismatch_and_rebind_rejected(env):
     assert client.patch('/shop',headers=auth(),json={'changes':{'tg_bot_id':'99999'}}).status_code==400
     assert client.patch('/shop',headers=auth(),json={'changes':{'shop_id':'other'}}).status_code==400
     with pytest.raises(sqlite3.IntegrityError):
-        conn.execute("INSERT INTO product_curler(id,inner_code,shop_id) VALUES('bad','BAD','another-shop')")
+        conn.execute("INSERT INTO product_dynamic(id,category_key,inner_code,shop_id) "
+                     "VALUES('bad','audit_cat','BAD','another-shop')")
     conn.rollback()
 
 
@@ -97,22 +98,33 @@ def test_competing_shop_approvals_do_not_replace_newer_values(env):
 
 
 def test_legacy_database_migration_preserves_products_and_unknown_note_origins(tmp_path):
+    """老库迁移（product_dynamic 无 shop_id 列）：补列+回填归属；未知来源笔记不猜档口。"""
+    import json as _json
+    from pathlib import Path
     path=tmp_path/'old.db'
     conn=db.connect(str(path))
-    conn.execute('CREATE TABLE product_curler(id TEXT PRIMARY KEY,inner_code TEXT UNIQUE NOT NULL,item_no TEXT,price TEXT,status TEXT,image_main TEXT,images TEXT,source_doc INTEGER,created_at TEXT,updated_at TEXT)')
-    conn.execute("INSERT INTO product_curler VALUES('legacy','L1','OLD-MODEL','9.99','approved',NULL,'[]',NULL,'2020','2021')")
-    conn.commit();db.init_db(conn)
+    old_schema=Path(db._SCHEMA).read_text().split('-- ===== C端')[0]
+    conn.executescript(old_schema)                      # 旧结构：product_dynamic 无 shop_id 列
+    conn.execute('DELETE FROM product_dynamic')
+    conn.commit(); db.init_db(conn)
+    from catalog import dynamic_catalog
+    dynamic_catalog.approve_template(conn, {'key': 'old_cat', 'name': '旧库品类',
+        'source_sheet': '旧库品类', 'fields': [
+            {'key': 'model', 'label': '型号', 'role': 'model', 'visibility': 'public'}]})
+    conn.execute("INSERT INTO product_dynamic(id,category_key,inner_code,data_json) "
+                 "VALUES('legacy','old_cat','L1',?)", (_json.dumps({'model': 'OLD-MODEL'}),))
+    conn.commit(); db.init_db(conn)
     sid=shop_link.profile(conn)['shop_id']
-    row=conn.execute("SELECT * FROM product_curler WHERE id='legacy'").fetchone()
-    assert row['price']=='9.99' and row['shop_id']==sid and row['cs_visible']==0
+    row=conn.execute("SELECT * FROM product_dynamic WHERE id='legacy'").fetchone()
+    assert _json.loads(row['data_json'])['model']=='OLD-MODEL' and row['shop_id']==sid
     conn.execute("INSERT INTO cs_customer(id,tg_id) VALUES('legacy-c','old')")
     conn.execute("INSERT INTO cs_note(customer_id,fields_json) VALUES('legacy-c','{}')");conn.commit()
     db.init_db(conn);assert shop_link.profile(conn)['shop_id']==sid
     old=conn.execute('SELECT * FROM cs_note').fetchone()
     assert old['received_shop_id'] is None and old['source_shop_id'] is None
     assert shop_link.fields_for(conn,old)['档口名称']=='待补充'
-    conn.execute("INSERT INTO product_curler(id,inner_code) VALUES('new','N1')")
-    assert conn.execute("SELECT shop_id FROM product_curler WHERE id='new'").fetchone()[0]==sid
+    conn.execute("INSERT INTO product_dynamic(id,category_key,inner_code) VALUES('new','old_cat','N1')")
+    assert conn.execute("SELECT shop_id FROM product_dynamic WHERE id='new'").fetchone()[0]==sid
     conn.close()
 
 

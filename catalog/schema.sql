@@ -1,3 +1,5 @@
+-- 【已废弃，仅存量数据】旧版固定品类表（剃须刀/卷发棒）：2026-09 起全面转向动态分类，
+-- 应用代码不再读写；建表仅为保留老库历史数据，不做迁移、不删数据。
 CREATE TABLE IF NOT EXISTS product_razor (
   id TEXT PRIMARY KEY, inner_code TEXT UNIQUE NOT NULL,
   model_no TEXT, description TEXT, color TEXT, size_mm TEXT,

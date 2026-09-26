@@ -1,13 +1,11 @@
 """Read-only customer catalog backed by the merchant service, never a snapshot."""
 import base64
-import json
 import os
 from urllib.parse import quote
 
 import requests
 
-from . import price_policy, shop_link
-from .templates import TEMPLATES
+from . import shop_link
 
 
 class CatalogUnavailable(RuntimeError):
@@ -19,32 +17,12 @@ class PhotoUnavailable(CatalogUnavailable):
     pass
 
 
-def public_product(t, row):
-    specs = {label: str(row[col]) for col, label in t.fields
-             if col not in ('price', 'remark') and row[col]
-             and price_policy.public_spec_allowed(label, row[col])}
-    try:
-        images = json.loads(row['images'] or '[]')
-    except (TypeError, ValueError):
-        images = []
-    name = str(row[t.dedup_field] or t.name + '商品')
-    if not price_policy.public_spec_allowed('型号', name):
-        name = t.name + '商品'
-    return {'id': row['id'], '_category': t.key, 'category_name': t.name,
-            'name': name,
-            'status': row['status'], 'cs_visible': row['cs_visible'], 'specs': specs,
-            'image_main': row['image_main'], 'images': images}
-
-
 def local_catalog(conn):
     from . import dynamic_catalog
-    dynamic = [product for template in dynamic_catalog.list_templates(conn)
-               if template['storage'] == 'dynamic'
-               for product in dynamic_catalog.list_products(conn, template['key'], public_only=True)]
-    return {'shop_id': shop_link.profile(conn)['shop_id'], 'products': [
-        public_product(t, row) for t in TEMPLATES.values()
-        for row in conn.execute(f"SELECT * FROM {t.table} WHERE status='approved' AND cs_visible=1")
-    ] + dynamic}
+    products = [product for template in dynamic_catalog.list_templates(conn)
+                if template['storage'] == 'dynamic'
+                for product in dynamic_catalog.list_products(conn, template['key'], public_only=True)]
+    return {'shop_id': shop_link.profile(conn)['shop_id'], 'products': products}
 
 
 def remote(conn, path, body=None):

@@ -9,7 +9,6 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, FiniteFloat
 
 from . import ingest, tickets
-from .templates import TEMPLATES, row_to_dict
 
 
 _IMAGE_FORMAT_EXT = {'PNG': '.png', 'JPEG': '.jpg', 'WEBP': '.webp',
@@ -55,7 +54,6 @@ TEMPLATE_WAIT_SEC = float(os.environ.get('CATALOG_TEMPLATE_WAIT_SEC', '90'))
 
 class ImportIn(BaseModel):
     path: str
-    category: str | None = None
     source_key: str | None = None
     mode: str | None = None
     category_key: str | None = None
@@ -145,20 +143,10 @@ def register_routes(app: FastAPI):
         _auth(request, app.state.token)
         from . import dynamic_catalog
         conn = request_conn()
-        templates = dynamic_catalog.list_templates(conn)
-        # 空分类不上列表（预置剃须刀/卷发棒在新店没商品时不应出现）；
-        # 显式按 key 访问 /products/{cat} 仍可用。
-        counts = {}
-        for t in TEMPLATES.values():
-            counts[t.key] = conn.execute(
-                f"SELECT COUNT(*) c FROM {t.table} WHERE status != 'delisted'").fetchone()['c']
-        dyn = conn.execute("SELECT category_key, COUNT(*) c FROM product_dynamic "
-                           "WHERE status != 'delisted' GROUP BY category_key").fetchall()
-        counts.update({row['category_key']: row['c'] for row in dyn})
-        # 空分类不上列表只针对预置剃须刀/卷发棒；动态分类（含手工新建的空分类）
-        # 始终上列表——商家先建分类、再手工/自然语言加商品是正式流程。
-        templates = [value for value in templates
-                     if value.get('storage') == 'dynamic' or counts.get(value['key'], 0) > 0]
+        # 只列动态分类（含手工新建的空分类）——商家先建分类、再手工/自然语言
+        # 加商品是正式流程；旧版固定品类（storage=legacy）已下线，不再上列表。
+        templates = [value for value in dynamic_catalog.list_templates(conn)
+                     if value.get('storage') == 'dynamic']
         return {'categories': templates}
 
     class CategoryCreateIn(BaseModel):
@@ -238,7 +226,7 @@ def register_routes(app: FastAPI):
     def stats_supplier(request: Request, by: str = 'supplier'):
         """按供应商/分类聚合在售统计（动态分类）：供应商搜索与“多少款在推广”的底数。
 
-        与既有 /stats（预置分类库存口径）互不影响；推广口径=对客户可见。
+        与既有 /stats（商品库存口径）互不影响；推广口径=对客户可见。
         """
         _auth(request, app.state.token)
         conn = request_conn()
@@ -274,7 +262,7 @@ def register_routes(app: FastAPI):
         except KeyError:
             raise HTTPException(404, '未知分类')
         if template['storage'] != 'dynamic':
-            raise HTTPException(400, '预置分类的报价映射是固定配置')
+            raise HTTPException(400, '旧版固定分类已下线，仅保留历史数据')
         return {'key': category, 'name': template['name'],
                 'quote_map': template.get('quote_map') or {},
                 'quotable': dynamic_catalog.quotable(template),
@@ -302,24 +290,16 @@ def register_routes(app: FastAPI):
         """整分类客户可见性：一次设置该分类全部在售商品的可观测（cs_visible）。"""
         _auth(request, app.state.token)
         conn = request_conn()
-        if category in TEMPLATES:
-            table = TEMPLATES[category].table
-        else:
-            from . import dynamic_catalog
-            try:
-                template = dynamic_catalog.get_template(conn, category)
-            except KeyError:
-                raise HTTPException(404, '未知分类')
-            if template['storage'] != 'dynamic':
-                raise HTTPException(400, '预置分类的可见性请用 razor/curler key 设置')
-            table = 'product_dynamic'
-        if table == 'product_dynamic':
-            cur = conn.execute("UPDATE product_dynamic SET cs_visible=?, updated_at=datetime('now') "
-                               "WHERE category_key=? AND status!='delisted'",
-                               (1 if body.visible else 0, category))
-        else:
-            cur = conn.execute(f"UPDATE {table} SET cs_visible=?, updated_at=datetime('now') "
-                               "WHERE status!='delisted'", (1 if body.visible else 0,))
+        from . import dynamic_catalog
+        try:
+            template = dynamic_catalog.get_template(conn, category)
+        except KeyError:
+            raise HTTPException(404, '未知分类')
+        if template['storage'] != 'dynamic':
+            raise HTTPException(400, '旧版固定分类已下线，仅保留历史数据')
+        cur = conn.execute("UPDATE product_dynamic SET cs_visible=?, updated_at=datetime('now') "
+                           "WHERE category_key=? AND status!='delisted'",
+                           (1 if body.visible else 0, category))
         conn.commit()
         return {'key': category, 'visible': body.visible, 'updated': cur.rowcount}
 
@@ -474,10 +454,8 @@ def register_routes(app: FastAPI):
             raise HTTPException(400, '只有 products 阶段可以提供 template_doc_id')
         # 实测 91MB/378 图解析<1s；按每 MB 4s 估并封顶 10 分钟，宁可报短不报长。
         est = min(600, max(60, int(os.path.getsize(body.path) / 1048576 * 4)))
-        # Dynamic Sheet imports default to the safe template-only phase even
-        # for older callers that do not know the new field.  Fixed legacy
-        # callers keep their old path unless the bot explicitly sends a phase.
-        phase = body.phase or ('template' if body.category is None else 'legacy')
+        # 动态两阶段导入：未显式传 phase 的老调用方默认走安全的模板阶段。
+        phase = body.phase or 'template'
         # 模板/商品解析实测都只要几秒：wait 模式原地等结果，让调用方（bot）
         # 一条消息把结果和审批入口说清。否则后台完成推送可能抢在对话回复
         # 前面落地，商家会先看到“已完成”再看到“开始解析”的倒序消息。
@@ -495,7 +473,7 @@ def register_routes(app: FastAPI):
 
         try:
             doc_id = ingest.start(request_conn(), app.state.storage,
-                                  body.path, body.category,
+                                  body.path,
                                   callback=wait_callback, source_key=body.source_key,
                                   mode=body.mode, category_key=body.category_key,
                                   phase=phase,
@@ -612,11 +590,7 @@ def register_routes(app: FastAPI):
             wd = payload.get('work_dir')
             if not wd:
                 raise HTTPException(404, 'no preview')
-            if fname.split('/')[0] in TEMPLATES:
-                p = app.state.storage.abs_path(fname)
-                wd = app.state.storage.base
-            else:
-                p = _os.path.realpath(_os.path.join(wd, fname))
+            p = _os.path.realpath(_os.path.join(wd, fname))
             if _os.path.commonpath([_os.path.realpath(wd), p]) != _os.path.realpath(wd):
                 raise HTTPException(403, 'forbidden')
         if not _os.path.isfile(p):
@@ -631,36 +605,6 @@ def register_routes(app: FastAPI):
         elif safe.lower().endswith(('.jpg', '.jpeg')):
             media = 'image/jpeg'
         return Response(content=data, media_type=media)
-
-    class RowDecisionIn(BaseModel):
-        token: str
-        row_key: str
-        approved: bool
-        edits: dict | None = None
-
-    @app.post('/tickets/{ticket_id}/row')
-    def decide_row(ticket_id: int, body: RowDecisionIn):
-        try:
-            result = tickets.decide_row(request_conn(), ticket_id,
-                                        body.token, body.row_key,
-                                        body.approved, body.edits, before_commit=_persist_decision_images)
-        except tickets.TicketError as e:
-            raise HTTPException(409 if isinstance(e, tickets.TicketConflict) else 400, str(e))
-        if body.approved:
-            _reindex_decision(result)
-            if result.get('phase') == 'template' and result.get('template_doc_id'):
-                # The first callback announces the template ticket.  This
-                # second durable outbox message is sent only after approval,
-                # so the merchant is reminded at the exact hand-off point.
-                try:
-                    from . import notify
-                    notify.push(result['template_doc_id'], ticket_id, body.token,
-                                {'phase': 'template', 'approved': True,
-                                 'template_count': result.get('template_approved', 0)},
-                                conn=request_conn())
-                except Exception:
-                    pass
-        return result
 
     class DraftEditIn(BaseModel):
         token: str
@@ -700,14 +644,10 @@ def register_routes(app: FastAPI):
     def _persist_decision_images(result):
         if result.get('created_rows'):
             _persist_images_and_reindex(result)
-        if result.get('images_applied'):
-            _apply_product_images(result['images_applied'])
 
     def _reindex_decision(result):
         from . import search
         cats = {r['_category'] for r in result.get('created_rows', [])}
-        if result.get('images_applied'):
-            cats.update(k for k, t in TEMPLATES.items() if t.table == result['images_applied']['table'])
         if not cats:
             return
         db_file = app.state.conn.execute('PRAGMA database_list').fetchone()[2]
@@ -733,7 +673,7 @@ def register_routes(app: FastAPI):
 
     def _read_image_source(fn, work_dir=None):
         try:
-            if work_dir is not None and str(fn).split('/')[0] not in {'_upload', *TEMPLATES}:
+            if work_dir is not None and str(fn).split('/')[0] != '_upload':
                 base = os.path.realpath(work_dir)
                 src = os.path.realpath(os.path.join(base, str(fn)))
                 if os.path.commonpath([base, src]) != base:
@@ -743,32 +683,6 @@ def register_routes(app: FastAPI):
             return open(src, 'rb').read()
         except (OSError, ValueError) as exc:
             raise HTTPException(400, '图片无法读取，请重新上传') from exc
-
-    def _apply_product_images(info):
-        """商品换图（mutate 审批通过）：暂存图落位产品目录 → 更新主图/图集 → 重嵌入。"""
-        from . import search
-        import io
-
-        def _webpify(data, fname):
-            if fname.lower().endswith(('.tif', '.tiff', '.bmp')):
-                from PIL import Image
-                img = Image.open(io.BytesIO(data)).convert('RGB')
-                buf = io.BytesIO(); img.save(buf, format='PNG')
-                return buf.getvalue(), '.png'
-            return data, os.path.splitext(fname)[1] or '.png'
-
-        pid, table = info['id'], info['table']
-        cat = next(k for k, v in TEMPLATES.items() if v.table == table)
-        rels = []
-        for i, fn in enumerate(info['images']):
-            data, ext = _webpify(_read_image_source(fn), fn)
-            rels.append(app.state.storage.save(cat, pid, f'img-{secrets.token_hex(8)}{ext}', data))
-        if not rels and info['images']:
-            raise HTTPException(400, '图片无法读取')
-        request_conn().execute(
-            f"UPDATE {table} SET image_main=?, images=?, updated_at=datetime('now') WHERE id=?",
-            (rels[0] if rels else '', __import__('json').dumps(rels, ensure_ascii=False), pid))
-        request_conn().execute('DELETE FROM embedding WHERE product_id=?', (pid,))
 
     def _persist_images_and_reindex(result):
         """导入审批通过：Agent 工作目录的全部图片落位 storage（tif/bmp转png）→ 更新主图/图集 → 向量入池。"""
@@ -808,115 +722,57 @@ def register_routes(app: FastAPI):
     @app.get('/products/{category}')
     def list_products(category: str, request: Request):
         _auth(request, app.state.token)
-        if category not in TEMPLATES:
-            from . import dynamic_catalog
-            try:
-                template = dynamic_catalog.get_template(request_conn(), category)
-            except KeyError:
-                raise HTTPException(404, '未知品类')
-            rows = dynamic_catalog.list_products(request_conn(), category)
-            products = []
-            for row in rows:
-                product = {field['label']: row['data'].get(field['key'], '')
-                           for field in template['fields']}
-                product.update({'内部货号': row['inner_code'], '状态': row['status'],
-                                '主图': row['image_main'], '图集': row['images'],
-                                '可观测': row['cs_visible'], 'id': row['id']})
-                products.append(product)
-            fields = [{**field, 'col': field['key']} for field in template['fields']]
-            fields.append({'col': 'cs_visible', 'label': '可观测', 'type': 'number',
-                           'role': 'visibility', 'visibility': 'internal',
-                           'required': False, 'searchable': False})
-            return {'template': {**template, 'fields': fields}, 'products': products}
-        t = TEMPLATES[category]
-        rows = request_conn().execute(
-            f'SELECT * FROM {t.table} ORDER BY id').fetchall()
-        return {'template': {'key': t.key, 'name': t.name,
-                             'fields': [{'col': c, 'label': l} for c, l in (*t.fields, ('cs_visible', '可观测'))]},
-                'products': [row_to_dict(t, r) for r in rows]}
-
-    def _check_cs_visible(category, pid, changes):
-        from . import cs
-        if category not in TEMPLATES:
-            raise HTTPException(404, '未知品类')
+        from . import dynamic_catalog
         try:
-            cs.validate_product(request_conn(), TEMPLATES[category], pid, changes)
-        except ValueError as e:
-            raise HTTPException(400, str(e))
+            template = dynamic_catalog.get_template(request_conn(), category)
+        except KeyError:
+            raise HTTPException(404, '未知品类')
+        if template['storage'] != 'dynamic':
+            raise HTTPException(404, '旧版固定品类已下线，仅保留历史数据')
+        rows = dynamic_catalog.list_products(request_conn(), category)
+        products = []
+        for row in rows:
+            product = {field['label']: row['data'].get(field['key'], '')
+                       for field in template['fields']}
+            product.update({'内部货号': row['inner_code'], '状态': row['status'],
+                            '主图': row['image_main'], '图集': row['images'],
+                            '可观测': row['cs_visible'], 'id': row['id']})
+            products.append(product)
+        fields = [{**field, 'col': field['key']} for field in template['fields']]
+        fields.append({'col': 'cs_visible', 'label': '可观测', 'type': 'number',
+                       'role': 'visibility', 'visibility': 'internal',
+                       'required': False, 'searchable': False})
+        return {'template': {**template, 'fields': fields}, 'products': products}
 
     @app.post('/products/{category}')
     def create_product(category: str, body: MutateIn, request: Request):
         _auth(request, app.state.token)
-        if category not in TEMPLATES:
-            return _dynamic_mutation_ticket(category, 'create', body)
-        try:
-            norm, to_remark = tickets.normalize_changes(TEMPLATES[category], body.changes or {})
-        except tickets.TicketError as exc:
-            raise HTTPException(400,str(exc))
-        if not set(body.changes or {}) - set(to_remark) and body.images is None:
-            _raise_unknown_fields(category)   # 一个合法字段都没有=AI没做映射，打回让它重发
-        _check_cs_visible(category, None, norm)
-        tk = tickets.create(request_conn(), 'mutate', category,
-                            {'kind': 'mutate', 'action': 'create',
-                             'product_id': None, 'changes': norm,
-                             **({'images': body.images} if body.images is not None else {})})
-        return {'ticket_id': tk['id'], 'token': tk['token']}
+        return _dynamic_mutation_ticket(category, 'create', body)
 
     @app.patch('/products/{category}/{pid}')
     def update_product(category: str, pid: str, body: MutateIn, request: Request):
         _auth(request, app.state.token)
         if not body.changes and body.images is None:
             raise HTTPException(400, 'changes 与 images 至少给一个')
-        if category not in TEMPLATES:
-            return _dynamic_mutation_ticket(category, 'update', body, pid)
-        try:
-            norm, to_remark = tickets.normalize_changes(TEMPLATES[category], body.changes or {})
-        except tickets.TicketError as exc:
-            raise HTTPException(400,str(exc))
-        if not set(body.changes or {}) - set(to_remark) and body.images is None:
-            _raise_unknown_fields(category)
-        _check_cs_visible(category, pid, norm)
-        tk = tickets.create(request_conn(), 'mutate', category,
-                            {'kind': 'mutate', 'action': 'update', 'product_id': pid,
-                             'changes': norm,
-                             **({'images': body.images} if body.images is not None else {}),
-                             'before': _current(category, pid)})
-        return {'ticket_id': tk['id'], 'token': tk['token']}
+        return _dynamic_mutation_ticket(category, 'update', body, pid)
 
     @app.delete('/products/{category}/{pid}')
     def delete_product(category: str, pid: str, request: Request):
         _auth(request, app.state.token)
-        if category not in TEMPLATES:
-            return _dynamic_mutation_ticket(category, 'delete', MutateIn(changes={}), pid)
-        tk = tickets.create(request_conn(), 'mutate', category,
-                            {'kind': 'mutate', 'action': 'delete', 'product_id': pid,
-                             'before': _current(category, pid)})
-        return {'ticket_id': tk['id'], 'token': tk['token']}
-
-    def _raise_unknown_fields(category):
-        t = TEMPLATES[category]
-        raise HTTPException(
-            400, 'changes 里没有可识别的字段。该品类合法字段：'
-            + '、'.join(label for _, label in t.fields)
-            + '；清单外的信息请拼进"备注"（如"工作温度：160-220℃｜认证：CE"）')
+        return _dynamic_mutation_ticket(category, 'delete', MutateIn(changes={}), pid)
 
     def _current(category, pid):
-        if category not in TEMPLATES:
-            from . import dynamic_catalog
-            try:
-                template = dynamic_catalog.get_template(request_conn(), category)
-                row = next(value for value in dynamic_catalog.list_products(request_conn(), category)
-                           if value['id'] == pid)
-            except (KeyError, StopIteration):
-                return None
-            value = {field['label']: row['data'].get(field['key'], '') for field in template['fields']}
-            value.update({'id': row['id'], '内部货号': row['inner_code'], '状态': row['status'],
-                          '主图': row['image_main'], '图集': row['images'], '可观测': row['cs_visible']})
-            return value
-        t = TEMPLATES[category]
-        r = request_conn().execute(
-            f'SELECT * FROM {t.table} WHERE id=?', (pid,)).fetchone()
-        return row_to_dict(t, r) if r else None
+        from . import dynamic_catalog
+        try:
+            template = dynamic_catalog.get_template(request_conn(), category)
+            row = next(value for value in dynamic_catalog.list_products(request_conn(), category)
+                       if value['id'] == pid)
+        except (KeyError, StopIteration):
+            return None
+        value = {field['label']: row['data'].get(field['key'], '') for field in template['fields']}
+        value.update({'id': row['id'], '内部货号': row['inner_code'], '状态': row['status'],
+                      '主图': row['image_main'], '图集': row['images'], '可观测': row['cs_visible']})
+        return value
 
     def _dynamic_mutation_ticket(category, action, body, pid=None):
         from . import dynamic_catalog
@@ -925,7 +781,12 @@ def register_routes(app: FastAPI):
         except KeyError:
             raise HTTPException(404, '未知品类')
         if template['storage'] != 'dynamic':
-            raise HTTPException(400, '预置品类请使用原商品接口')
+            raise HTTPException(400, '旧版固定品类已下线，仅保留历史数据，不能新建或修改商品')
+        from . import cs
+        try:
+            cs.reject_tiers(body.changes or {})
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         mapping = {field['key']: field['key'] for field in template['fields']}
         mapping.update({field['label']: field['key'] for field in template['fields']})
         normalized = {}
@@ -974,33 +835,10 @@ def register_routes(app: FastAPI):
         from . import dynamic_catalog
         dynamic_templates = [value for value in dynamic_catalog.list_templates(request_conn())
                              if value['storage'] == 'dynamic']
-        known_categories = {*TEMPLATES, *(value['key'] for value in dynamic_templates)}
+        known_categories = {value['key'] for value in dynamic_templates}
         if category is not None and category not in known_categories:
             raise HTTPException(404, '未知品类')
-        category_keys = {t.name: key for key, t in TEMPLATES.items()}
-        for key, t in TEMPLATES.items():
-            if category is not None and key != category:
-                continue
-            n = request_conn().execute(
-                f"SELECT COUNT(*) c FROM {t.table} WHERE status != 'delisted'").fetchone()['c']
-            visible = request_conn().execute(
-                f"SELECT COUNT(*) c FROM {t.table} WHERE status != 'delisted' AND cs_visible=1").fetchone()['c']
-            # 空分类不进清单（新店的预置剃须刀/卷发棒不该凭空出现）；
-            # 商家显式点名查询时如实返回 0 款。
-            if n == 0 and category is None:
-                continue
-            by_cat[t.name] = n
-            visible_by_cat[t.name] = visible
-            total += n
-            visible_total += visible
-            if full and (category is None or category == key):
-                rows = request_conn().execute(
-                    f"SELECT * FROM {t.table} WHERE status != 'delisted' ORDER BY id").fetchall()
-                products[key] = [row_to_dict(t, r) for r in rows]
-            else:
-                row = request_conn().execute(
-                    f"SELECT * FROM {t.table} WHERE status != 'delisted' LIMIT 3").fetchall()
-                samples[key] = [row_to_dict(t, r) for r in row]
+        category_keys = {}
         for template in dynamic_templates:
             key = template['key']
             if category is not None and category != key:
@@ -1075,141 +913,100 @@ def register_routes(app: FastAPI):
     @app.post('/products/{category}/direct')
     def direct_create(category: str, body: MutateIn, request: Request):
         _auth(request, app.state.token)
-        if category not in TEMPLATES:
-            from . import dynamic_catalog, inner_code as _ic
-            try:
-                template = dynamic_catalog.get_template(request_conn(), category)
-            except KeyError:
-                raise HTTPException(404, '未知品类')
-            allowed = {field['key'] for field in template['fields']}
-            data = {key: str(value) for key, value in body.changes.items() if key in allowed}
-            if not data and body.images is None:
-                raise HTTPException(400, 'changes 不能为空')
-            visible = str(body.changes.get('cs_visible', '0')).strip()
-            if visible not in {'0', '1'}:
-                raise HTTPException(400, '可观测只能是 0 或 1')
-            pid = secrets.token_hex(8)
-            img_rels = []
-            for fn in body.images or []:
-                data_bytes = _read_image_source(fn)
-                ext = os.path.splitext(fn)[1] or '.png'
-                img_rels.append(app.state.storage.save(category, pid, f'img-{secrets.token_hex(8)}{ext}', data_bytes))
-            result = dynamic_catalog.upsert_approved_products(request_conn(), category, [{
-                'id': pid, 'inner_code': _ic.gen(), 'data': data, 'images': img_rels,
-                'cs_visible': int(visible), 'row_fingerprint': '', 'source_row': None,
-            }])
-            request_conn().commit()
-            if img_rels:
-                from . import search
-                search.reindex(request_conn(), app.state.storage, category)
-            return {'id': pid, **result}
-        import secrets as _sec
-        from . import inner_code as _ic
-        t = TEMPLATES[category]
-        pid = _sec.token_hex(8)
-        cols = list(body.changes.keys())
-        if not cols:
+        from . import dynamic_catalog, inner_code as _ic
+        try:
+            template = dynamic_catalog.get_template(request_conn(), category)
+        except KeyError:
+            raise HTTPException(404, '未知品类')
+        if template['storage'] != 'dynamic':
+            raise HTTPException(400, '旧版固定品类已下线，仅保留历史数据')
+        from . import cs
+        try:
+            cs.reject_tiers(body.changes or {})
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        allowed = {field['key'] for field in template['fields']}
+        data = {key: str(value) for key, value in body.changes.items() if key in allowed}
+        if not data and body.images is None:
             raise HTTPException(400, 'changes 不能为空')
-        conn_cols = [c for c in cols if c in {*dict(t.fields), 'cs_visible'}]
-        if not conn_cols:
-            raise HTTPException(400, '没有合法字段')
-        _check_cs_visible(category, None, body.changes)
+        visible = str(body.changes.get('cs_visible', '0')).strip()
+        if visible not in {'0', '1'}:
+            raise HTTPException(400, '可观测只能是 0 或 1')
+        pid = secrets.token_hex(8)
         img_rels = []
-        for fn in (body.images or []):
-            data = _read_image_source(fn)
+        for fn in body.images or []:
+            data_bytes = _read_image_source(fn)
             ext = os.path.splitext(fn)[1] or '.png'
-            img_rels.append(app.state.storage.save(category, pid, f'img-{secrets.token_hex(8)}{ext}', data))
-        request_conn().execute(
-            f"INSERT INTO {t.table}(id, inner_code, {', '.join(conn_cols)}, image_main, images) "
-            f"VALUES({','.join('?' for _ in range(2 + len(conn_cols) + 2))})",
-            (pid, _ic.gen(), *[str(body.changes[c]) for c in conn_cols],
-             img_rels[0] if img_rels else '',
-             json.dumps(img_rels, ensure_ascii=False) if img_rels else '[]'))
+            img_rels.append(app.state.storage.save(category, pid, f'img-{secrets.token_hex(8)}{ext}', data_bytes))
+        result = dynamic_catalog.upsert_approved_products(request_conn(), category, [{
+            'id': pid, 'inner_code': _ic.gen(), 'data': data, 'images': img_rels,
+            'cs_visible': int(visible), 'row_fingerprint': '', 'source_row': None,
+        }])
         request_conn().commit()
-        from . import search
         if img_rels:
+            from . import search
             search.reindex(request_conn(), app.state.storage, category)
-        return {'id': pid, 'inner_code': request_conn().execute(
-            f'SELECT inner_code FROM {t.table} WHERE id=?', (pid,)).fetchone()['inner_code']}
+        return {'id': pid, **result}
 
     @app.patch('/products/{category}/{pid}/direct')
     def direct_update(category: str, pid: str, body: MutateIn, request: Request):
         _auth(request, app.state.token)
-        if category not in TEMPLATES:
-            from . import dynamic_catalog
-            try:
-                template = dynamic_catalog.get_template(request_conn(), category)
-                row = next(value for value in dynamic_catalog.list_products(request_conn(), category)
-                           if value['id'] == pid)
-            except (KeyError, StopIteration):
-                raise HTTPException(404, '商品不存在')
-            allowed = {field['key'] for field in template['fields']}
-            data = {**row['data'], **{key: str(value) for key, value in body.changes.items() if key in allowed}}
-            visible = str(body.changes.get('cs_visible', row['cs_visible'])).strip()
-            if visible not in {'0', '1'}:
-                raise HTTPException(400, '可观测只能是 0 或 1')
-            images = row['images']
-            if body.images is not None:
-                images = []
-                for fn in body.images:
-                    data_bytes = _read_image_source(fn)
-                    ext = os.path.splitext(fn)[1] or '.png'
-                    images.append(app.state.storage.save(category, pid, f'img-{secrets.token_hex(8)}{ext}', data_bytes))
-            dynamic_catalog.upsert_approved_products(request_conn(), category, [{
-                'id': pid, 'inner_code': row['inner_code'], 'data': data, 'images': images,
-                'cs_visible': int(visible), 'status': row['status'],
-                'source_row': row['source_row'], 'row_fingerprint': row['row_fingerprint'],
-            }], source_key=row['source_key'], source_sheet=row['source_sheet'], source_doc=row['source_doc'])
-            if body.images is not None:
-                request_conn().execute('DELETE FROM embedding WHERE product_id=?', (pid,))
-            request_conn().commit()
-            if body.images is not None and images:
-                from . import search
-                search.reindex(request_conn(), app.state.storage, category)
-            return {'updated': True}
-        _check_cs_visible(category, pid, body.changes)
-        t = TEMPLATES[category]
-        if body.changes:
-            conn_cols = [c for c in body.changes if c in {*dict(t.fields), 'cs_visible'}]
-            sets = ', '.join(f'{c}=?' for c in conn_cols)
-            if sets:
-                request_conn().execute(f"UPDATE {t.table} SET {sets}, updated_at=datetime('now') WHERE id=?",
-                             (*[str(body.changes[c]) for c in conn_cols], pid))
+        from . import dynamic_catalog
+        try:
+            template = dynamic_catalog.get_template(request_conn(), category)
+            row = next(value for value in dynamic_catalog.list_products(request_conn(), category)
+                       if value['id'] == pid)
+        except KeyError:
+            raise HTTPException(404, '未知品类')
+        except StopIteration:
+            raise HTTPException(404, '商品不存在')
+        if template['storage'] != 'dynamic':
+            raise HTTPException(400, '旧版固定品类已下线，仅保留历史数据')
+        from . import cs
+        try:
+            cs.reject_tiers(body.changes or {})
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        allowed = {field['key'] for field in template['fields']}
+        data = {**row['data'], **{key: str(value) for key, value in body.changes.items() if key in allowed}}
+        visible = str(body.changes.get('cs_visible', row['cs_visible'])).strip()
+        if visible not in {'0', '1'}:
+            raise HTTPException(400, '可观测只能是 0 或 1')
+        images = row['images']
         if body.images is not None:
-            img_rels = []
+            images = []
             for fn in body.images:
-                data = _read_image_source(fn)
+                data_bytes = _read_image_source(fn)
                 ext = os.path.splitext(fn)[1] or '.png'
-                img_rels.append(app.state.storage.save(category, pid, f'img-{secrets.token_hex(8)}{ext}', data))
-            request_conn().execute(f"UPDATE {t.table} SET image_main=?, images=?, updated_at=datetime('now') WHERE id=?",
-                         (img_rels[0] if img_rels else '', json.dumps(img_rels, ensure_ascii=False), pid))
+                images.append(app.state.storage.save(category, pid, f'img-{secrets.token_hex(8)}{ext}', data_bytes))
+        dynamic_catalog.upsert_approved_products(request_conn(), category, [{
+            'id': pid, 'inner_code': row['inner_code'], 'data': data, 'images': images,
+            'cs_visible': int(visible), 'status': row['status'],
+            'source_row': row['source_row'], 'row_fingerprint': row['row_fingerprint'],
+        }], source_key=row['source_key'], source_sheet=row['source_sheet'], source_doc=row['source_doc'])
+        if body.images is not None:
             request_conn().execute('DELETE FROM embedding WHERE product_id=?', (pid,))
         request_conn().commit()
-        from . import search
-        search.reindex(request_conn(), app.state.storage, category)
+        if body.images is not None and images:
+            from . import search
+            search.reindex(request_conn(), app.state.storage, category)
         return {'updated': True}
 
     @app.delete('/products/{category}/{pid}/direct')
     def direct_delete(category: str, pid: str, request: Request):
         _auth(request, app.state.token)
-        if category not in TEMPLATES:
-            from . import dynamic_catalog
-            try:
-                dynamic_catalog.get_template(request_conn(), category)
-            except KeyError:
-                raise HTTPException(404, '未知品类')
-            updated = request_conn().execute(
-                "UPDATE product_dynamic SET status='delisted',updated_at=datetime('now') "
-                'WHERE id=? AND category_key=?', (pid, category)).rowcount
-            request_conn().execute('DELETE FROM embedding WHERE product_id=?', (pid,))
-            request_conn().commit()
-            if not updated:
-                raise HTTPException(404, '商品不存在')
-            return {'delisted': True}
-        t = TEMPLATES[category]
-        request_conn().execute(f"UPDATE {t.table} SET status='delisted', "
-                     f"updated_at=datetime('now') WHERE id=?", (pid,))
+        from . import dynamic_catalog
+        try:
+            dynamic_catalog.get_template(request_conn(), category)
+        except KeyError:
+            raise HTTPException(404, '未知品类')
+        updated = request_conn().execute(
+            "UPDATE product_dynamic SET status='delisted',updated_at=datetime('now') "
+            'WHERE id=? AND category_key=?', (pid, category)).rowcount
+        request_conn().execute('DELETE FROM embedding WHERE product_id=?', (pid,))
         request_conn().commit()
+        if not updated:
+            raise HTTPException(404, '商品不存在')
         return {'delisted': True}
 
     # ---- 报价单（v2：多商品+数量+百分比调整）----
@@ -1246,15 +1043,6 @@ def register_routes(app: FastAPI):
         notify.push_file(f'📄 报价单已生成（{len(items)} 款，调整 {body.price_adjustment_pct:+.0f}%）', out, conn=request_conn())
         return {'path': out}
 
-    @app.get('/quote/{job_id}')
-    def quote_status(job_id: str, request: Request):
-        _auth(request, app.state.token)
-        from . import quote as quote_mod
-        try:
-            return quote_mod.job_status(job_id)
-        except KeyError:
-            raise HTTPException(404, 'no such job')
-
     # ---- C端：红线知识（微信 AI 对话 → 工具 → 审批 → 生效）----
     class RedlineIn(BaseModel):
         model_config = {'extra':'forbid'}
@@ -1273,15 +1061,10 @@ def register_routes(app: FastAPI):
         _auth(request, app.state.token)
         from .shop_link import profile
         p = profile(request_conn())
-        from .templates import TEMPLATES
         from . import dynamic_catalog
         dynamic = dynamic_catalog.list_templates(request_conn())
-        counts = {t.key: request_conn().execute(
-            f"SELECT COUNT(*) FROM {t.table} WHERE COALESCE(NULLIF(status,''),'approved') != 'delisted'"
-        ).fetchone()[0] for t in TEMPLATES.values()}
-        visible = {t.key: request_conn().execute(
-            f"SELECT COUNT(*) FROM {t.table} WHERE COALESCE(NULLIF(status,''),'approved') != 'delisted' AND cs_visible=1"
-        ).fetchone()[0] for t in TEMPLATES.values()}
+        counts = {}
+        visible = {}
         dynamic = [template for template in dynamic if template['storage'] == 'dynamic']
         for template in dynamic:
             rows = dynamic_catalog.list_products(request_conn(), template['key'])
