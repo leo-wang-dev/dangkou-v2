@@ -382,7 +382,7 @@ def test_c_invalid_or_expired_link_shows_error(page, site, token):
 
 def test_c_empty_list_has_guidance(page, site):
     page.goto(site['base'] + '/cs/list.html?k=link-empty')
-    expect(page.locator('#list')).to_contain_text('先在 Telegram 里拍照')
+    expect(page.locator('#list')).to_contain_text('先在客服页拍照')
 
 
 def test_c_customer_switch_does_not_mix_list(page, site):

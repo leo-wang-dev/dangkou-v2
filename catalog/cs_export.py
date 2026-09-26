@@ -1,4 +1,4 @@
-"""Shared customer spreadsheet renderer for web and Telegram attachments."""
+"""Customer spreadsheet renderer for the /cs/link web export."""
 import io
 import json
 import os

@@ -1,7 +1,8 @@
-"""H5 网页客服：复用 CsBot 内核，回复随 HTTP 返回（替代 TG 传输层）。
+"""H5 网页客服：CsBot 内核 + HTTP 路由入口（TG 传输拆除后的唯一 C 端入口）。
 
-与 TG 模式的差别只有传输：出站 tg* 渠道一律丢弃（清单文件走页面
-/cs/link/{token}/export.xlsx 直出），notify 渠道照旧——商家仍在微信收提醒。
+api=None：不主动外发；一切回复由调用方（HTTP 路由）直接拿到。
+商家提醒仍走 notify* 渠道（微信）；清单文件走 /cs/link/{token}/export.xlsx
+页面导出，不再有出站文件渠道。
 """
 import secrets
 
@@ -10,12 +11,7 @@ from .csbot import CsBot
 
 
 class H5Bot(CsBot):
-    """api=None：不主动外发；一切回复由调用方（HTTP 路由）直接拿到。"""
-
-    def _enqueue(self, channel, recipient, body):
-        if channel in ('tg', 'tg_document', 'tg_photo'):
-            return
-        super()._enqueue(channel, recipient, body)
+    """H5 直调内核：与 CsBot 完全同体，仅约定 api=None（无外发传输）。"""
 
 
 def ensure_visitor(bot: H5Bot, visitor: str) -> dict:

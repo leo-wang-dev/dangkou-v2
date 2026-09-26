@@ -1,5 +1,5 @@
 import json
-from tests.test_release_gates import env, photo
+from tests.test_release_gates import env, take_photo
 
 
 def test_empty_vision_result_retries_once_before_creating_notes(env):
@@ -7,7 +7,7 @@ def test_empty_vision_result_retries_once_before_creating_notes(env):
     bot.llm.chat_vision.side_effect=['',json.dumps([{'型号或品名':'Sample brand','价格':'2.5','体积或尺寸':'59mL'}])]
     responses=list(bot.llm.chat_vision.side_effect)
     bot.llm.chat_vision.side_effect=responses+[responses[-1]]
-    bot.handle_update(photo(900))
+    take_photo(bot)
     assert bot.llm.chat_vision.call_count==3
     row=conn.execute("SELECT fields_json FROM cs_note WHERE status='draft'").fetchone()
     fields=json.loads(row[0])
@@ -21,7 +21,7 @@ def test_informationless_vision_result_retries_packaging(env):
     bot.llm.chat_vision.side_effect=['[{"型号或品名":"未拍到","价格":"模糊"}]','[{"型号或品名":"Visible brand","其他值得记录的信息":"96，用途待确认"}]']
     responses=list(bot.llm.chat_vision.side_effect)
     bot.llm.chat_vision.side_effect=responses+[responses[-1]]
-    bot.handle_update(photo(901))
+    take_photo(bot)
     fields=json.loads(conn.execute("SELECT fields_json FROM cs_note WHERE status='draft'").fetchone()[0])
     assert bot.llm.chat_vision.call_count==3
     assert fields['其他']=='96，用途待确认' and fields['装箱数']=='未拍到'

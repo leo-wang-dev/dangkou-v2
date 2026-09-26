@@ -75,18 +75,6 @@ img.big{width:86px;height:86px}
 .imgman .add{width:72px;height:72px;border:1.5px dashed #bbb;border-radius:8px;background:none;
   font-size:22px;color:#999;cursor:pointer}
 .empty{text-align:center;color:#aaa;padding:40px 0}
-.tg-setup{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px;overflow-wrap:anywhere}
-.tg-setup summary{cursor:pointer;font-weight:600;color:var(--blue)}
-.tg-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:16px 0}
-.tg-step{border:1px solid var(--line);border-radius:10px;padding:12px}
-.tg-step figure{margin:12px 0}
-.tg-step figure img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px;cursor:zoom-in}
-.tg-step figcaption{font-size:13px;color:#666;line-height:1.6;margin-top:6px}
-.tg-step strong{display:block;margin-bottom:10px}
-.tg-chat{background:#edf5fb;border-radius:10px;padding:12px;line-height:1.7;font-size:14px}
-.tg-chat code{display:block;background:#fff;border-radius:8px;padding:8px;margin-top:8px;white-space:normal}
-.tg-step p{font-size:14px;line-height:1.6;margin-bottom:0}
-.tg-setup .tg-status{font-size:14px;margin:0 0 10px}
 </style>
 </head>
 <body>
@@ -98,34 +86,6 @@ img.big{width:86px;height:86px}
 <main>
   <div id="review"></div>
   <div id="products" style="display:none">
-    <section class="tg-setup" aria-label="客户 Telegram Bot">
-      <p class="tg-status"><span id="tg-bot-status" role="status">客户 Bot 状态：待查询</span> <a id="tg-bot-link" hidden target="_blank" rel="noopener noreferrer"></a>
-        <button type="button" class="btn" onclick="loadCustomerBotStatus()">刷新状态</button></p>
-      <details>
-        <summary>开通客户 Telegram Bot</summary>
-        <div id="tg-guide">
-          <p>档口已由人工确认并开通服务。您继续在微信 Bot 管理商品和红线；客户通过您自己的 Telegram Bot 咨询。</p>
-          <p>开通前，请先在微信告诉助手老板的微信号或 Telegram 用户名，并按提示审批确认。至少设置一种联系方式后才能开通，客户触及红线时才能联系到老板。</p>
-          <div class="tg-steps">
-            <article class="tg-step"><strong>① 打开官方 BotFather</strong>
-              <figure><a href="guide/botfather-profile.png" target="_blank" rel="noopener noreferrer" aria-label="放大查看官方 BotFather 截图"><img src="guide/botfather-profile.png" alt="官方 BotFather 资料页：蓝色认证标识、用户名 @BotFather 和 Message 按钮" loading="lazy" width="848" height="1338"></a><figcaption>图 1 · 核对 @BotFather 和蓝色认证标识，点击 Message 进入聊天。点击图片可放大。</figcaption></figure>
-              <p>在 Telegram 打开 <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a>，点击 <b>Message（发消息）</b>，进入聊天后发送 <code>/newbot</code>。微信内打不开时，请复制官方用户名到 Telegram 搜索。</p>
-            </article>
-            <article class="tg-step"><strong>② 设置名称并复制 Token</strong>
-              <figure><a href="guide/botfather-create.png" target="_blank" rel="noopener noreferrer" aria-label="放大查看创建机器人对话截图"><img src="guide/botfather-create.png" alt="BotFather 创建流程：发送 /newbot，填写名称和用户名，收到 Done 及 API Token" loading="lazy" width="940" height="1310"></a><figcaption>图 2 · 按对话完成创建，看到 Done 即创建成功。截图中的 Token 已打码，不能用于绑定。点击图片可放大。</figcaption></figure>
-              <p>先填写机器人显示名称（例如“我的档口客服”），再填写您自己的用户名（例如 <code>MyShopExample_bot</code>，需未被占用并以 bot 结尾）。不要照抄截图中已注册的用户名。<br>看到 <b>Done!</b> 后，复制 <b>Use this token to access the HTTP API:</b> 下方的完整 Token；即使显示换行也要复制全，不要复制 t.me 链接。</p>
-            </article>
-            <article class="tg-step"><strong>③ 回到商家微信 Bot 开通</strong>
-              <div class="tg-chat" role="img" aria-label="示意：在已核验的商家微信会话中发送绑定客户Bot和Token">微信 · 您的档口助手<code>绑定客户Bot [粘贴完整 Token]</code></div>
-              <p>只发送到您管理档口的微信 Bot 私聊。系统验证并绑定本档口，开通后返回客户访问链接。此页面无需填写 Token。</p>
-            </article>
-          </div>
-          <p>开通后，先打开客户 Bot 发送一张商品照片和规格数量，检查回复、采购笔记与 Excel，再将该 Bot 的链接或二维码提供给客户。</p>
-          <p>店铺联系方式、商品和红线仍在微信 Bot 补充。例如发送“客户问加急交货时转人工”，按提示确认规则后生效；触及已设置的红线时，客户 Bot 会发送档口联系方式。</p>
-          <p><a href="https://core.telegram.org/bots/features#creating-a-new-bot" target="_blank" rel="noopener noreferrer">Telegram 官方创建说明</a> · 前两步为实际操作截图，第三步为微信发送示例；界面语言可能不同。</p>
-        </div>
-      </details>
-    </section>
     <div class="tabs" id="catTabs"></div>
     <div class="row" style="margin-bottom:10px">
       <button class="btn p" onclick="openCatForm()">＋ 新建分类</button>
@@ -210,30 +170,11 @@ function show(v){
   document.getElementById('products').style.display = v==='products'?'':'none';
   document.getElementById('wechat').style.display = v==='wechat'?'':'none';
   if(v==='review') loadTickets();
-  if(v==='products') { loadCats(); loadCustomerBotStatus(); }
+  if(v==='products') { loadCats(); }
   if(v==='wechat'){
     const frame=document.getElementById('wechat-frame');
     if(!frame.src) frame.src=MANAGE_PREFIX+'/wechat-bind.html'+(TOKEN?'?t='+encodeURIComponent(TOKEN):'');
   }
-}
-
-async function loadCustomerBotStatus(){
-  const status=document.getElementById('tg-bot-status'), link=document.getElementById('tg-bot-link');
-  link.hidden=true; link.removeAttribute('href'); link.textContent='';
-  status.textContent='正在查询客户 Bot 状态…';
-  try {
-    const response=await fetch(MANAGE_PREFIX+'/wechat/customer-bot/status', {headers:H, cache:'no-store'});
-    if(!response.ok) throw new Error('status unavailable');
-    const data=await response.json();
-    const states={running:'运行中',starting:'启动中',stopped:'已停止',error:'启动异常',failed:'启动异常',pending:'待启动'};
-    status.textContent=data.bot_username
-      ? '客户 Bot：@'+data.bot_username+' · '+(states[data.runtime_status]||'状态待确认')
-      : (data.enabled ? '客户 Bot：尚未绑定，请按下方教程开通' : '客户 Bot：服务尚未启用，请联系开通人员');
-    // Build the public link from a validated username, never from a returned arbitrary URL.
-    if(/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(data.bot_username||'')) {
-      link.href='https://t.me/'+data.bot_username; link.textContent='打开客户 Bot'; link.hidden=false;
-    }
-  } catch(e) { status.textContent='暂无法读取客户 Bot 状态，可查看教程或回微信 Bot 查询'; }
 }
 
 /* ---------- 灯箱 ---------- */

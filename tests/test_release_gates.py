@@ -48,15 +48,11 @@ def env(tmp_path, monkeypatch):
                  "VALUES('expired','a',datetime('now','-1 day'))")
     conn.commit()
     api = Mock()
-    img = io.BytesIO()
-    Image.new('RGB', (20, 20), 'red').save(img, format='JPEG')
-    api.download_photo.return_value = img.getvalue()
     llm = Mock()
     llm.chat_vision.return_value = '[{"型号或品名":"A","价格":"12"}]'
     llm.chat_text.return_value = '<<PASS>>'
     bot = CsBot(conn, api, llm=llm, notifier=Mock(), img_dir=str(tmp_path))
-    # 新版客户 bot 首条消息先问语言；离线审计里的买家 tg_id 固定 100/200，
-    # 预置“中文”让用例直接进入业务分支。
+    # H5 路由同款预置：买家 tg_id 固定 100/200，预置“中文”直接进入业务分支。
     from catalog import cs_i18n
     for tg in (100, 200):
         bot._ensure_customer({'id': tg})
@@ -73,10 +69,22 @@ def auth():
     return {'X-Service-Token': 'audit-service-secret'}
 
 
-def photo(update_id=1):
-    return {'update_id': update_id, 'message': {
-        'chat': {'id': 100, 'type': 'private'}, 'from': {'id': 100},
-        'photo': [{'file_id': 'photo', 'width': 20, 'height': 20}]}}
+def photo_bytes():
+    img = io.BytesIO()
+    Image.new('RGB', (20, 20), 'red').save(img, format='JPEG')
+    return img.getvalue()
+
+
+def take_photo(bot, tg=100):
+    """H5 同款照片轮：上传一张客户照片，返回回执文本。"""
+    cust = bot._ensure_customer({'id': tg})
+    return bot._on_photo(cust, None, prepared=bot._prepare_photo(cust, photo_bytes()))
+
+
+def say(bot, tg, text):
+    """H5 同款文本轮（含商家模式采购笔记抽取编排）。"""
+    cust = bot._ensure_customer({'id': tg})
+    return bot._text_turn(cust, text)
 
 
 def test_unauthenticated_ticket_cannot_be_approved(env):
@@ -162,19 +170,10 @@ def test_long_redline_is_compressed_through_api(env, monkeypatch):
 
 def test_second_photo_receipt_indexes_all_drafts(env):
     _, _, bot = env
-    bot.handle_update(photo(1))
+    take_photo(bot)
     bot.llm.chat_vision.return_value = '[{"型号或品名":"B","价格":"13"}]'
-    bot.handle_update(photo(2))
-    receipt = bot.api.send_message.call_args.args[1]
+    receipt = take_photo(bot)
     assert '【2】' in receipt, 'second photo is labeled 1 although editing 1 targets first photo'
-
-
-def test_duplicate_update_is_idempotent(env):
-    conn, _, bot = env
-    bot.handle_update(photo(1))
-    bot.handle_update(photo(1))
-    count = conn.execute("SELECT COUNT(*) FROM cs_note WHERE status='draft'").fetchone()[0]
-    assert count == 1, 'same Telegram update produced duplicate notes'
 
 
 def test_customer_links_still_read_own_notes(env):
@@ -188,25 +187,6 @@ def test_customer_links_still_read_own_notes(env):
 def test_service_write_auth_is_enabled(env):
     _, client, _ = env
     assert client.patch('/products/audit_cat/p1', json={'changes': {'价格': '1'}}).status_code == 401
-
-
-def test_failed_update_does_not_discard_rest_of_batch(env, monkeypatch):
-    from scripts import run_cs_bot
-    from catalog.tg import TgApi
-    conn, _, _ = env
-    api = TgApi(token='offline-audit')
-    first, second = {'update_id': 1}, {'update_id': 2}
-    conn.execute("UPDATE shop_profile SET shop_name='测试档口',tg_bot_id='12345'");conn.commit()
-    api._call = Mock(side_effect=[{'id':12345,'is_bot':True}, [first, second], KeyboardInterrupt()])
-    bot = Mock()
-    bot.handle_update.side_effect = [RuntimeError('simulated model timeout'), None]
-    monkeypatch.setattr(run_cs_bot.db, 'connect', lambda: conn)
-    monkeypatch.setattr(run_cs_bot, 'TgApi', lambda: api)
-    monkeypatch.setattr(run_cs_bot, 'CsBot', lambda *a: bot)
-    monkeypatch.setattr(run_cs_bot.time, 'sleep', lambda _: None)
-    run_cs_bot.main()
-    handled = [call.args[0]['update_id'] for call in bot.handle_update.call_args_list]
-    assert 2 in handled, f'second update skipped; next poll already acknowledges offset {api._offset}'
 
 
 def test_wechat_http_failure_is_detected(env, monkeypatch, capsys):

@@ -1,12 +1,43 @@
-"""Customer entrypoint -> persisted notes -> real XLSX; only network/model are replaced."""
+"""Customer entrypoint -> persisted notes -> real XLSX; only network/model are replaced.
+
+删C 后入口=H5 内核直调：send() 走 _text_turn/_on_photo；出表改走
+/cs/link/{token}/export.xlsx（send 自动捕获导出文件，供 b.documents 断言）。
+"""
 import io
 import json
-from types import SimpleNamespace
 
 import openpyxl
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from catalog import db, merchant_policy
+from catalog.api import register_routes
 from catalog.csbot import CsBot
+
+_JPEG = None
+
+
+def _jpeg_bytes():
+    global _JPEG
+    if _JPEG is None:
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', (20, 20), 'blue').save(buf, format='JPEG')
+        _JPEG = buf.getvalue()
+    return _JPEG
+
+
+def _export_bytes(conn, token):
+    app = FastAPI()
+    app.state.conn = conn
+    app.state.token = 'purchase-test-service'
+    app.state.storage = None
+    app.state.callback = None
+    register_routes(app)
+    with TestClient(app) as client:
+        response = client.get(f'/cs/link/{token}/export.xlsx')
+    assert response.status_code == 200, response.text
+    return response.content
 
 
 @pytest.fixture
@@ -25,28 +56,31 @@ def setup(tmp_path, monkeypatch):
             return '{"action":"none"}'
         def chat_vision(self, *args, **kw):
             return '[{"型号或品名":"杯子","颜色":"白色"}]'
-    api = SimpleNamespace(sent=[], documents=[], download_photo=lambda p:b'fake')
-    api.send_message=lambda *a:api.sent.append(a)
-    api.send_document=lambda *a:api.documents.append(a)
-    model=Model(); bot=CsBot(c,api,llm=model,img_dir=str(tmp_path/'photos'))
+    model=Model(); bot=CsBot(c,None,llm=model,img_dir=str(tmp_path/'photos'))
+    bot.sent=[]; bot.documents=[]
+    from catalog import cs_i18n
+    for tg in (100,200):
+        cust=bot._ensure_customer({'id':tg})
+        cs_i18n.set_language(c,cust['id'],'中文')
+    c.commit()
     return c, bot, model
 
 
 def send(bot, text='', uid=1, photo=False, customer=100):
-    # 新版客户 bot 首条消息先问语言；测试统一替客户先选“中文”（负数 update_id
-    # 只用一次，不与用例自己的正数 id 冲突去重）。
-    picked = getattr(bot, '_test_lang_picked', None)
-    if picked is None:
-        picked = bot._test_lang_picked = set()
-    if customer not in picked:
-        picked.add(customer)
-        bot.handle_update({'update_id': -customer,
-                           'message': {'from': {'id': customer},
-                                       'chat': {'id': customer, 'type': 'private'},
-                                       'text': '中文'}})
-    msg={'from':{'id':customer}, 'chat':{'id':customer,'type':'private'}}
-    msg.update({'photo':[{'file_id':'x'}], 'caption':text} if photo else {'text':text})
-    bot.handle_update({'update_id':uid,'message':msg})
+    conn = bot.conn
+    before = conn.execute('SELECT COUNT(*) FROM cs_link').fetchone()[0]
+    cust = bot._ensure_customer({'id': customer})
+    if photo:
+        reply = bot._on_photo(cust, None, prepared=bot._prepare_photo(cust, _jpeg_bytes()))
+    else:
+        reply = bot._text_turn(cust, text)
+    bot.sent.append(reply)
+    after = conn.execute('SELECT COUNT(*) FROM cs_link').fetchone()[0]
+    if after > before:
+        token = conn.execute('SELECT token FROM cs_link WHERE customer_id=? ORDER BY rowid DESC',
+                             (cust['id'],)).fetchone()[0]
+        bot.documents.append((customer, '采购清单.xlsx', _export_bytes(conn, token)))
+    return reply
 
 
 def fields(c):
@@ -60,8 +94,8 @@ def test_text_creates_multiple_notes_and_exports(setup):
     send(b,'帮我记：杯子蓝色100个，盘子20件')
     assert len(fields(c))==2
     m.actions=[]; send(b,'出表',2)
-    assert len(b.api.documents)==1
-    wb=openpyxl.load_workbook(io.BytesIO(b.api.documents[0][2]))
+    assert len(b.documents)==1
+    wb=openpyxl.load_workbook(io.BytesIO(b.documents[0][2]))
     assert wb.active.max_row==3
     assert '100个' in str(list(wb.active.values))
 
@@ -71,18 +105,20 @@ def test_records_quantity_even_when_question_transfers(setup):
     m.actions=[{'op':'create','fields':{'型号或品名':'杯子','颜色':'蓝色','数量':'100个'}}]
     send(b,'杯子蓝色100个，能加急吗')
     assert fields(c)[0]['数量']=='100个'
-    assert 'bosswx' in b.api.sent[-1][1]
-    assert '100个' in b.api.sent[-1][1]
+    assert 'bosswx' in b.sent[-1]
+    assert '100个' in b.sent[-1]
 
 
-def test_caption_merges_into_photo_note_before_reply(setup):
+def test_photo_then_text_merges_into_note_before_reply(setup):
+    """图注通道已随 TG 拆除；照片后的文字轮完成同样的补写与转人工。"""
     c,b,m=setup
+    send(b,photo=True)
     m.actions=[{'op':'update','index':1,'fields':{'颜色':'蓝色','数量':'100个'}}]
-    send(b,'蓝色100个，能加急吗',photo=True)
+    send(b,'蓝色100个，能加急吗',2)
     assert len(fields(c))==1
     assert fields(c)[0]['数量']=='100个'
     assert fields(c)[0]['颜色']=='蓝色'
-    assert 'bosswx' in b.api.sent[-1][1]
+    assert 'bosswx' in b.sent[-1]
 
 
 def test_replay_and_customer_isolation(setup):
@@ -128,7 +164,7 @@ def test_selected_photo_is_enriched_without_duplicate_and_excel_has_image(setup,
     photo=c.execute('SELECT photo FROM cs_note').fetchone()[0]
     Image.new('RGB',(20,20)).save(photo)
     send(b,'出表',3)
-    wb=openpyxl.load_workbook(io.BytesIO(b.api.documents[0][2]))
+    wb=openpyxl.load_workbook(io.BytesIO(b.documents[0][2]))
     assert wb.active.max_row==2 and len(wb.active._images)==1
 
 
@@ -173,7 +209,7 @@ def test_hidden_selection_cannot_enter_notes(setup,tmp_path,monkeypatch):
     c.execute("UPDATE product_dynamic SET cs_visible=0");c.commit()
     send(b,'选1')
     assert fields(c)==[]
-    assert '尚未加入清单' in b.api.sent[-1][1]
+    assert '尚未加入清单' in b.sent[-1]
 
 
 def test_record_and_export_in_same_message(setup):
@@ -181,7 +217,7 @@ def test_record_and_export_in_same_message(setup):
     m.actions=[{'op':'create','fields':{'型号或品名':'杯子','数量':'100个'}}]
     send(b,'杯子100个，帮我出表')
     assert fields(c)[0]['数量']=='100个'
-    assert b.api.documents
+    assert b.documents
 
 
 def test_record_with_price_request_does_not_export_or_reveal_quote_rules(setup):
@@ -190,9 +226,9 @@ def test_record_with_price_request_does_not_export_or_reveal_quote_rules(setup):
     m.actions=[{'op':'create','fields':{'型号或品名':'杯子','数量':'100个'}}]
     send(b,'杯子100个，出表并报个底价')
     assert fields(c)[0]['数量']=='100个'
-    assert b.api.documents
-    assert 'bosswx' not in b.api.sent[-1][1]
-    assert '10元' not in b.api.sent[-1][1]
+    assert b.documents
+    assert 'bosswx' not in b.sent[-1]
+    assert '10元' not in b.sent[-1]
 
 
 def test_selection_with_many_drafts_requires_explicit_target(setup,tmp_path,monkeypatch):
@@ -204,7 +240,7 @@ def test_selection_with_many_drafts_requires_explicit_target(setup,tmp_path,monk
     inquiry.save(c,cust['id'],[{'category':'test_cat','product_id':'p1','name':'C001'}]);c.commit()
     m.actions=[];send(b,'选1',2)
     assert all('商品编号' not in f for f in fields(c))
-    assert '指定' in b.api.sent[-1][1]
+    assert '指定' in b.sent[-1]
     send(b,'选1 第2条',3)
     assert '商品编号' not in fields(c)[0]
     assert fields(c)[1]['商品编号']=='p1'
@@ -228,7 +264,7 @@ def test_explicit_purchase_is_recorded_when_model_returns_no_actions(setup):
     send(bot, '我想采购100台吹风机')
 
     assert fields(c) == [{'型号或品名': '吹风机', '数量': '100台'}]
-    assert '已记录采购笔记' in bot.api.sent[-1][1]
+    assert '已记录采购笔记' in bot.sent[-1]
 
 
 def test_plain_single_product_and_quantity_is_recorded_when_model_misses(setup):
@@ -240,9 +276,9 @@ def test_plain_single_product_and_quantity_is_recorded_when_model_misses(setup):
     send(bot, '吹风机100台')
 
     assert fields(c) == [{'型号或品名': '吹风机', '数量': '100台'}]
-    assert '暂不能确认' not in bot.api.sent[-1][1]
+    assert '暂不能确认' not in bot.sent[-1]
     send(bot, '出表', uid=2)
-    workbook = openpyxl.load_workbook(io.BytesIO(bot.api.documents[-1][2]))
+    workbook = openpyxl.load_workbook(io.BytesIO(bot.documents[-1][2]))
     assert workbook.active.max_row == 2
     assert '吹风机' in str(list(workbook.active.values))
 
@@ -256,8 +292,8 @@ def test_purchase_with_unanswered_question_keeps_note_receipt_and_answer_boundar
     send(bot, '我想采购100台吹风机，多少钱？')
 
     assert fields(c) == [{'型号或品名': '吹风机', '数量': '100台'}]
-    assert '已记录采购笔记' in bot.api.sent[-1][1]
-    assert '暂不能确认' in bot.api.sent[-1][1]
+    assert '已记录采购笔记' in bot.sent[-1]
+    assert '暂不能确认' in bot.sent[-1]
 
 
 def test_explicit_purchase_is_recorded_when_extraction_service_is_unavailable(setup, monkeypatch):
@@ -274,7 +310,7 @@ def test_explicit_purchase_is_recorded_when_extraction_service_is_unavailable(se
     send(bot, '我想采购100台吹风机')
 
     assert fields(c) == [{'型号或品名': '吹风机', '数量': '100台'}]
-    assert '已记录采购笔记' in bot.api.sent[-1][1]
+    assert '已记录采购笔记' in bot.sent[-1]
 
 
 @pytest.mark.parametrize('text', [
@@ -395,7 +431,7 @@ def test_duplicate_model_query_lists_public_variants_without_guessing(setup):
 
     send(bot, 'WX-HD15 有哪些颜色')
 
-    reply = bot.api.sent[-1][1]
+    reply = bot.sent[-1]
     assert '红色' in reply and '蓝色' in reply
     assert '多个' in reply and '暂不能确认' not in reply
 
@@ -411,8 +447,8 @@ def test_export_contains_catalog_enriched_and_unmatched_purchase_rows(setup, tmp
     send(bot, '我想采购20套定制礼盒', uid=2)
     send(bot, '出表', uid=3)
 
-    assert len(bot.api.documents) == 1
-    workbook = openpyxl.load_workbook(io.BytesIO(bot.api.documents[0][2]))
+    assert len(bot.documents) == 1
+    workbook = openpyxl.load_workbook(io.BytesIO(bot.documents[0][2]))
     sheet = workbook.active
     rows = list(sheet.values)
     headers = list(rows[0])
@@ -440,7 +476,7 @@ def test_export_refreshes_catalog_fields_and_enriches_a_previously_unmatched_not
 
     send(bot, '出表', uid=3)
 
-    sheet = openpyxl.load_workbook(io.BytesIO(bot.api.documents[-1][2])).active
+    sheet = openpyxl.load_workbook(io.BytesIO(bot.documents[-1][2])).active
     rows = list(sheet.values)
     assert any('C001' in row and '230V' in row and '220V' not in row for row in rows[1:])
     assert any('FUTURE-1' in row and '110V' in row for row in rows[1:])
@@ -462,7 +498,7 @@ def test_export_refresh_preserves_customer_edited_field(setup, tmp_path, monkeyp
 
     send(bot, '出表', uid=2)
 
-    values = str(list(openpyxl.load_workbook(io.BytesIO(bot.api.documents[-1][2])).active.values))
+    values = str(list(openpyxl.load_workbook(io.BytesIO(bot.documents[-1][2])).active.values))
     assert '客户确认240V' in values
     assert '230V' not in values
 
@@ -509,7 +545,7 @@ def test_category_model_query_only_shows_products_from_that_category(setup):
 
     send(bot, '吹风机有哪些型号')
 
-    reply = bot.api.sent[-1][1]
+    reply = bot.sent[-1]
     assert 'WX-HD15' in reply and 'WX-HD16' in reply
     assert 'C001' not in reply
 
@@ -530,7 +566,7 @@ def test_plain_category_query_shows_that_category(setup):
 
     send(bot, '查询吹风机')
 
-    assert 'WX-HD15' in bot.api.sent[-1][1]
+    assert 'WX-HD15' in bot.sent[-1]
 
 
 def test_stock_and_shipping_question_reports_missing_fields_without_promising(setup):
@@ -553,7 +589,7 @@ def test_stock_and_shipping_question_reports_missing_fields_without_promising(se
 
     send(bot, 'WX-HD15 有没有货？可以今天发吗？')
 
-    reply = bot.api.sent[-1][1]
+    reply = bot.sent[-1]
     assert 'WX-HD15' in reply
     assert '库存' in reply and ('尚未填写' in reply or '不能确认' in reply)
     assert '发货' in reply and ('尚未填写' in reply or '不能确认' in reply)
@@ -567,7 +603,7 @@ def test_send_file_phrrasing_triggers_export(setup):
     m.actions = [{'op': 'create', 'fields': {'型号或品名': '杯子', '数量': '10个'}}]
     send(b, '记一下杯子10个')
     send(b, '直接发我文件', 2)
-    assert b.api.sent[-1][1].count('http') > 0 or '链接' in b.api.sent[-1][1]
+    assert b.sent[-1].count('http') > 0 or '链接' in b.sent[-1]
     assert cs_i18n.wants_export('直接发我文件')
 
 
@@ -583,4 +619,4 @@ def test_brain_export_mark_sends_file_without_keywords(setup, monkeypatch):
         return original(system, messages, **kw)
     monkeypatch.setattr(m, 'chat_text', brain)
     send(b, '把我的单子弄成表格送过来', 2)   # 无任何触发词
-    assert '清单' in b.api.sent[-1][1] and b.api.sent[-1][1].count('http') > 0
+    assert '清单' in b.sent[-1] and b.sent[-1].count('http') > 0

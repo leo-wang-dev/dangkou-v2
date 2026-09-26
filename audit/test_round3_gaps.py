@@ -10,7 +10,7 @@ from PIL import Image
 
 from catalog import cs, search, tickets
 from catalog.storage import LocalStorage
-from tests.test_release_gates import env, auth, photo
+from tests.test_release_gates import env, auth, take_photo as photo
 
 
 def test_followup_without_quantity_keeps_product_redline(env):
@@ -61,41 +61,6 @@ def test_model_latency_does_not_quote_product_hidden_during_inference(env):
         return '<<PASS>>'
     bot.llm.chat_text.side_effect = hide_while_waiting
     assert '¥' not in bot._on_text({'id':'a'}, 'MODEL-1 60个多少钱')
-
-
-def test_poll_failure_does_not_stop_notification_delivery(env, monkeypatch):
-    from scripts import run_cs_bot
-    conn, _, _ = env
-    conn.execute("UPDATE shop_profile SET shop_name='测试档口',tg_bot_id='12345'");conn.commit()
-    api = Mock();api._call.return_value={'id':12345,'is_bot':True}
-    api.poll.side_effect = [RuntimeError('TG offline'), KeyboardInterrupt()]
-    bot = Mock()
-    monkeypatch.setattr(run_cs_bot.db,'connect',lambda:conn)
-    monkeypatch.setattr(run_cs_bot,'TgApi',lambda:api)
-    monkeypatch.setattr(run_cs_bot,'CsBot',lambda *args:bot)
-    monkeypatch.setattr(run_cs_bot.time,'sleep',lambda _:None)
-    run_cs_bot.main()
-    assert bot.flush_outbox.called
-
-
-def test_first_hundred_poison_messages_do_not_starve_other_customer(env, monkeypatch):
-    from scripts import run_cs_bot
-    conn, _, _ = env
-    for uid in range(1,102):
-        payload = {'update_id':uid,'message':{'chat':{'id':1 if uid<=100 else 2}}}
-        conn.execute('INSERT INTO cs_inbox(update_id,payload) VALUES(?,?)',(uid,json.dumps(payload)))
-    conn.commit()
-    conn.execute("UPDATE shop_profile SET shop_name='测试档口',tg_bot_id='12345'");conn.commit()
-    api = Mock();api._call.return_value={'id':12345,'is_bot':True}
-    api.poll.side_effect = [[], [], KeyboardInterrupt()]
-    bot = Mock()
-    bot.handle_update.side_effect = RuntimeError('poison')
-    monkeypatch.setattr(run_cs_bot.db,'connect',lambda:conn)
-    monkeypatch.setattr(run_cs_bot,'TgApi',lambda:api)
-    monkeypatch.setattr(run_cs_bot,'CsBot',lambda *args:bot)
-    monkeypatch.setattr(run_cs_bot.time,'sleep',lambda _:None)
-    run_cs_bot.main()
-    assert 101 in [c.args[0]['update_id'] for c in bot.handle_update.call_args_list]
 
 
 def test_failed_image_approval_does_not_consume_ticket(env,tmp_path):

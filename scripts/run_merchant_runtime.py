@@ -51,7 +51,6 @@ def provision(c,m):
         used={r[0] for r in c.execute('SELECT port FROM merchant WHERE port IS NOT NULL')}
         port=next(p for p in range(19000,20000) if p not in used)
     c.execute('UPDATE merchant SET db_path=?,port=? WHERE id=?',(path,port,m['id']));c.commit()
-    marker=directory/'ready';marker.unlink(missing_ok=True)
     env=os.environ.copy()
     public_base=os.environ.get('ONBOARDING_PUBLIC_URL','').rstrip('/')
     env.update(CATALOG_V2_DB=path,CATALOG_V2_IMG=(config.IMG_DIR if m['invitation_used'] else str(directory/'images')),
@@ -59,13 +58,13 @@ def provision(c,m):
        CATALOG_CS_API_URL=f'http://127.0.0.1:{port}',
        CATALOG_V2_PUBLIC_URL=public_base+'/merchant/customer/'+m['id'],
        CATALOG_V2_MANAGE_URL=public_base+'/merchant/manage/'+m['id'],
-       MERCHANT_HUB_ENABLED='0',CATALOG_CS_PHOTOS=str(directory/'cs_photos'),MERCHANT_READY_FILE=str(marker))
+       MERCHANT_HUB_ENABLED='0',CATALOG_CS_PHOTOS=str(directory/'cs_photos'))
     # This is an independent shop deployment: keep the shop-local WeChat
     # connector URL/token so handoff alerts are delivered and retried.
     env.pop('MERCHANT_REVIEW_TOKEN',None)
     env.pop('MERCHANT_REVIEW_TOKEN_EXPIRES',None)
-    if with_bot:env['TG_BOT_TOKEN']=secrets['bot_token']
-    else:env.pop('TG_BOT_TOKEN',None)
+    # C 端 TG 客服已拆除：平台接入助手自己的 TG Token 绝不透传给档口 API 子进程。
+    env.pop('TG_BOT_TOKEN',None)
     return env,port,with_bot
 
 
@@ -78,6 +77,7 @@ def stop(children):
 
 
 def launch(env,port,with_bot=True):
+    """每店一组档口 API 子进程（C 端 TG bot 子进程已随删C 拆除，客户入口=H5 链接）。"""
     import requests
     api=subprocess.Popen([sys.executable,'-m','uvicorn','catalog.main:app','--host','127.0.0.1','--port',str(port),'--no-access-log'],cwd=PROJECT,env=env)
     try:
@@ -90,9 +90,7 @@ def launch(env,port,with_bot=True):
             except requests.RequestException:pass
             time.sleep(.5)
         else:raise RuntimeError('档口 API 启动超时')
-        if not with_bot:return [api]
-        bot=subprocess.Popen([sys.executable,'scripts/run_cs_bot.py'],cwd=PROJECT,env=env)
-        return [api,bot]
+        return [api]
     except BaseException:stop([api]);raise
 
 
@@ -129,19 +127,14 @@ def main():
                             c.execute("UPDATE merchant SET runtime_status='stopped' WHERE id=?",(mid,));c.commit();continue
                         children=launch(env,port,with_bot)
                         running[mid]=(m['revision'],m['state'],children)
-                        status='starting' if with_bot else 'running'
-                        c.execute("UPDATE merchant SET runtime_status=?,error='' WHERE id=?",(status,mid))
+                        # API 就绪即运行：客服入口是 H5 链接，不再有 bot 子进程就绪位。
+                        c.execute("UPDATE merchant SET runtime_status='running',error='' WHERE id=?",(mid,))
                     except Exception as e:
                         c.rollback();retry[mid]=time.time()+30
                         # Exception text can include network credentials; only safe local ValueError text is shown.
                         error=str(e) if isinstance(e,ValueError) else '启动失败：'+type(e).__name__
                         c.execute("UPDATE merchant SET runtime_status='error',error=? WHERE id=?",(error,mid))
                     c.commit()
-                for mid,(_,state,children) in running.items():
-                    # Worker writes readiness only after Telegram getMe and catalog identity checks.
-                    marker=root()/mid/'ready'
-                    if state=='enabled' and marker.exists() and all(p.poll() is None for p in children):
-                        c.execute("UPDATE merchant SET runtime_status='running' WHERE id=?",(mid,));c.commit()
                 time.sleep(2)
         finally:
             for _,_,children in running.values():stop(children)

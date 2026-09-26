@@ -1,4 +1,4 @@
-"""Independent index repair loop; notifications and Telegram polling never wait on embeddings."""
+"""Independent index repair loop; notifications never wait on embeddings."""
 import fcntl
 from pathlib import Path
 import sys

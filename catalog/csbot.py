@@ -1,6 +1,8 @@
-"""C端 TG 客服机器人脑：拍照整理 + persona 询价 + 红线转人工。
+"""C端客服内核：拍照整理 + persona 询价 + 红线转人工（TG 传输已拆，2026-09-27 删C）。
 
-分层：transport(TgApi) / llm / 本模块=流程编排。测试注入假件，不打网络。
+入口只剩 H5 直调（catalog/cs_chat.py 的 H5Bot 路由）：_on_text/_on_photo 等
+内核方法由 HTTP 路由直接调用，回复随请求返回；出站仅剩 notify* 渠道（微信
+提醒）。测试直调内核，不打网络。
 """
 import json
 import os
@@ -9,7 +11,7 @@ import re
 from urllib.parse import urlparse
 
 from . import cs, merchant_policy
-from . import cs_i18n, cs_supplier, shop_link, price_policy, customer_catalog, tg
+from . import cs_i18n, cs_supplier, shop_link, price_policy, customer_catalog
 
 TRANSFER_MARK = '<<TRANSFER>>'
 HOLD_THE_LINE = '您好，这个情况我需要请商家来回复您，商家马上来～'
@@ -87,152 +89,30 @@ class CsBot:
         if not getattr(self, '_processing', False):
             self.conn.commit()
 
-    def handle_update(self, upd: dict):
-        uid = upd.get('update_id')
-        if uid is not None:
-            self.conn.execute('INSERT OR IGNORE INTO cs_inbox(update_id,payload) VALUES(?,?)',
-                              (uid, json.dumps(upd, ensure_ascii=False)))
-            self.conn.commit()
-        # Resolve identity before inference; do not hold a SQLite writer lock during HTTP calls.
-        msg = upd.get('message') or {}
-        cust = self._ensure_customer(msg.get('from', {})) if msg else None
-        self._processing = True
-        self._pending_catalog_photos = []
-        try:
-            if uid is not None and self.conn.execute('SELECT processed FROM cs_inbox WHERE update_id=?', (uid,)).fetchone()[0]:
-                self.conn.rollback()
-                return
-            msg = upd.get('message') or {}
-            if msg and msg.get('chat', {}).get('type', 'private') == 'private':
-                chat_id = msg['chat']['id']
-                text = msg.get('text')
-                lang = self._cust_lang(cust)
-                if text and not lang:
-                    # 语言未选：先定语言再开对话；照片流程不在此分支。
-                    self._pending_user = (cust['id'], text)
-                    reply = self._language_step(cust, text)
-                    self._log(cust['id'], 'assistant', reply)
-                    self._enqueue('tg', str(chat_id), reply)
-                    self._finish_update(uid)
-                    self._pending_user = None
-                    self.flush_outbox()
-                    return
-                reply = None
-                if msg.get('photo'):
-                    prepared = self._prepare_photo(cust, msg)
-                    caption_reply = ''
-                    merchant_mode = merchant_policy.read(self.conn) is not None
-                    before = self.conn.execute('SELECT COALESCE(MAX(id),0) FROM cs_note').fetchone()[0]
-                    if merchant_mode:
-                        reply = self._on_photo(cust, msg, prepared)
-                    if msg.get('caption') and lang:
-                        caption = msg['caption']
-                        self._pending_user = (cust['id'], caption)
-                        recorded = ''
-                        if merchant_mode:
-                            from . import purchase_notes
-                            ids = [r[0] for r in self.conn.execute('SELECT id FROM cs_note WHERE customer_id=? AND id>?', (cust['id'],before))]
-                            recorded = purchase_notes.capture(self,cust,caption,note_ids=ids)
-                        caption_reply = self._on_text(cust, caption, allow_edit=False)
-                        caption_reply = self._combine_note_reply(recorded, caption_reply, caption)
-                    if not merchant_mode:
-                        reply = self._on_photo(cust, msg, prepared)
-                    if caption_reply:
-                        reply += '\n\n' + caption_reply
-                    if not lang:
-                        picked = cs_i18n.detect_language(msg.get('caption') or '')
-                        if picked:
-                            cs_i18n.set_language(self.conn, cust['id'], picked, commit=False)
-                            extra = cs_i18n.translate_text(self.conn, self.llm, picked,
-                                f'好的，已切换为 {picked}。刚才照片的说明我还没有登记，'
-                                '请选好语言后用文字再发一次。', commit=False)
-                        else:
-                            extra = self._language_prompt()
-                        reply = (reply or '') + '\n\n' + extra
-                elif msg.get('voice') is not None:
-                    reply = '收到语音啦，我还听不懂语音，麻烦您打字或拍照告诉我～'
-                elif text:
-                    self._pending_user = (cust['id'], text)
-                    recorded = ''
-                    request = cs_i18n.parse_language_request(text) if lang else None
-                    if request:
-                        # 中途换语言：“我想转英文”/“English”/“换语言”都直接切。
-                        target = request[1] if request[0] == 'switch' else ''
-                        cs_i18n.set_language(self.conn, cust['id'], target, commit=False)
-                        cust = self.conn.execute('SELECT * FROM cs_customer WHERE id=?',
-                                                 (cust['id'],)).fetchone()
-                        if target:
-                            self._log(cust['id'], 'user', text)
-                            self._pending_user = None
-                            reply = cs_i18n.translate_text(
-                                self.conn, self.llm, target, f'好的，已切换为 {target}。接下来我会用这门语言和您交流。', commit=False)
-                        else:
-                            reply = self._language_prompt()
-                    else:
-                        if merchant_policy.read(self.conn) is not None:
-                            from . import purchase_notes
-                            recorded = purchase_notes.capture(self,cust,text)
-                        reply = self._on_text(cust, text, allow_edit=not bool(recorded))
-                        reply = self._combine_note_reply(recorded, reply, text)
-                    if self._pending_user:
-                        self._log(cust['id'], 'user', text)
-                        self._pending_user = None
-                if reply:
-                    reply = self._t(cust, reply)
-                    self._enqueue('tg', str(chat_id), reply)
-                    for product in self._pending_catalog_photos:
-                        self._enqueue('tg_photo', str(chat_id), json.dumps({
-                            'id': product['id'], '_category': product['_category'],
-                            'name': product['name']}, ensure_ascii=False))
-            if uid is not None:
-                self.conn.execute('UPDATE cs_inbox SET processed=1,last_error=NULL WHERE update_id=?', (uid,))
-            self.conn.commit()
-        except Exception:
-            self.conn.rollback()
-            raise
-        finally:
-            self._processing = False
-            self._pending_user = None
-        self.flush_outbox()
-
-    def _finish_update(self, uid):
-        if uid is not None:
-            self.conn.execute('UPDATE cs_inbox SET processed=1,last_error=NULL WHERE update_id=?', (uid,))
-        self.conn.commit()
-
     @staticmethod
     def _cust_lang(cust) -> str:
         return (cust['lang'] if cust is not None and 'lang' in cust.keys() else '') or ''
 
-    @staticmethod
-    def _language_prompt() -> str:
-        from . import cs_i18n
-        return cs_i18n.LANGUAGE_PROMPT
-
-    def _language_step(self, cust, text) -> str:
-        """首次接触：客户选语言（裸语言名或“我想转英文”都算）；选完按所选语言打招呼。"""
-        from . import cs_i18n
-        picked = None
-        request = cs_i18n.parse_language_request(text)
-        if request and request[0] == 'switch':
-            picked = request[1]
-        if picked is None:
-            return self._language_prompt()
-        cs_i18n.set_language(self.conn, cust['id'], picked,
-                             commit=not getattr(self, '_processing', False))
-        greeting = (f'好的，已切换为 {picked}。您好，可以查询本店商品、发照片整理采购清单，'
-                    '或回复“找老板”获取联系方式。')
-        return cs_i18n.translate_text(self.conn, self.llm, picked, greeting,
-                                      commit=not getattr(self, '_processing', False))
-
-    def _t(self, cust, text: str) -> str:
-        """中文话术按客户语言出街；未选/中文原样，翻译失败回退原文。"""
-        lang = self._cust_lang(cust)
-        if not lang or lang == '中文':
-            return text
-        from . import cs_i18n
-        return cs_i18n.translate_text(self.conn, self.llm, lang, text,
-                                      commit=not getattr(self, '_processing', False))
+    def _text_turn(self, cust, text) -> str:
+        """文本轮编排（原 TG 入口迁入内核）：商家模式先试采购笔记抽取，
+        再进 persona/规则答复并合并回执；H5 /message 与测试共用本入口。"""
+        # 连续同文去重（双击发送保护；原 TG 的 update_id 去重在传输层的内核等价物）
+        dup = self.conn.execute(
+            "SELECT content FROM cs_conversation_log WHERE customer_id=? AND role='user' ORDER BY rowid DESC LIMIT 1",
+            (cust['id'],)).fetchone()
+        if dup and dup[0] == text:
+            last = self.conn.execute(
+                "SELECT content FROM cs_conversation_log WHERE customer_id=? AND role='assistant' ORDER BY rowid DESC LIMIT 1",
+                (cust['id'],)).fetchone()
+            if last:
+                return last[0]
+        self._log(cust['id'], 'user', text)
+        recorded = ''
+        if merchant_policy.read(self.conn) is not None:
+            from . import purchase_notes
+            recorded = purchase_notes.capture(self, cust, text)
+        reply = self._on_text(cust, text, allow_edit=not bool(recorded))
+        return self._combine_note_reply(recorded, reply, text)
 
     @staticmethod
     def _combine_note_reply(recorded, reply, text):
@@ -247,20 +127,19 @@ class CsBot:
         return recorded + '\n\n' + reply
 
     def _enqueue(self, channel, recipient, body):
-        chunks = [body[i:i+3500] for i in range(0, len(body), 3500)] if channel == 'tg' else [body]
-        for chunk in chunks:
-            self.conn.execute('INSERT INTO cs_outbox(channel,recipient,body) VALUES(?,?,?)',
-                              (channel, recipient, chunk))
+        self.conn.execute('INSERT INTO cs_outbox(channel,recipient,body) VALUES(?,?,?)',
+                          (channel, recipient, body))
         self._commit()
 
-    def flush_outbox(self, notifications_only=False):
-        where = " AND channel NOT IN ('tg','tg_document','tg_photo')" if notifications_only else (
-            " AND channel IN ('tg','tg_document','tg_photo')" if os.environ.get('CATALOG_NOTIFY_WORKER') == '1' else '')
-        rows = self.conn.execute("SELECT *, next_attempt_at<=datetime('now') AS due FROM cs_outbox WHERE sent=0" + where + " ORDER BY id").fetchall()
+    def flush_outbox(self):
+        """出站仅剩微信通知渠道（notify/notify_file/notify_import），由 run_notifications 消费。"""
+        rows = self.conn.execute(
+            "SELECT *, next_attempt_at<=datetime('now') AS due FROM cs_outbox "
+            'WHERE sent=0 ORDER BY id').fetchall()
         blocked = set()
         for row in rows:
-            # Keep retries isolated by delivery type. A failed photo must not
-            # block a customer's text or Excel document from being delivered.
+            # Keep retries isolated by delivery type; a failing channel must not
+            # block the other notifications from being delivered.
             key = (row['channel'], row['recipient'])
             if key in blocked:
                 continue
@@ -268,34 +147,7 @@ class CsBot:
                 blocked.add(key)
                 continue
             try:
-                if row['channel'] == 'tg':
-                    body = row['body']
-                    if merchant_policy.read(self.conn) is None and price_policy.is_legacy_auto_quote(body):
-                        body = cs.contact_reply(self.conn)
-                        self.conn.execute('UPDATE cs_outbox SET body=? WHERE id=?',(body,row['id']))
-                        self.conn.execute("INSERT INTO cs_outbox(channel,body) VALUES('notify',?)",
-                                          ('平台公共红线：已阻止旧自动报价重试，客户会话 '+str(row['recipient'])+'，请老板联系客户确认价格。',))
-                        self.conn.commit()
-                    self.api.send_message(int(row['recipient']), body)
-                elif row['channel'] == 'tg_document':
-                    from .cs_export import render_notes
-                    document = json.loads(row['body'])
-                    lang = document.get('lang') or ''
-                    caption, filename = document['caption'], document['filename']
-                    if lang and lang != '中文':
-                        filename = cs_i18n.translate_texts(
-                            self.conn, self.llm, lang, ['采购清单'])[0] + '.xlsx'
-                        caption = cs_i18n.translate_text(self.conn, self.llm, lang, caption)
-                    self.api.send_document(int(row['recipient']), filename,
-                                           render_notes(document['notes'], include_status=True,
-                                                        lang=lang,
-                                                        conn=self.conn, llm=self.llm),
-                                           caption)
-                elif row['channel'] == 'tg_photo':
-                    product = json.loads(row['body'])
-                    filename, content = customer_catalog.photo_bytes(self.conn, product)
-                    self.api.send_photo(int(row['recipient']), filename, content, product['name'])
-                elif row['channel'] == 'notify_import':
+                if row['channel'] == 'notify_import':
                     from .notify import render_import
                     if self.notifier(render_import(json.loads(row['body']))) is False:
                         raise RuntimeError('通知未成功')
@@ -305,10 +157,6 @@ class CsBot:
                     if self.notifier(row['body']) is False:
                         raise RuntimeError('通知未成功')
                 self.conn.execute('UPDATE cs_outbox SET sent=1,last_error=NULL WHERE id=?', (row['id'],))
-            except (customer_catalog.PhotoUnavailable, tg.TgPermanentPhotoError) as exc:
-                error = 'photo unavailable' if isinstance(exc, customer_catalog.PhotoUnavailable) else 'photo rejected'
-                self.conn.execute("UPDATE cs_outbox SET sent=1,last_error=? WHERE id=?",
-                                  (error, row['id']))
             except Exception as exc:
                 blocked.add(key)
                 self.conn.execute("UPDATE cs_outbox SET attempts=attempts+1,last_error=?, next_attempt_at=datetime('now','+30 seconds') WHERE id=?",
@@ -318,9 +166,8 @@ class CsBot:
 
     # ---------- 拍照整理 ----------
 
-    def _prepare_photo(self, cust, msg=None, data=None):
-        if data is None:
-            data = self.api.download_photo(msg['photo'])
+    def _prepare_photo(self, cust, data):
+        """H5 上传的图片字节 → 落盘 + 抽取 + 复核 + 本店商品候选。"""
         fname = f"{cust['id']}_{secrets.token_hex(6)}.jpg"
         path = os.path.join(self.img_dir, fname)
         open(path, 'wb').write(data)
@@ -604,7 +451,6 @@ class CsBot:
         elif product:
             product = current_product
             reply = self._format_catalog_answer(product, text)
-            self._remember_catalog_photos([product])
         elif any(word in text for word in ('有货', '库存', '询价', '拿货')) or re.search(r'有.+(?:吗|没有)|卖.+吗', text):
             return '现有资料暂不能确认这个问题；如果需要老板答复，请回复“找老板”。'
         else:
@@ -660,7 +506,6 @@ class CsBot:
 
     def _format_catalog_variants(self, products, text):
         """Describe duplicate-model variants without binding the customer to one row."""
-        self._remember_catalog_photos(products)
         reply = ('找到多个符合该型号的商品，请按颜色或规格确认：\n' +
                  self._format_catalog_products(products[:3]))
         specs = [product.get('specs') or {} for product in products]
@@ -690,7 +535,6 @@ class CsBot:
         products = products[:3]
         if not products:
             return '当前没有在线商品。'
-        CsBot._remember_catalog_photos(self, products)
         scope = f'本店{category}' if category else '本店'
         return scope + '可介绍以下在线商品（展示部分）：\n' + CsBot._format_catalog_products(self, products)
 
@@ -771,16 +615,6 @@ class CsBot:
             blocks.append(title + (('\n' + '\n'.join(specs)) if specs else ''))
         return '\n\n'.join(blocks)
 
-    def _remember_catalog_photos(self, products):
-        current = getattr(self, '_pending_catalog_photos', [])
-        known = {(value['_category'], value['id']) for value in current}
-        for product in products:
-            key = (product['_category'], product['id'])
-            if product.get('image_main') and key not in known and len(current) < 3:
-                current.append(product)
-                known.add(key)
-        self._pending_catalog_photos = current
-
 
     # ---------- 确认 / 出表 ----------
 
@@ -855,13 +689,8 @@ class CsBot:
             (cust['id'],)).fetchall()
         if not notes:
             return '目前没有可导出的条目，先拍照发我吧～'
-        lang = self._cust_lang(cust)
         drafts = sum(n['status'] == 'draft' for n in notes)
         summary = f'采购清单：共 {len(notes)} 条，其中 {drafts} 条待确认。照片识别价格不是商家确认报价。'
-        # 文件名/说明在发送时翻译（flush 阶段），回复文本由 _t 统一翻译，避免译两遍。
-        self._enqueue('tg_document', str(cust['tg_id']), json.dumps({
-            'filename': '采购清单.xlsx', 'caption': summary, 'lang': lang,
-            'notes': [shop_link.snapshot(self.conn,n) for n in notes]}, ensure_ascii=False))
         token = secrets.token_urlsafe(16)
         self.conn.execute(
             'INSERT INTO cs_link(token, customer_id, used, expires_at) '
@@ -870,9 +699,9 @@ class CsBot:
         base = os.environ.get('CATALOG_V2_PUBLIC_URL', 'http://127.0.0.1:8890')
         url = f'{base}/cs/list.html?k={token}'
         self._log(cust['id'], 'assistant', f'[出表] {url}')
-        return (f'{summary}\nExcel 文件已加入发送队列，发送失败会自动重试。\n'
+        return (f'{summary}\n'
                 f'清单链接（2天内有效，含待确认条目）：\n{url}\n'
-                + ('当前为本机测试链接，手机无法直接访问，请使用上面的 Excel 附件。'
+                + ('当前为本机测试链接，手机无法直接访问。'
                    if urlparse(base).hostname in ('127.0.0.1', 'localhost', '::1')
                    else '打开可查看、编辑清单并导出Excel。')
                 + '\n补档口请用清单序号，例如：清单第1、2条 档口：A档口。'
@@ -903,17 +732,10 @@ class CsBot:
         return [{'role': r['role'], 'content': r['content']} for r in reversed(rows)]
 
     def _log(self, cust_id, role, content):
-        if role == 'assistant' and getattr(self, '_pending_user', None):
-            cid, text = self._pending_user
-            self._pending_user = None
-            self._log(cid, 'user', text)
         self.conn.execute(
             'INSERT INTO cs_conversation_log(customer_id, role, content) VALUES(?,?,?)',
             (cust_id, role, content))
         self._commit()
-
-    def _reply(self, chat_id, text):
-        self.api.send_message(chat_id, text)
 
     @staticmethod
     def _wechat_remind(text):

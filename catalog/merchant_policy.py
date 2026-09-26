@@ -225,6 +225,7 @@ def apply(conn, values, revision):
 
 
 def answer(bot,cust,text,allow_edit=True):
+    from .csbot import CsBot  # 局部引入防环：csbot 也引用本模块
     from .merchant_onboarding import RULE_KEYS
     from . import cs_i18n
     policy=read(bot.conn) or {};low=text.strip()
@@ -307,8 +308,6 @@ def answer(bot,cust,text,allow_edit=True):
     if product and not product.get('cs_visible'):
         product = None
     if product:
-        from .csbot import CsBot
-        CsBot._remember_catalog_photos(bot, [product])
         if _QUANTITY_ASK.search(text) or any(w in low for w in ('能不能','能否','可以吗','可行','够不够','来得及')):
             # 数量/可行性问题交给对话大脑（含库存判定），不是规格罗列。
             return _cs_reply(bot, cust, text, product, catalog=catalog())
@@ -317,14 +316,12 @@ def answer(bot,cust,text,allow_edit=True):
             return attribute
         return CsBot._format_catalog_answer(bot, product, text)
     try:
-        from .csbot import CsBot
         matches = CsBot._matching_products(text, catalog())
     except customer_catalog.CatalogUnavailable:
         return '商品查询暂不可用，请稍后再试；也可回复“找老板”。'
     if len(matches) > 1:
         return bot._format_catalog_variants(matches, text)
     if len(matches) == 1 and matches[0].get('cs_visible'):
-        bot._remember_catalog_photos(matches)
         if _QUANTITY_ASK.search(text) or any(w in low for w in ('能不能','能否','可以吗','可行','够不够','来得及')):
             return _cs_reply(bot, cust, text, matches[0], catalog=catalog())
         attribute = CsBot._attribute_answer(matches[0], text)
@@ -335,7 +332,5 @@ def answer(bot,cust,text,allow_edit=True):
     if shop_reply:
         return shop_reply
     # 对话大脑：基于店铺资料/商品规格/库存判定回答；资料没有就明确说需要商家确认。
-    if product:
-        bot._remember_catalog_photos([product])
     near = None if product else _near_models(bot, text, catalog=catalog())
     return _cs_reply(bot, cust, text, product, near=near, catalog=catalog())

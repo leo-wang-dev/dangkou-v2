@@ -2,8 +2,6 @@
 import io
 import json
 from pathlib import Path
-from unittest.mock import Mock
-
 import openpyxl
 import pytest
 from playwright.sync_api import expect
@@ -21,11 +19,11 @@ def _photos_available():
 def test_customer_real_photos_edit_and_download(page, site):
     dataset=json.loads((ROOT/'tests/fixtures/customer_photos.json').read_text())
     images={c['id']:(Path(dataset['source_dir'])/c['file']).read_bytes() for c in dataset['cases']}
-    api=Mock();model=ReplayModel(dataset['cases'],images)
-    bot=CsBot(site['conn'],api,llm=model,notifier=Mock(),img_dir=str(site['photo'].parent))
-    for i,case in enumerate(dataset['cases'],700):
-        api.download_photo.return_value=images[case['id']]
-        bot.handle_update({'update_id':i,'message':{'chat':{'id':987},'from':{'id':987},'photo':[{'file_id':'f','width':1280}]}})
+    model=ReplayModel(dataset['cases'],images)
+    bot=CsBot(site['conn'],None,llm=model,notifier=Mock(),img_dir=str(site['photo'].parent))
+    cust=bot._ensure_customer({'id':'987'})
+    for case in dataset['cases']:
+        bot._on_photo(cust,None,prepared=bot._prepare_photo(cust,images[case['id']]))
     cust=dict(site['conn'].execute("SELECT * FROM cs_customer WHERE tg_id='987'").fetchone())
     bot._confirm_drafts(cust);bot._make_link(cust)
     token=site['conn'].execute('SELECT token FROM cs_link WHERE customer_id=?',(cust['id'],)).fetchone()[0]

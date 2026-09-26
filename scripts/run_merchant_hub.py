@@ -8,7 +8,7 @@ import sys
 import time
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from catalog import config, merchant_onboarding as hub
-from catalog.tg import TgApi
+from catalog.merchant_tg import TgApi
 
 TOKEN = re.compile(r'\b\d{5,20}:[A-Za-z0-9_-]{20,100}\b')
 

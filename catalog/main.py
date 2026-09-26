@@ -25,8 +25,6 @@ async def no_cache_html(request, call_next):
 
 
 register_routes(app)
-from . import wechat_customer
-wechat_customer.register(app)
 from . import wechat_binding
 wechat_binding.register(app)
 

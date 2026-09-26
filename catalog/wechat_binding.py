@@ -204,9 +204,26 @@ def manage(action, *args):
     return JSONResponse(result, headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
 
 
+def activate(conn):
+    """Enable local authority; do not turn untouched legacy seed into merchant consent."""
+    from . import cs, merchant_policy
+    seed = conn.execute("SELECT text_raw FROM cs_redline WHERE product_id='' ").fetchone()
+    approved = conn.execute(
+        "SELECT 1 FROM approval_ticket WHERE ticket_type='redline' AND status='approved' "
+        "AND COALESCE(json_extract(payload,'$.product_id'),'')='' "
+        "AND json_extract(payload,'$.text_raw')=? LIMIT 1", (cs.DEFAULT_STORE_REDLINE,)).fetchone()
+    if seed and seed[0] == cs.DEFAULT_STORE_REDLINE and not approved:
+        conn.execute("UPDATE cs_redline SET text_raw='',text_summary='' WHERE product_id='' ")
+    merchant_policy.apply(conn, {'wechat_managed': True}, 1)
+
+
 def register(app):
     if os.environ.get('WECHAT_CUSTOMER_BOT_ENABLED') != '1':
         return
+    # This deployment is merchant-managed as soon as its WeChat management
+    # entry is enabled; C 端 TG 客服已拆除，微信托管激活随本入口生效。
+    activate(app.state.conn)
+    app.state.conn.commit()
     from .api import _auth
 
     def run(request, action, *args):

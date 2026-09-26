@@ -133,6 +133,6 @@ def test_h5_chat_flow(client, monkeypatch):
     r = client.post(f'/cs/chat/{tok}/photo', data={'visitor': 'h5-test1'},
                     files={'file': ('a.jpg', buf.getvalue(), 'image/jpeg')})
     assert r.status_code == 200 and '杯子' in r.json()['reply']
-    # tg 渠道零出站（H5 丢弃），notify 允许
+    # tg 渠道已随删C 拆除：内核永不写 tg* 渠道
     conn = client.app.state.conn
-    assert conn.execute("SELECT COUNT(*) FROM cs_outbox WHERE channel LIKE 'tg%'").fetchone()[0] >= 0
+    assert conn.execute("SELECT COUNT(*) FROM cs_outbox WHERE channel LIKE 'tg%'").fetchone()[0] == 0

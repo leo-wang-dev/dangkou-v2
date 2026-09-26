@@ -8,15 +8,15 @@ def test_export_does_not_bypass_merchant_redline(setup):
     c,b,m=setup
     m.actions=[{'op':'create','fields':{'型号或品名':'杯子','数量':'100个'}}]
     send(b,'杯子100个，帮我出表，能加急吗')
-    assert b.api.documents
-    assert 'bosswx' in '\n'.join(x[1] for x in b.api.sent)
+    assert b.documents
+    assert 'bosswx' in '\n'.join(b.sent)
 
 
 def test_hidden_product_specs_never_disclosed_locally(setup,tmp_path,monkeypatch):
     c,b,m=setup;seed_product(c,tmp_path,monkeypatch)
     c.execute("UPDATE product_dynamic SET cs_visible=0,data_json=json_set(data_json,'$.voltage','SECRET-VOLTAGE')");c.commit()
     send(b,'C001的电压是多少')
-    assert 'SECRET-VOLTAGE' not in b.api.sent[-1][1]
+    assert 'SECRET-VOLTAGE' not in b.sent[-1]
 
 
 def test_renaming_product_clears_old_identity_and_catalog_image(setup,tmp_path,monkeypatch):
@@ -38,8 +38,8 @@ def test_extraction_outage_records_clear_item_and_does_not_block_owner_contact(s
         return original(system,*a,**kw)
     monkeypatch.setattr(m,'chat_text',chat)
     send(b,'杯子100个，找老板')
-    assert 'bosswx' in b.api.sent[-1][1]
-    assert '已记录采购笔记' in b.api.sent[-1][1]
+    assert 'bosswx' in b.sent[-1]
+    assert '已记录采购笔记' in b.sent[-1]
     assert fields(c) == [{'型号或品名':'杯子', '数量':'100个'}]
 
 

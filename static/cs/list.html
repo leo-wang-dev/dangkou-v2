@@ -52,7 +52,7 @@ async function load(){
     '<div class="empty">链接无效或已过期，请找商家重新生成</div>'; return; }
   const {notes} = await r.json();
   if(!notes.length){ document.getElementById('list').innerHTML=
-    '<div class="empty">清单还是空的——先在 Telegram 里拍照发给我吧</div>'; return; }
+    '<div class="empty">清单还是空的——先在客服页拍照发给我吧</div>'; return; }
   document.getElementById('export').disabled = false;
   const keys = [...new Set(notes.flatMap(n=>Object.keys(n.fields)))];
   let html = '<div class="table-scroll"><table><tr><th style="width:36px">#</th>' +
@@ -67,7 +67,7 @@ async function load(){
         onblur="edit(this)">${esc(v)}</td>`;}).join('') + `<td>${n.status==='draft'?'待确认':'已确认'}</td><td>${n.photo?`<img class="photo" src="${esc(prefix+n.photo)}">`:''}</td></tr>`;
   });
   document.getElementById('list').innerHTML = html + '</table></div>' +
-    '<p class="saved">提示：待确认条目已包含在清单及导出中；档口信息待补充时请直接编辑对应列，或在 Telegram 发送“清单第1、2条 档口：A档口”。核对后可回复“确认”。左右滑动查看全部字段；点击单元格修改，改完自动保存</p>';
+    '<p class="saved">提示：待确认条目已包含在清单及导出中；档口信息待补充时请直接编辑对应列，或在客服对话里发送“清单第1、2条 档口：A档口”。核对后可回复“确认”。左右滑动查看全部字段；点击单元格修改，改完自动保存</p>';
 }
 async function edit(td){
   const value = td.textContent.trim();

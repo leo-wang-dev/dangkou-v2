@@ -391,10 +391,10 @@ def register_routes(app: FastAPI):
         try:
             request_conn().execute('SELECT 1').fetchone()
             profile = cs.get_shop(request_conn())
-            if not all(profile.get(k) for k in ('owner_tg_username','owner_wechat')):
-                errors.append('老板 TG 和微信联系方式未补齐')
-            if not profile.get('shop_name') or not profile.get('tg_bot_id'):
-                errors.append('档口名称和 TG bot 身份尚未绑定')
+            if not profile.get('owner_wechat'):
+                errors.append('老板微信联系方式未补齐')
+            if not profile.get('shop_name'):
+                errors.append('档口名称尚未登记')
             pending = request_conn().execute('SELECT COUNT(*) FROM cs_outbox WHERE sent=0 AND attempts>0').fetchone()[0]
             if pending:
                 errors.append('存在发送失败待重试的消息')
@@ -1186,9 +1186,8 @@ def register_routes(app: FastAPI):
         bot = cs_chat.H5Bot(request_conn(), api=None)
         cust = cs_chat.ensure_visitor(bot, str(body.get('visitor') or ''))
         bot._processing = True
-        bot._pending_catalog_photos = []
         try:
-            reply = bot._on_text(cust, text)
+            reply = bot._text_turn(cust, text)
         finally:
             bot._processing = False
         return {'reply': reply}
@@ -1208,9 +1207,8 @@ def register_routes(app: FastAPI):
         bot = cs_chat.H5Bot(request_conn(), api=None)
         cust = cs_chat.ensure_visitor(bot, visitor)
         bot._processing = True
-        bot._pending_catalog_photos = []
         try:
-            prepared = bot._prepare_photo(cust, data=data)
+            prepared = bot._prepare_photo(cust, data)
             reply = bot._on_photo(cust, None, prepared=prepared)
         finally:
             bot._processing = False

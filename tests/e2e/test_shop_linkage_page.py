@@ -15,19 +15,19 @@ def test_merchant_approval_to_customer_shop_and_excel(page,site):
     expect(detail).to_contain_text('联动测试档口')
     detail.locator('..').get_by_role('button',name='整单通过',exact=True).click()
     expect(page.locator('#review')).to_contain_text('没有待办工单')
-    shop_link.verify_bot(conn,{'id':12345,'is_bot':True})
     # Merchant changes a real catalog tier through approval; C bot sees the same DB.
     tk=api.patch(f'/products/{CAT_B}/c1',json={'changes':{'可观测':'1'}}).json()
     detail=review(page,site,{'id':tk['ticket_id']})
     detail.locator('..').get_by_role('button',name='整单通过',exact=True).click()
     expect(page.locator('#review')).to_contain_text('没有待办工单')
-    transport=Mock();transport.download_photo.return_value=site['photo'].read_bytes()
     llm=Mock();llm.chat_vision.return_value='[{"型号或品名":"MOD-B1","价格":"模糊"}]';llm.chat_text.return_value='<<PASS>>'
-    bot=CsBot(conn,transport,llm=llm,img_dir=str(site['folder']/'buyer-photos'))
-    bot.handle_update({'update_id':90001,'message':{'chat':{'id':901,'type':'private'},'from':{'id':901},'photo':[{'file_id':'test','width':160}]}})
+    bot=CsBot(conn,None,llm=llm,img_dir=str(site['folder']/'buyer-photos'))
+    cust901=bot._ensure_customer({'id':901})
+    photo_receipt=bot._on_photo(cust901, None, prepared=bot._prepare_photo(cust901, data=site['photo'].read_bytes()))
     customer=conn.execute("SELECT * FROM cs_customer WHERE tg_id='901'").fetchone()
-    assert '老板' not in bot._on_text(customer,'询价1 60个')
-    assert '¥13' not in transport.send_message.call_args.args[1]
+    ask_reply=bot._on_text(customer,'询价1 60个')
+    assert '老板' not in ask_reply
+    assert '¥13' not in photo_receipt and '¥13' not in ask_reply   # 价格不泄漏（原 transport.send 断言的内核等价）
     bot._make_link(customer)
     token=conn.execute('SELECT token FROM cs_link WHERE customer_id=?',(customer['id'],)).fetchone()[0]
     page.goto(site['base']+'/cs/list.html?k='+token)

@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import openpyxl
 import pytest
 
-from audit.test_release_gates import env, auth, photo
+from audit.test_release_gates import env, auth, take_photo, say
 
 
 @pytest.mark.parametrize('tiers', ['20:12;20:11', '-20:12', '0.5:12', '20:12;50:-11'])
@@ -47,29 +47,24 @@ def test_customer_export_treats_user_text_as_literal(env):
 @pytest.mark.parametrize('bad_json', ['[]', 'null', '{"action":"edit","index":"第一个","field":"价格","value":"5"}'])
 def test_bad_model_edit_output_has_safe_fallback(env, bad_json):
     _, _, bot = env
-    bot.handle_update(photo(1))
+    take_photo(bot)
     bot.llm.chat_text.return_value = bad_json
-    update = {'update_id': 2, 'message': {'chat': {'id': 100}, 'from': {'id': 100}, 'text': '第一个改价'}}
-    bot.handle_update(update)
-    assert bot.api.send_message.call_count == 2
+    reply = say(bot, 100, '第一个改价')      # 坏模型输出必须安全回落，不抛错不写脏草稿
+    assert isinstance(reply, str) and reply
 
 
 def test_same_customer_text_not_duplicated_in_llm_history(env):
     _, _, bot = env
-    bot.handle_update({'update_id': 9, 'message': {'chat': {'id': 100},
-                      'from': {'id': 100}, 'text': 'MODEL-1 介绍一下'}})
+    say(bot, 100, 'MODEL-1 介绍一下')
     messages = bot.llm.chat_text.call_args.args[1]
     assert sum(m['content'] == 'MODEL-1 介绍一下' for m in messages) == 1
 
 
 def test_bot_two_buyers_photo_confirmation_stays_separate(env):
     conn, _, bot = env
-    bot.handle_update(photo(1))
-    other = photo(2)
-    other['message']['from']['id'] = 200
-    other['message']['chat']['id'] = 200
-    bot.handle_update(other)
-    bot.handle_update({'update_id': 3, 'message': {'chat': {'id': 100}, 'from': {'id': 100}, 'text': '确认'}})
+    take_photo(bot)
+    take_photo(bot, 200)
+    say(bot, 100, '确认')
     rows = conn.execute("SELECT c.tg_id,n.status FROM cs_note n JOIN cs_customer c ON c.id=n.customer_id WHERE c.tg_id IN ('100','200') ORDER BY c.tg_id").fetchall()
     assert [tuple(r) for r in rows] == [('100', 'confirmed'), ('200', 'draft')]
 
@@ -77,8 +72,8 @@ def test_bot_two_buyers_photo_confirmation_stays_separate(env):
 def test_customer_photo_does_not_write_merchant_catalog(env):
     conn, _, bot = env
     before = conn.execute('SELECT COUNT(*) FROM product_dynamic').fetchone()[0]
-    bot.handle_update(photo())
-    bot.handle_update({'message': {'chat': {'id': 100}, 'from': {'id': 100}, 'text': '确认'}})
+    take_photo(bot)
+    say(bot, 100, '确认')
     assert conn.execute('SELECT COUNT(*) FROM product_dynamic').fetchone()[0] == before
 
 

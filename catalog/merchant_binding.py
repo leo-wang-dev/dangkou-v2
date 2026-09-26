@@ -8,7 +8,7 @@ import time
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field, SecretStr
 from . import merchant_onboarding as hub
-from .tg import TgApi
+from .merchant_tg import TgApi
 
 
 def root():

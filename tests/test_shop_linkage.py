@@ -5,7 +5,7 @@ import sqlite3
 import openpyxl
 import pytest
 from catalog import db, shop_link, tickets
-from tests.test_release_gates import env, auth, photo
+from tests.test_release_gates import env, auth, take_photo
 
 
 def approve(client, changes):
@@ -24,15 +24,14 @@ def test_merchant_approval_bot_photo_web_excel_same_identity(env):
              'tg_bot_username':'test_shop_bot','owner_tg_username':'test_owner','owner_wechat':'TEST-WX','address':'测试路'}
     tk=client.patch('/shop',headers=auth(),json={'changes':changes}).json()
     assert not shop_link.profile(conn)['shop_name']
-    with pytest.raises(ValueError):shop_link.verify_bot(conn,{'id':12345,'is_bot':True})
     assert client.post(f"/tickets/{tk['ticket_id']}/decision",json={'token':tk['token'],'approved':True}).status_code==200
-    assert shop_link.verify_bot(conn,{'id':12345,'is_bot':True})==shop_id
+    assert shop_link.profile(conn)['tg_bot_id']=='12345'
     assert conn.execute("SELECT shop_id FROM product_dynamic WHERE id='p1'").fetchone()[0]==shop_id
-    bot.handle_update(photo(8101))
+    receipt=take_photo(bot)
     note=conn.execute("SELECT * FROM cs_note WHERE status='draft'").fetchone()
     assert note['received_shop_id']==note['source_shop_id']==shop_id
     assert note['source_basis']=='bot_context'
-    assert '测试义乌美妆档口' in bot.api.send_message.call_args.args[1]
+    assert '测试义乌美妆档口' in receipt
     cust=conn.execute('SELECT * FROM cs_customer WHERE id=?',(note['customer_id'],)).fetchone()
     bot._make_link(cust)
     token=conn.execute('SELECT token FROM cs_link WHERE customer_id=?',(cust['id'],)).fetchone()[0]
@@ -45,13 +44,9 @@ def test_merchant_approval_bot_photo_web_excel_same_identity(env):
     rows_export = list(sheet.values)
     assert {'档口名称', '供应商联系方式'} <= set(rows_export[0])  # 供货身份列必须在
     assert '待确认' in str(rows_export[1])  # 未确认的供货关系明示给商家
-    document=json.loads(conn.execute("SELECT body FROM cs_outbox WHERE channel='tg_document'").fetchone()[0])
-    assert json.loads(document['notes'][0]['fields_json'])['档口名称']=='测试义乌美妆档口'
     approve(client,{'shop_name':'测试档口新名','owner_wechat':'TEST-NEW'})
     fields=client.get('/cs/link/'+token).json()['notes'][0]['fields']
     assert fields['档口名称']=='测试档口新名' and 'TEST-NEW' in fields['供应商联系方式']
-    # Already queued files retain their original snapshot rather than changing on retry.
-    assert json.loads(document['notes'][0]['fields_json'])['档口名称']=='测试义乌美妆档口'
     linkage=client.get('/shop/linkage',headers=auth()).json()
     assert linkage['shop_id']==shop_id and linkage['catalog_counts']['audit_cat']==1
     assert client.get('/shop/linkage').status_code==401
@@ -60,7 +55,7 @@ def test_merchant_approval_bot_photo_web_excel_same_identity(env):
 def test_external_source_override_does_not_mix_current_owner_contacts(env):
     conn,client,bot=env
     approve(client,{'shop_name':'本店测试名','tg_bot_id':'12345','owner_wechat':'PRIVATE-OWNER'})
-    bot.handle_update(photo(8102))
+    take_photo(bot)
     note=conn.execute("SELECT * FROM cs_note WHERE status='draft'").fetchone()
     cust=conn.execute('SELECT * FROM cs_customer WHERE id=?',(note['customer_id'],)).fetchone()
     bot._on_text(cust,'清单第1条 档口：外部档口')
@@ -80,7 +75,6 @@ def test_bot_binding_mismatch_and_rebind_rejected(env):
     conn,client,bot=env
     assert client.patch('/shop',headers=auth(),json={'changes':{'tg_bot_id':'12345'}}).status_code==400
     approve(client,{'shop_name':'档口甲','tg_bot_id':'12345'})
-    with pytest.raises(ValueError,match='不一致'):shop_link.verify_bot(conn,{'id':99999,'is_bot':True})
     assert client.patch('/shop',headers=auth(),json={'changes':{'tg_bot_id':'99999'}}).status_code==400
     assert client.patch('/shop',headers=auth(),json={'changes':{'shop_id':'other'}}).status_code==400
     with pytest.raises(sqlite3.IntegrityError):
@@ -126,20 +120,6 @@ def test_legacy_database_migration_preserves_products_and_unknown_note_origins(t
     conn.execute("INSERT INTO product_dynamic(id,category_key,inner_code) VALUES('new','old_cat','N1')")
     assert conn.execute("SELECT shop_id FROM product_dynamic WHERE id='new'").fetchone()[0]==sid
     conn.close()
-
-
-def test_mismatched_bot_stops_before_polling_or_flushing(env,monkeypatch):
-    from unittest.mock import Mock
-    from scripts import run_cs_bot
-    conn,client,_=env
-    approve(client,{'shop_name':'档口甲','tg_bot_id':'12345'})
-    api=Mock();api._call.return_value={'id':99999,'is_bot':True}
-    factory=Mock()
-    monkeypatch.setattr(run_cs_bot.db,'connect',lambda:conn)
-    monkeypatch.setattr(run_cs_bot,'TgApi',lambda:api)
-    monkeypatch.setattr(run_cs_bot,'CsBot',factory)
-    with pytest.raises(ValueError,match='不一致'):run_cs_bot.main()
-    api.poll.assert_not_called();factory.assert_not_called()
 
 
 def test_linkage_check_rejects_other_database_and_unconfigured():

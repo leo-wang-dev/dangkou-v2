@@ -9,7 +9,7 @@ from catalog import config, quote
 
 def missing():
     required = ['CATALOG_V2_SERVICE_TOKEN', 'CATALOG_V2_PUBLIC_URL',
-                'TG_BOT_TOKEN', 'BAILIAN_API_KEY', 'CATALOG_AGENT_API_KEY',
+                'BAILIAN_API_KEY', 'CATALOG_AGENT_API_KEY',
                 'CATALOG_NOTIFY_TOKEN']
     errors = [name + ' 未配置' for name in required if not os.environ.get(name)]
     if not shutil.which('docker'):

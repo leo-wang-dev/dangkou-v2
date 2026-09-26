@@ -74,7 +74,7 @@ def _run_container(prompt: str, xlsx_path: str, work_dir: str) -> dict:
     out_json = os.path.join(work_dir, 'products.json')
     if os.path.exists(out_json):
         os.remove(out_json)
-    # Only the parser-specific API credential enters the container. No Telegram,
+    # Only the parser-specific API credential enters the container. No messaging,
     # merchant notification or catalog service token is inherited.
     env = {k: os.environ[k] for k in ('PATH', 'HOME', 'DOCKER_HOST', 'DOCKER_CONTEXT') if k in os.environ}
     env['ANTHROPIC_BASE_URL'] = config.AGENT_BASE_URL

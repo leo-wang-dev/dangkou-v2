@@ -8,7 +8,7 @@ import pytest
 from catalog import cs, db, ingest, tickets
 from catalog.csbot import CsBot, TRANSFER_MARK
 from catalog.storage import LocalStorage
-from tests.test_release_gates import env, auth, photo
+from tests.test_release_gates import env, auth, take_photo, say
 from tests.test_ingest import _wait_done
 
 
@@ -55,41 +55,20 @@ def test_invalid_policy_output_never_becomes_a_quote(env):
     assert '老板' in answer and '7.35' not in answer and '¥11' not in answer
 
 
-def test_formal_quote_and_photo_caption_transfer(env):
+def test_formal_quote_request_after_photo_transfers(env):
     _, _, bot = env
-    update = photo(31)
-    update['message']['caption'] = '给我导出正式报价单盖章'
-    bot.handle_update(update)
-    answer = bot.api.send_message.call_args.args[1]
-    assert '老板' in answer and '整理好了' in answer
+    take_photo(bot)
+    answer = say(bot, 100, '给我导出正式报价单盖章')   # 正式文件诉求必须转老板
+    assert '老板' in answer
 
 
-def test_send_failure_survives_bot_restart_without_duplicate_notes(env, tmp_path):
-    conn, _, bot = env
-    bot.api.send_message.side_effect = RuntimeError('offline')
-    bot.handle_update(photo(100))
-    assert conn.execute('SELECT COUNT(*) FROM cs_outbox WHERE sent=0').fetchone()[0] == 1
-    api = Mock()
-    restarted = CsBot(conn, api, llm=bot.llm, notifier=Mock(), img_dir=str(tmp_path))
-    conn.execute("UPDATE cs_outbox SET next_attempt_at=datetime('now')")
-    conn.commit()
-    restarted.handle_update(photo(100))
-    restarted.flush_outbox()
-    assert api.send_message.call_count == 1
-    assert conn.execute("SELECT COUNT(*) FROM cs_note WHERE status='draft'").fetchone()[0] == 1
-
-
-def test_model_timeout_keeps_retryable_inbox_and_no_partial_note(env):
+def test_model_timeout_leaves_no_partial_note(env):
     conn, _, bot = env
     bot.llm.chat_vision.side_effect = RuntimeError('timeout')
     with pytest.raises(RuntimeError):
-        bot.handle_update(photo(101))
+        take_photo(bot)
     assert not conn.in_transaction
-    assert conn.execute('SELECT processed FROM cs_inbox WHERE update_id=101').fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM cs_note WHERE status='draft'").fetchone()[0] == 0
-    bot.llm.chat_vision.side_effect = None
-    bot.handle_update(photo(101))
-    assert conn.execute('SELECT processed FROM cs_inbox WHERE update_id=101').fetchone()[0] == 1
 
 
 def test_model_calls_do_not_hold_database_writer_lock(env):
@@ -98,7 +77,7 @@ def test_model_calls_do_not_hold_database_writer_lock(env):
         assert not conn.in_transaction
         return '<<PASS>>'
     bot.llm.chat_text.side_effect = inference
-    bot.handle_update({'update_id':10,'message':{'chat':{'id':100},'from':{'id':100},'text':'MODEL-1 介绍一下'}})
+    say(bot, 100, 'MODEL-1 介绍一下')
 
 
 def test_pending_mutation_revalidated_at_approval(env):
@@ -127,20 +106,6 @@ def test_customer_photo_is_scoped_to_own_link(env, tmp_path):
     nid = conn.execute("SELECT id FROM cs_note WHERE customer_id='b'").fetchone()[0]
     assert client.get(f'/cs/link/link-a/note/{nid}/photo').status_code == 404
     assert client.get(f'/cs/link/link-b/note/{nid}/photo').content == b'photo'
-
-
-def test_outbox_preserves_order_after_failure_and_splits_long_receipts(env):
-    conn, _, bot = env
-    bot._enqueue('tg','123','A'*4001)
-    bot.api.send_message.side_effect = RuntimeError('offline')
-    bot.flush_outbox()
-    assert bot.api.send_message.call_count == 1
-    assert conn.execute('SELECT COUNT(*) FROM cs_outbox WHERE sent=0').fetchone()[0] == 2
-    bot.api.send_message.reset_mock(side_effect=True)
-    conn.execute("UPDATE cs_outbox SET next_attempt_at=datetime('now')")
-    conn.commit()
-    bot.flush_outbox()
-    assert ''.join(call.args[1] for call in bot.api.send_message.call_args_list) == 'A'*4001
 
 
 def test_merchant_notifications_and_files_are_durable(env, monkeypatch):

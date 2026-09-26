@@ -58,15 +58,6 @@ def validate_binding(conn, changes):
         raise ValueError('绑定 bot 前请填写档口名称')
 
 
-def verify_bot(conn, identity):
-    p = profile(conn)
-    if not p['shop_name'] or not p['tg_bot_id']:
-        raise ValueError('未完成档口名称和 TG bot ID 绑定，请在档口端补充并审批')
-    if not isinstance(identity, dict) or not identity.get('is_bot') or str(identity.get('id')) != p['tg_bot_id']:
-        raise ValueError('TG Token 所属 bot 与本数据库的档口绑定不一致，拒绝启动')
-    return p['shop_id']
-
-
 def supplier_values(p):
     contacts = []
     if p['owner_tg_username']:

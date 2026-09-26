@@ -1,6 +1,7 @@
-"""Standalone merchant outbox worker; no Telegram token or polling dependency.
+"""Standalone merchant outbox worker: the single delivery loop for cs_outbox.
 
-Run with CATALOG_NOTIFY_WORKER=1 also set for run_cs_bot.py to partition consumers.
+C 端 TG 传输拆除（删C）后，出站只剩微信通知渠道；本进程不再需要任何
+TG Token 或轮询依赖，也没有分区消费者开关。
 """
 import fcntl
 import os
@@ -16,10 +17,9 @@ from catalog.csbot import CsBot
 def main():
     conn=db.connect();db.init_db(conn)
     try:
-        # Only the notification branch is used; no TgApi initialization is needed.
         bot=CsBot(conn,api=None)
         while True:
-            bot.flush_outbox(notifications_only=True)
+            bot.flush_outbox()
             time.sleep(2)
     finally:
         conn.close()

@@ -1,14 +1,14 @@
 import json
 from catalog import photo_inquiry
-from tests.test_release_gates import env, photo
+from tests.test_release_gates import env, take_photo
 
 
 def test_photo_candidate_requires_selection_and_uses_store_tier(env):
     conn,_,bot=env
     bot.llm.chat_vision.return_value=json.dumps([{'型号或品名':'MODEL-1','价格':'0.01','其他':'144含义待确认'}])
-    bot.handle_update(photo(200))
-    assert '询价1' in bot.api.send_message.call_args.args[1]
-    assert '¥11' not in bot.api.send_message.call_args.args[1]
+    receipt=take_photo(bot)
+    assert '询价1' in receipt
+    assert '¥11' not in receipt
     customer=dict(conn.execute("SELECT * FROM cs_customer WHERE tg_id='100'").fetchone())
     reply=bot._on_text(customer,'询价1 60个')
     assert '老板' not in reply and '¥11/个' not in reply and '0.01' not in reply
