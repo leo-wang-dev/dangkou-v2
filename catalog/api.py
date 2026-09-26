@@ -1009,7 +1009,7 @@ def register_routes(app: FastAPI):
             raise HTTPException(404, '商品不存在')
         return {'delisted': True}
 
-    # ---- 报价单（v2：多商品+数量+百分比调整）----
+    # ---- 报价单（通用版纯代码生成：多商品+数量+百分比调整）----
     class QuoteItem(BaseModel):
         category: str
         product_id: str
@@ -1027,16 +1027,14 @@ def register_routes(app: FastAPI):
             raise HTTPException(400, 'items 不能为空')
         import uuid
         from . import quote as quote_mod
-        if not os.path.isfile(quote_mod.TEMPLATE_V2_PATH):
-            raise HTTPException(503, '缺少商家真实报价模板，暂不能生成正式报价单')
         out_dir = os.path.join(app.state.storage.base, '_quotes')
         os.makedirs(out_dir, exist_ok=True)
         out = os.path.join(out_dir, f'quote-{uuid.uuid4().hex[:8]}.xlsx')
         items = [{'category': i.category, 'product_id': i.product_id, 'quantity': i.quantity}
                  for i in body.items]
         try:
-            quote_mod.generate_v2(request_conn(), app.state.storage, items,
-                                  body.price_adjustment_pct, out, deposit_pct=body.deposit_pct)
+            quote_mod.generate_generic(request_conn(), app.state.storage, items,
+                                       body.price_adjustment_pct, out, deposit_pct=body.deposit_pct)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         from . import notify

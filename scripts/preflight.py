@@ -4,7 +4,7 @@ import shutil
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from catalog import config, quote
+from catalog import config
 
 
 def missing():
@@ -19,8 +19,6 @@ def missing():
     public = os.environ.get('CATALOG_V2_PUBLIC_URL', '')
     if public and not public.startswith('https://'):
         errors.append('CATALOG_V2_PUBLIC_URL 必须为可访问的 HTTPS 地址')
-    if not Path(quote.TEMPLATE_V2_PATH).is_file():
-        errors.append('缺少商家真实报价模板 CATALOG_QUOTE_TEMPLATE')
     return errors
 
 

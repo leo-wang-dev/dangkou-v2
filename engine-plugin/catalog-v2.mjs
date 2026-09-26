@@ -188,7 +188,7 @@ export async function apply(ctx, _config = {}) {
 
   ctx.tools.register({
     name: 'catalog_quote',
-    description: '生成正式报价单 Excel（ELETRO BELEZA 全字段模板：14列含装箱物流+合计+定金，完成后系统自动推送文件）。'
+    description: '生成正式报价单 Excel（通用格式纯代码生成：14列含装箱物流+合计+定金，完成后系统自动推送文件）。'
       + '支持已配置报价字段映射的分类（quotable=true，用 quote_map_get 查）；未配置映射的分类会返回明确错误，按提示用 quote_map_set 配置后即可出单。'
       + 'items 每项含 product_id 和 quantity；price_adjustment_pct 正=上浮负=下浮（如 3=+3%, -5=下浮5%）。'
       + '用户说"出厂价加3个点"→ pct=3；"销售价下浮5%"→ pct=-5；"加3%佣金"→ pct=3。'

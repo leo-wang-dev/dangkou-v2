@@ -17,6 +17,8 @@ def test_quote_api_queues_file_in_same_database(env, tmp_path):
     assert response.status_code == 200, response.text
     path = Path(response.json()['path']); assert path.exists()
     ws = openpyxl.load_workbook(path).active
-    assert ws['F18'].value == 120
+    assert ws['A1'].value == 'ITEM NO.'          # 行1=列头（纯代码生成）
+    assert ws['F2'].value == 120                 # 81 个按 40/箱进位为 120
+    assert ws['A3'].value == 'TOTAL'
     notice = conn.execute("SELECT body FROM cs_outbox WHERE channel='notify_file'").fetchone()
     assert notice and json.loads(notice['body'])['file_path'] == str(path)

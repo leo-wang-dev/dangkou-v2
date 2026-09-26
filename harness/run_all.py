@@ -10,7 +10,7 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from catalog import config, quote
+from catalog import config
 import openpyxl
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:8890'
@@ -86,8 +86,6 @@ def main():
     blocked += [f'缺 CATALOG_EXPECT_{cat.upper()} 源表黄金行数' for cat in FILES if not EXPECT[cat]]
     if not TOKEN:
         blocked.append('缺 CATALOG_V2_SERVICE_TOKEN')
-    if not os.path.isfile(quote.TEMPLATE_V2_PATH):
-        blocked.append('缺真实报价模板')
     if blocked:
         print('\n'.join('BLOCKED: ' + reason for reason in blocked))
         sys.exit(2)
@@ -137,7 +135,7 @@ def main():
         if ok:
             wb2 = openpyxl.load_workbook(q['path'])
             ws = wb2.active
-            ok = ws.max_column >= 14 and ws['A18'].value is not None and any(str(c.value).upper()=='TOTAL' for c in ws['A']) and len(ws._images) >= 1
+            ok = ws.max_column >= 14 and ws['A2'].value is not None and any(str(c.value).upper()=='TOTAL' for c in ws['A']) and len(ws._images) >= 1
         check('报价单', ok, q.get('path', ''))
 
     report = ['# dangkou-v2 验收报告', '',

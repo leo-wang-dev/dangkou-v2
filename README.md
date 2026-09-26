@@ -14,7 +14,7 @@ cp .env.example .env
 .venv/bin/python scripts/preflight.py
 ```
 
-`requirements.txt` 为运行依赖，`requirements-dev.txt` 为测试依赖；`requirements-lock.txt` 记录本轮实际测试的完整版本。`.env` 不提交。报价模板由 `CATALOG_QUOTE_TEMPLATE` 指定。按本次用户授权，离线测试自动生成带“测试模板、不可付款”标记的 14 列模板，不自动写入生产 data。也可运行 `.venv/bin/python scripts/build_test_quote_template.py` 生成可查看样例；正式使用时换成商家确认的模板。
+`requirements.txt` 为运行依赖，`requirements-dev.txt` 为测试依赖；`requirements-lock.txt` 记录本轮实际测试的完整版本。`.env` 不提交。报价单由代码直接生成（14 列通用格式：列头 → 数据行嵌商品主图 → TOTAL/DEPOSIT/BALANCE），不再依赖模板文件，`CATALOG_QUOTE_TEMPLATE` 配置项已移除。
 
 ```bash
 .venv/bin/python -m uvicorn catalog.main:app --host 127.0.0.1 --port 8890

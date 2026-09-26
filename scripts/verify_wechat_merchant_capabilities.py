@@ -21,7 +21,6 @@ if str(ROOT) not in sys.path:
 from catalog import db, search
 from catalog.api import register_routes
 from catalog.storage import LocalStorage
-from scripts.build_test_quote_template import build as build_quote_template
 from scripts.build_wechat_manual_test_kit import OUT as KIT, main as build_kit
 
 
@@ -201,10 +200,7 @@ def main() -> None:
                 'owner_wechat': 'bad\nwechat'}}).status_code == 400
             record('CONTACT-NEG', '档口资料', 'negative', '空操作、非法 TG、带换行微信号均未建工单')
 
-            from catalog import dynamic_catalog, quote as quote_mod
-            quote_template = OUT / 'test-quote-template.xlsx'
-            build_quote_template(quote_template)
-            quote_mod.TEMPLATE_V2_PATH = str(quote_template)
+            from catalog import dynamic_catalog
             quote_photo = storage.save('quote_cat', 'quote-p1', 'product.jpg', known)
             dynamic_catalog.approve_template(conn, {
                 'key': 'quote_cat', 'name': '报价验收分类', 'storage': 'dynamic',
@@ -227,7 +223,7 @@ def main() -> None:
             assert quotation.status_code == 200, quotation.text
             quote_path = Path(quotation.json()['path'])
             sheet = openpyxl.load_workbook(quote_path).active
-            assert sheet['F18'].value == 120 and sheet['G18'].value == 1200
+            assert sheet['F2'].value == 120 and sheet['G2'].value == 1200
             queued = conn.execute(
                 "SELECT body FROM cs_outbox WHERE channel='notify_file' ORDER BY id DESC").fetchone()
             assert queued and json.loads(queued['body'])['file_path'] == str(quote_path)

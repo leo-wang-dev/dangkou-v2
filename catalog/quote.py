@@ -1,15 +1,26 @@
-"""报价单 v2.2：ELETRO BELEZA 全字段模板（14列含装箱物流+合计+定金），输出可直接转发客户。"""
+"""报价单（纯代码生成）：14 列通用格式，不依赖任何模板文件。
+
+第1行=列头 → 数据行（PHOTO 嵌商品主图）→ TOTAL/DEPOSIT/BALANCE 三行（写值不写公式，
+手机/WPS 预览不重算公式也处处可见）。取数走 quote_map 字段映射，整箱/毛重/体积计算链、
+parse_ctn_spec 箱规解析沿用 v2.2。
+"""
 import json
-import os
 import math
 import re
 
 import openpyxl
+from openpyxl.styles import Alignment, Font, PatternFill
 
-TEMPLATE_V2_PATH = os.environ.get('CATALOG_QUOTE_TEMPLATE') or os.path.join(os.path.dirname(__file__), '..', 'data', 'quote_template_v2.xlsx')
 
+_HEADERS = ('ITEM NO.', 'PHOTO', 'DESCRIPTION', 'COLORS', 'PRICE', 'QUANTITY',
+            'TOTAL AMOUNT', 'PCS/CTN', 'CTNS', 'G.W/CTN', 'N.W/CTN', 'MEAS',
+            'T.G.W', 'T-CBM')
+# 列宽沿用 v2.2 商家模板实测值（B=PHOTO 放图最宽，C=DESCRIPTION 次之）
+_COL_WIDTHS = {'A': 18.8, 'B': 45, 'C': 35, 'D': 22.6, 'E': 11.4, 'F': 11.7,
+               'G': 18.1, 'H': 11.7, 'I': 19.7, 'J': 13.2, 'K': 11.1, 'L': 12.6,
+               'M': 12.6, 'N': 12.6}
+_HEADER_ROW_H, _DATA_ROW_H = 27, 100
 
-# ================= 报价单 v2.2：ELETRO BELEZA 模板（全字段 + 动态行数 + 动态定金） =================
 
 _NUM = r'(\d+(?:\.\d+)?)'
 
@@ -54,36 +65,6 @@ def _num(x):
     """17.0→17、17.7→17.7：写进单元格的数字尽量干净。"""
     f = float(x)
     return int(f) if f.is_integer() else round(f, 4)
-
-
-def _shift_below(ws, at_row: int, delta: int):
-    """在 at_row 处插行(delta>0)/删行(delta<0)，openpyxl 只搬单元格——
-    行高、合并单元格、图片锚点必须自己搬（收款码图/备注行/合计区全靠这个）。"""
-    n = abs(delta)
-    heights = {r: ws.row_dimensions[r].height for r in list(ws.row_dimensions)
-               if r >= at_row and ws.row_dimensions[r].height is not None}
-    merges = [(m.min_row, m.min_col, m.max_row, m.max_col)
-              for m in list(ws.merged_cells.ranges) if m.min_row >= at_row]
-    for m in list(ws.merged_cells.ranges):
-        if m.min_row >= at_row:
-            ws.merged_cells.remove(m)
-    anchors = [im.anchor for im in ws._images
-               if im.anchor._from and im.anchor._from.row >= at_row - 1]
-    if delta > 0:
-        ws.insert_rows(at_row, n)
-    else:
-        ws.delete_rows(at_row, n)
-    for r in list(heights):
-        ws.row_dimensions[r].height = None
-    for r, h in heights.items():
-        ws.row_dimensions[r + delta].height = h
-    for r1, c1, r2, c2 in merges:
-        ws.merge_cells(start_row=r1 + delta, start_column=c1,
-                       end_row=r2 + delta, end_column=c2)
-    for a in anchors:
-        a._from.row += delta
-        if getattr(a, '_to', None) is not None:
-            a._to.row += delta
 
 
 def _ceil_div(qty: int, pcs: int) -> int:
@@ -154,13 +135,8 @@ def _dynamic_extractor(conn, category_key):
     return extract
 
 
-def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pct: float = 30):
-    """ELETRO BELEZA 模板填充：14列全字段，行数=商品数（插行/删空行），
-    合计/DEPOSIT/BALANCE 公式按实际行数重写，定金比例动态。"""
-    from copy import copy
-    from openpyxl.drawing.image import Image as XLImg
-    from openpyxl.styles import Alignment
-
+def generate_generic(conn, storage, items, price_adjustment_pct, out_path, deposit_pct: float = 30):
+    """纯代码生成报价单：行1=列头，行2起=数据（嵌图），末三行 TOTAL/DEPOSIT/BALANCE（写值）。"""
     if not math.isfinite(price_adjustment_pct) or price_adjustment_pct < -100:
         raise ValueError('价格调整百分比无效')
     if not math.isfinite(deposit_pct) or not 0 <= deposit_pct <= 100:
@@ -180,28 +156,31 @@ def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pc
         prows.append((extract, p, qty))
     if not prows:
         raise ValueError('没有可报价的商品')
-    k = len(prows)
 
-    wb = openpyxl.load_workbook(TEMPLATE_V2_PATH)   # 商家真模板（ELETRO BELEZA 单Sheet）
+    wb = openpyxl.Workbook()
     ws = wb.active
-    DATA_START, TMPL_ROWS = 18, 6                    # 模板自带 18-23 六个数据行
-    if k > TMPL_ROWS:                                # 扩容：插行 + 照18行补样式
-        _shift_below(ws, DATA_START + TMPL_ROWS, k - TMPL_ROWS)
-        for r in range(DATA_START + TMPL_ROWS, DATA_START + k):
-            ws.row_dimensions[r].height = ws.row_dimensions[DATA_START].height
-            for c in range(1, 15):
-                ws.cell(r, c)._style = copy(ws.cell(DATA_START, c)._style)
-    elif k < TMPL_ROWS:                              # 收紧：删空行（合计/收款/条款整体上移）
-        _shift_below(ws, DATA_START + k, -(TMPL_ROWS - k))
-    last = DATA_START + k - 1
+    ws.title = 'QUOTATION'
+    for col, width in _COL_WIDTHS.items():
+        ws.column_dimensions[col].width = width
 
-    # 数字格式约定：物流列绝不能带货币符号（模板残留 ￥ 格式，填数前必须重设）；
-    # 钱只出现在 E 单价 / G 小计 / 合计 / 定金 / 尾款。
-    _FMT = {8: '0', 9: '0', 10: '0.0', 11: '0.0', 12: 'General', 13: '0.0', 14: '0.000'}
+    # 行1：列头（加粗+底色+居中，不追求花哨）
+    ws.row_dimensions[1].height = _HEADER_ROW_H
+    header_fill = PatternFill('solid', fgColor='D9E1F2')
+    for c, label in enumerate(_HEADERS, 1):
+        cell = ws.cell(1, c, label)
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+
+    # 数字格式约定：物流列纯数字（0/0.0/0.000），钱只在 E 单价 / G 小计 / 合计 / 定金 / 尾款
+    _FMT = {5: '0.00', 7: '0.00', 8: '0', 9: '0', 10: '0.0', 11: '0.0',
+            12: 'General', 13: '0.0', 14: '0.000'}
     sums = {'amount': 0, 'ctns': 0, 'gw': 0.0, 'cbm': 0.0}
+    DATA_START = 2
 
     for i, (extract, p, qty) in enumerate(prows):
         r = DATA_START + i
+        ws.row_dimensions[r].height = _DATA_ROW_H
         row = extract(p)
         base = float(str(row['price'] or '0').replace('¥', '').replace(',', '')) or 0
         unit = round(base * (1 + price_adjustment_pct / 100))
@@ -235,27 +214,25 @@ def generate_v2(conn, storage, items, price_adjustment_pct, out_path, deposit_pc
         ws.cell(r, 12, meas)                                   # L MEAS
         ws.cell(r, 13, tgw)                                    # M T.G.W = 箱数×单箱毛重
         ws.cell(r, 14, tcbm)                                   # N T-CBM = 箱数×单箱体积
-        for c_, fmt_ in _FMT.items():                          # 物流列格式重设（模板残留￥必须压掉）
+        for c_, fmt_ in _FMT.items():
             ws.cell(r, c_).number_format = fmt_
         sums['amount'] += amount
         sums['ctns'] += ctns or 0
         sums['gw'] += tgw or 0
         sums['cbm'] += tcbm or 0
 
-    # 合计/定金：按内容定位（插删行后位置会动），写计算值（预览器不重算公式，值才处处可见）
-    T = next((rr for rr in range(last + 1, last + 12)
-              if str(ws.cell(rr, 1).value or '').strip().upper() == 'TOTAL'), None)
-    if T is None:
-        raise ValueError('模板里找不到 TOTAL 行')
-    ws[f'G{T}'] = sums['amount']
-    ws[f'I{T}'] = sums['ctns']
-    ws[f'M{T}'] = round(sums['gw'], 2)
-    ws[f'M{T}'].number_format = '0.0'
-    ws[f'N{T}'] = round(sums['cbm'], 3)
-    ws[f'N{T}'].number_format = '0.000'
+    # 合计/定金/尾款：数据区后三行，写计算值（预览器不重算公式，值才处处可见）
+    T = DATA_START + len(prows)
+    for r, label in ((T, 'TOTAL'), (T + 1, 'DEPOSIT'), (T + 2, 'BALANCE')):
+        cell = ws.cell(r, 1, label)
+        cell.font = Font(bold=True)
     deposit = round(sums['amount'] * deposit_pct / 100, 2)
-    ws[f'G{T + 1}'] = deposit                                   # DEPOSIT
-    ws[f'G{T + 2}'] = round(sums['amount'] - deposit, 2)        # BALANCE
+    ws.cell(T, 7, sums['amount']).number_format = '0.00'
+    ws.cell(T, 9, sums['ctns']).number_format = '0'
+    ws.cell(T, 13, round(sums['gw'], 2)).number_format = '0.0'
+    ws.cell(T, 14, round(sums['cbm'], 3)).number_format = '0.000'
+    ws.cell(T + 1, 7, deposit).number_format = '0.00'            # DEPOSIT = 总额×定金%
+    ws.cell(T + 2, 7, round(sums['amount'] - deposit, 2)).number_format = '0.00'  # BALANCE = 差额
 
     wb.save(out_path)
     return out_path

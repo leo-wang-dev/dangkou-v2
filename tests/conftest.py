@@ -1,5 +1,4 @@
-"""Use an explicit synthetic template for offline tests, never install it in production data."""
-import os
+"""动态分类夹具：报价单已纯代码生成，不再需要模板替身。"""
 import pytest
 
 
@@ -59,19 +58,6 @@ def seed_products(conn, rows, *, key='test_cat', name='测试品类', fields=Non
     dynamic_catalog.upsert_approved_products(conn, key, payload)
     conn.commit()
     return payload
-
-
-@pytest.fixture(scope='session')
-def synthetic_quote_template(tmp_path_factory):
-    from scripts.build_test_quote_template import build
-    return str(build(tmp_path_factory.mktemp('quote-fixture') / 'test_quote_template.xlsx'))
-
-
-@pytest.fixture(autouse=True)
-def offline_quote_template(monkeypatch, synthetic_quote_template):
-    from catalog import quote
-    if not os.environ.get('CATALOG_QUOTE_TEMPLATE'):
-        monkeypatch.setattr(quote, 'TEMPLATE_V2_PATH', synthetic_quote_template)
 
 
 @pytest.fixture(autouse=True)

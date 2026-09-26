@@ -158,7 +158,7 @@ def test_quote_never_silently_omits_or_quotes_unavailable_product(env,tmp_path,k
         conn.commit()
     items=[{'category':'audit_cat','product_id':'p1' if kind=='delisted' else 'missing','quantity':20}]
     with pytest.raises(ValueError,match='商品'):
-        quote.generate_v2(conn,LocalStorage(str(tmp_path)),items,0,str(tmp_path/'q.xlsx'))
+        quote.generate_generic(conn,LocalStorage(str(tmp_path)),items,0,str(tmp_path/'q.xlsx'))
 
 
 def test_slow_model_request_does_not_block_other_database_requests(env,tmp_path,monkeypatch):
