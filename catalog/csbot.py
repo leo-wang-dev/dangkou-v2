@@ -73,6 +73,32 @@ EDIT_JUDGE_SYSTEM = (
     '字段名尽量沿用草稿里已有的名，或用标准名：型号或品名/价格/装箱数/颜色/体积或尺寸/起订量/其他。')
 
 
+def extract_photo_items(llm, data):
+    """照片字节 → 复核后的条目 + 名片（纯函数：不碰库，无档口依赖）。
+
+    档口客服（CsBot._prepare_photo）与平台中央工具（catalog/userapp）共用
+    同一条抽取链：EXTRACT_PROMPT 初抽 → 解析 → REVIEW_PHOTO_PROMPT 复审 →
+    保守价格；提示词只在此维护一份，userapp 不得复制。
+    """
+    items = []
+    for attempt in range(2):
+        prompt = EXTRACT_PROMPT if not attempt else (
+            '上次结果为空或漏读了主体。请重新仔细看商品包装上的可见品牌、品名和容量，'
+            '不要只看桌面手写数字；确实不可辨认才标模糊。\n' + EXTRACT_PROMPT)
+        raw = llm.chat_vision(prompt, data)
+        items = CsBot._parse_items(raw)
+        if items and any(d.get('型号或品名') not in ('未拍到', '模糊', '', None) for d in items):
+            break
+    cards = [it.pop('名片') for it in items if isinstance(it.get('名片'), dict)]
+    items = [it for it in items if it]   # pop 后的空壳（原名片条目）一并剔除
+    if items:
+        reviewed = llm.chat_vision(REVIEW_PHOTO_PROMPT + json.dumps(items, ensure_ascii=False), data)
+        items = CsBot._conservative_prices(items, CsBot._parse_items(reviewed))
+    # 复核回显的名片透传条目不是商品，不进清单（名片只在初抽那轮分流）。
+    items = [it for it in items if '名片' not in it]
+    return items, cards
+
+
 class CsBot:
     def __init__(self, conn, api, llm=None, img_dir=None):
         self.conn = conn
@@ -139,24 +165,12 @@ class CsBot:
         fname = f"{cust['id']}_{secrets.token_hex(6)}.jpg"
         path = os.path.join(self.img_dir, fname)
         open(path, 'wb').write(data)
-        items = []
-        for attempt in range(2):
-            prompt = EXTRACT_PROMPT if not attempt else (
-                '上次结果为空或漏读了主体。请重新仔细看商品包装上的可见品牌、品名和容量，'
-                '不要只看桌面手写数字；确实不可辨认才标模糊。\n' + EXTRACT_PROMPT)
-            raw = self.llm.chat_vision(prompt, data)
-            items = self._parse_items(raw)
-            if items and any(d.get('型号或品名') not in ('未拍到', '模糊', '', None) for d in items):
-                break
-        cards = [it.pop('名片') for it in items if isinstance(it.get('名片'), dict)]
-        items = [it for it in items if it]   # pop 后的空壳（原名片条目）一并剔除
-        if items:
-            reviewed = self.llm.chat_vision(REVIEW_PHOTO_PROMPT + json.dumps(items, ensure_ascii=False), data)
-            items = self._conservative_prices(items, self._parse_items(reviewed))
+        items, cards = extract_photo_items(self.llm, data)
         from . import photo_inquiry
         return path, items, photo_inquiry.candidates(self.conn, items, data), cards
 
-    def _crop_photo(self, path: str, index: int, box) -> str:
+    @staticmethod
+    def _crop_photo(path: str, index: int, box) -> str:
         """一图多商品：按千分制图框裁出该商品的子图；框缺失/裁剪失败回落整图。"""
         if not isinstance(box, list) or len(box) != 4:
             return path
@@ -231,7 +245,8 @@ class CsBot:
         return ('整理好了，请核对：\n' + '\n'.join(receipts)
                 + '\n\n回复"确认"入清单；要改就直接说，比如"1 颜色改成黑色"。说"出表"可随时导出Excel。' + inquiry)
 
-    def _parse_items(self, raw: str) -> list:
+    @staticmethod
+    def _parse_items(raw: str) -> list:
         if not isinstance(raw, str):
             return []
         raw = raw.strip()
@@ -297,6 +312,8 @@ class CsBot:
             match = re.search(r'\d+(?:\.\d+)?', value)
             return Decimal(match[0]) if match else None
         for item in reviewed:
+            if '价格' not in item:      # 名片透传条目无商品字段，不参与比价
+                continue
             candidates = sorted(initial, key=lambda d:SequenceMatcher(None, normalize(d.get('型号或品名','')), normalize(item.get('型号或品名',''))).ratio(), reverse=True)
             best = candidates[0] if candidates else None
             score = SequenceMatcher(None, normalize(best['型号或品名']), normalize(item.get('型号或品名',''))).ratio() if best else 0
