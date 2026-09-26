@@ -31,4 +31,4 @@ UNIT
   sudo install -m 644 "/tmp/$unit" "/etc/systemd/system/$unit"
 done
 sudo systemctl daemon-reload
-sudo systemctl enable --now dangkou-wechat-test-api dangkou-wechat-test-customer dangkou-wechat-test-notifications dangkou-wechat-test-engine dangkou-wechat-test-user-app
+sudo systemctl enable --now dangkou-wechat-test-api dangkou-wechat-test-notifications dangkou-wechat-test-engine dangkou-wechat-test-user-app
