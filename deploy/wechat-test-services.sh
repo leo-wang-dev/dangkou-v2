@@ -3,10 +3,9 @@ set -euo pipefail
 # Isolated acceptance instance; does not replace the original merchant services.
 BASE=/home/ubuntu/dangkou-wechat-test
 ENGINE=/home/ubuntu/dsh-wechat-test
-for item in api customer notifications engine user-app; do
+for item in api notifications engine user-app; do
   case "$item" in
     api) dir="$BASE"; command="$BASE/.venv/bin/python -m uvicorn catalog.main:app --host 127.0.0.1 --port 19010 --no-access-log" ;;
-    customer) dir="$BASE"; command="$BASE/.venv/bin/python -u scripts/run_wechat_customer.py" ;;
     notifications) dir="$BASE"; command="$BASE/.venv/bin/python -u scripts/run_notifications.py" ;;
     engine) dir="$ENGINE"; command="/usr/bin/node host.mjs" ;;
     user-app) dir="$BASE"; command="$BASE/.venv/bin/python -u scripts/run_user_app.py" ;;
