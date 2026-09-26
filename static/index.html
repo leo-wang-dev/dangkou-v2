@@ -87,15 +87,6 @@ img.big{width:86px;height:86px}
 .tg-chat code{display:block;background:#fff;border-radius:8px;padding:8px;margin-top:8px;white-space:normal}
 .tg-step p{font-size:14px;line-height:1.6;margin-bottom:0}
 .tg-setup .tg-status{font-size:14px;margin:0 0 10px}
-  .lbl{break-inside:avoid;border:1.5px solid #222;border-radius:8px;padding:10px 12px;
-       width:46%;display:inline-block;margin:4px;vertical-align:top;font-size:13px;line-height:1.6;background:#fff}
-  .lbl b{display:block;font-size:15px;margin-bottom:4px;border-bottom:1px dashed #999;padding-bottom:3px}
-  .lbl .f{display:flex;gap:6px}.lbl .f span:first-child{color:#555;min-width:5em}
-  .lblPrev{max-height:260px;overflow:auto;border:1px solid #e3e3e3;border-radius:8px;padding:8px;background:#fafafa}
-  @media print{
-    body>*:not(#printArea){display:none!important}
-    #printArea{display:block!important}
-  }
 </style>
 </head>
 <body>
@@ -142,7 +133,6 @@ img.big{width:86px;height:86px}
       <button class="btn o" id="rename-cat" onclick="renameCat()" hidden>✏️ 分类改名</button>
       <button class="btn o" id="supplier-cat" onclick="setSupplier()" hidden>🏷️ 供应商</button>
       <button class="btn o" onclick="shareChat()">🎧 客服链接</button>
-      <button class="btn o" onclick="openLabels()">🏷️ 标签打印</button>
       <button class="btn o" id="toggle-visible" onclick="toggleCategoryVisible()" hidden>👁 整体可见性</button>
       <button class="btn o" id="download-template" onclick="downloadTemplate()">下载当前分类模板</button>
       <input id="q" placeholder="搜索型号 / 内部货号 / 字段…" oninput="renderProducts()" style="max-width:320px">
@@ -159,7 +149,6 @@ img.big{width:86px;height:86px}
   <button class="nav" id="lbNext" onclick="event.stopPropagation();lbStep(1)">›</button>
 </div>
 <div id="modal"><div class="box" id="modalBox"></div></div>
-<div id="printArea" style="display:none"></div>
 <script>
 const MANAGE_PREFIX = location.pathname.match(/^\/merchant\/manage\/[a-f0-9]{24}/)?.[0] || '';
 const QUERY_TOKEN = new URLSearchParams(location.search).get('t') || '';
@@ -178,7 +167,6 @@ let CAT_NAMES = {};
 let cur = {cat:'', tpl:null, prods:[]};
 const rej = new Set();
 const edits = {};
-let draftRows = {};
 let templateDrafts = {};
 let dynamicImportRows = {};
 
@@ -293,7 +281,7 @@ async function refreshDetail(tid){
   box.innerHTML = '<div class="muted">刷新中…</div>';
   const d = await api('/tickets/'+tid);
   const detailCat = d.ticket.category;
-  const p = d.payload, drafts = p.drafts||{};
+  const p = d.payload;
   if(p.kind === 'redline' || p.kind === 'shop'){
     box.innerHTML = '<div class="kv"><b>审批内容</b><pre style="white-space:pre-wrap">'+esc(p.text_raw || JSON.stringify(p.changes,null,2))+'</pre></div>';
     return;
@@ -304,49 +292,6 @@ async function refreshDetail(tid){
   }
   const fields = await tplFields(detailCat);
   let html = '';
-  const rowHtml = (tag, imgs, kv, key, done) => {
-    const imageUrls = (imgs||[]).map(manageAssetUrl);
-    return `
-    <div class="draft ${done?'done':''}" id="row-${tid}-${key}">
-      ${imageUrls.length?`<div class="imgwrap"><img class="p" src="${imageUrls[0]}" onclick="lbGallery(${JSON.stringify(imageUrls).replace(/"/g,'&quot;')})">
-        ${imageUrls.length>1?`<span class="badge">${imageUrls.length}图</span>`:''}</div>`:''}
-      <div class="f"><span class="tag ${tag.cls}">${tag.txt}</span>
-        ${fields.map(f=>kv[f.col]?`<div class="kv"><b>${f.label}</b>：${esc(str(kv[f.col]))}</div>`:'').join('')}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:6px;flex:none">
-        <button class="btn p s" onclick="rowApprove(${tid},'${key}')">✓通过</button>
-        <button class="btn o s" onclick="editDraft(${tid},'${key}')">编辑</button>
-        <button class="btn d s" onclick="toggleRej(${tid},'${key}',this)">驳回</button>
-      </div>
-    </div>`;
-  };
-  const ticketRows = {};
-  draftRows[tid] = {cat: detailCat, rows: ticketRows};
-  const doneRows = (p.done_rows || {});
-  const modelCount = {};
-  (drafts.new||[]).forEach(d2=>{ const m=str(d2.model_no||d2.item_no); modelCount[m]=(modelCount[m]||0)+1; });
-  (drafts.new||[]).forEach((d2,i)=>{
-    const key = d2._rid||('n'+i);
-    ticketRows[key] = d2;
-    const m = str(d2.model_no||d2.item_no);
-    const dup = modelCount[m] > 1 ? ' ⚠️重复' : '';
-    const done = doneRows[key];
-    const cls = done === 'approved' ? 'ok' : (done === 'rejected' ? 'del' : 'new');
-    const label = done === 'approved' ? '已✓' : (done === 'rejected' ? '已驳回' : '新增'+dup);
-    html += rowHtml({txt:label,cls:cls}, d2._imgs||[], d2, key, done); });
-  (drafts.update||[]).forEach((pair,i)=>{
-    const [row,d2] = Array.isArray(pair)?pair:[pair,pair];
-    const key = row.id||('u'+i);
-    const oldImages = Array.isArray(row.images)?row.images:JSON.parse(row.images||'[]');
-    ticketRows[key] = {...d2, cs_visible:d2.cs_visible??row.cs_visible??0,
-      images:d2.images??oldImages, image_main:d2.image_main??row.image_main,
-      _imgs:d2._imgs||(row.image_main?[MANAGE_PREFIX+'/img/'+row.image_main+'?token='+TOKEN]:[])};
-    const imgs = ticketRows[key]._imgs;
-    html += rowHtml({txt:doneRows[key]?'已处理':'更新',cls:'upd'}, imgs, ticketRows[key], key, doneRows[key]); });
-  (drafts.delist||[]).forEach((r,i)=>{
-    const key = (r&&r.id)||('d'+i);
-    const imgs = (r&&r.image_main)?[MANAGE_PREFIX+'/img/'+r.image_main+'?token='+TOKEN]:[];
-    html += rowHtml({txt:'下架',cls:'del'}, imgs, r||{}, key); });
   if(d.ticket.ticket_type==='mutate'){
     const act = p.action || 'update';
     const actName = act==='update' ? '📋 修改商品' : act==='create' ? '➕ 新增商品' : '🗑️ 下架商品';
@@ -357,7 +302,7 @@ async function refreshDetail(tid){
         ${img?`<img class="p" src="${img}" onclick="lbGallery(['${img}'])">`:''}
         <div class="f">
           <span class="tag upd">${actName}</span>
-          <div class="kv"><b>${esc(str(p.before[cur.tpl?.fields?.[0]?.label] || p.before['产品型号'] || p.before['ITEM.NO 型号'] || p.product_id))}</b></div>
+          <div class="kv"><b>${esc(str(p.before[cur.tpl?.fields?.[0]?.label] || p.product_id))}</b></div>
           ${Object.keys(p.changes||{}).map(k=>{
             const label = fields.find(f=>f.col===k)?.label || k;
             const oldV = str(p.before[label] ?? p.before[k] ?? '(空)');
@@ -386,7 +331,7 @@ async function refreshDetail(tid){
     } else if(act === 'delete'){
       const b = p.before || {};
       const img = b['主图'] ? manageAssetUrl(`/img/${b['主图']}?token=${TOKEN}`) : '';
-      const model = str(b[cur.tpl?.fields?.[0]?.label] || b['产品型号'] || b['ITEM.NO 型号'] || p.product_id);
+      const model = str(b[cur.tpl?.fields?.[0]?.label] || p.product_id);
       html = `
       <div class="draft">
         ${img?`<img class="p" src="${img}" onclick="lbGallery(['${img}'])">`:''}
@@ -410,10 +355,6 @@ function selectOptions(values, current){
   return values.map(([value,label])=>`<option value="${esc(value)}" ${value===current?'selected':''}>${esc(label)}</option>`).join('');
 }
 function renderTemplateImport(tid, payload, box){
-  if(payload.fixed_category){
-    box.innerHTML = `<div class="card"><b>固定分类模板已确认</b><p class="muted">${esc(payload.fixed_template_name||payload.fixed_category)} 已作为解析模板。请通过微信再次上传商品 Excel，系统才会开始导入商品。</p></div>`;
-    return;
-  }
   const productPhase = payload.phase === 'products';
   templateDrafts[tid] = {};
   dynamicImportRows[tid] = {};
@@ -487,17 +428,6 @@ function collectTemplateDecisions(tid){
   });
   return result;
 }
-async function rowApprove(tid, key){
-  if(!confirm('确认通过此行？将立即落库（含已做的编辑和图片）。')) return;
-  const t = (await api('/tickets')).tickets.find(x=>x.id===tid);
-  const rowEdits = (edits[tid]||{})[key] || {};
-  try{
-    await api(`/tickets/${tid}/row`, {method:'POST', body:JSON.stringify(
-      {token:t.token, row_key:key, approved:true, edits:rowEdits})});
-    if(edits[tid]) delete edits[tid][key];
-    refreshDetail(tid);
-  }catch(e){ alert('单行通过失败：'+e.message); }
-}
 function toggleRej(tid, key, btn){
   const el = document.getElementById(`row-${tid}-${key}`);
   if(rej.has(`${tid}:${key}`)){ rej.delete(`${tid}:${key}`); el.classList.remove('rej'); btn.textContent='驳回'; }
@@ -566,21 +496,6 @@ function formHtml(title, kv, fields){
     <p class="muted" style="margin:10px 0 0">{{FORM_NOTE}}</p>`;
 }
 function closeForm(){ document.getElementById('modal').style.display='none'; formCtx=null; }
-
-async function editDraft(tid, key){
-  const ticket = draftRows[tid];
-  if(!ticket || !ticket.rows[key]) return;
-  const cat = ticket.cat;
-  const fields = await tplFields(cat);
-  const d = ticket.rows[key];
-  const srcImgs = (d._imgs||[]).map(manageAssetUrl);
-  const srcRels = d.images||(d.image_main?[d.image_main]:[]);
-  formCtx = {mode:'draft', tid, key, cat,
-    images: srcImgs.map((u,i)=>({rel:srcRels[i]||null, url:u}))};
-  document.getElementById('modalBox').innerHTML =
-    formHtml('编辑草稿（审核修正）', d, fields).replace('{{FORM_NOTE}}','提交后需整单通过或单行✓通过才生效。');
-  document.getElementById('modal').style.display='flex';
-}
 
 async function editTemplateDraft(tid, key){
   const item=dynamicImportRows[tid]?.[key];
@@ -697,7 +612,7 @@ async function loadCats(){
     const b = document.createElement('button');
     const isDefaultName = DEFAULT_SHEET_NAME.test(name.trim());
     b.textContent = isDefaultName ? `${name} ✏️` : name;
-    if(isDefaultName) b.title = '分类名来自默认 Sheet 名，建议改成品类名（如“剃须刀现货”）';
+    if(isDefaultName) b.title = '分类名来自默认 Sheet 名，建议改成品类名（如“吹风机现货”）';
     b.className = key===cur.cat?'on':'';
     b.onclick = ()=>{cur.cat=key; delete _tplCache[key]; loadCats()};
     tabs.appendChild(b);
@@ -709,7 +624,7 @@ async function loadCats(){
   if (cur.cat) {
     const sup = CAT_META[cur.cat]?.supplier || '';
     supBtn.textContent = sup ? `🏷️ ${sup}` : '🏷️ 设供应商';
-  }   // 选中任意分类即可见；预置分类点击时提示固定不可改
+  }
   if(!cur.cat){
     document.getElementById('download-template').textContent = '下载分类模板';
     document.getElementById('plist').innerHTML =
@@ -746,7 +661,6 @@ async function toggleCategoryVisible(){
 async function renameCat(){
   if(!cur.cat) return;
   const meta = CAT_META[cur.cat];
-  if(meta && meta.storage!=='dynamic'){ alert('预置剃须刀/卷发棒的分类名是固定的，不能修改。'); return; }
   const name = prompt('新分类名（展示给你和客户看的名字，商品不动）：', CAT_NAMES[cur.cat]);
   const clean = (name||'').trim();
   if(!clean || clean===CAT_NAMES[cur.cat]) return;
@@ -818,78 +732,6 @@ async function shareChat(){
   }catch(e){ alert('生成失败：' + e.message); }
 }
 
-let labelCtx = {mode:'text', cat:'', fields:[]};
-async function openLabels(){
-  labelCtx = {mode:'text', cat:'', fields:[]};
-  document.getElementById('modalBox').innerHTML =
-    '<h3>🏷️ 标签打印</h3>'
-    + '<div class="row" style="gap:8px;margin:6px 0">'
-    + '<button class="btn s p" id="lb-t" onclick="labelMode(\'text\')">自定义文案</button>'
-    + '<button class="btn s o" id="lb-p" onclick="labelMode(\'prod\')">按分类/商品</button></div>'
-    + '<div id="lb-body"></div>'
-    + '<div class="row" style="justify-content:flex-end;margin-top:8px">'
-    + '<button class="btn o" onclick="closeForm()">关闭</button>'
-    + '<button class="btn o" onclick="document.getElementById(\'lb-prev\').innerHTML=labelBuild()">预览</button>'
-    + '<button class="btn p" onclick="labelPrint()">🖨️ 打印</button></div>'
-    + '<div class="lblPrev" id="lb-prev" style="margin-top:8px"></div>';
-  labelMode('text');
-  document.getElementById('modal').style.display='flex';
-}
-function labelMode(m){
-  labelCtx.mode = m;
-  document.getElementById('lb-t').className = 'btn s'+(m==='text'?' p':' o');
-  document.getElementById('lb-p').className = 'btn s'+(m==='prod'?' p':' o');
-  const body = document.getElementById('lb-body');
-  if(m==='text'){
-    body.innerHTML = '<div class="fg"><label>文案（一段 = 一张标签，段内换行 = 标签内多行）</label>'
-      + '<textarea id="lb-text" rows="6" style="width:100%" placeholder="A23 货架\n颜色:黑 电压:220V\n\nB12 货架\n只做批发"></textarea></div>'
-      + '<div class="muted" style="margin-top:6px">示例：空行分隔多张标签。</div>';
-  } else {
-    body.innerHTML = '<div class="fg"><label>分类</label><select id="lb-cat" onchange="labelLoadFields()"></select></div>'
-      + '<div class="fg"><label>要打出的字段</label><div id="lb-fields" class="row" style="flex-wrap:wrap"></div></div>'
-      + '<p class="muted" id="lb-count" style="margin:6px 0 0"></p>';
-    api('/categories').then(d => {
-      document.getElementById('lb-cat').innerHTML = d.categories.map(c=>`<option value="${c.key}">${esc(c.name)}</option>`).join('');
-      labelCtx.cat = d.categories[0]?.key||'';
-      labelLoadFields();
-    });
-  }
-  document.getElementById('printArea').innerHTML='';
-}
-async function labelLoadFields(){
-  labelCtx.cat = document.getElementById('lb-cat').value;
-  const d = await api('/products/'+labelCtx.cat);
-  labelCtx.prods = d.products||[]; labelCtx.fields = [];
-  document.getElementById('lb-fields').innerHTML = d.template.fields
-    .map(f=>`<label style="display:flex;gap:4px;align-items:center;font-weight:400">`
-      +`<input type="checkbox" value="${esc(f.label)}"> ${esc(f.label)}</label>`).join('');
-  document.getElementById('lb-count').textContent = `该分类 ${labelCtx.prods.length} 款商品，勾选字段后点打印。`;
-  labelCtx.fields = [...document.querySelectorAll('#lb-fields input:checked')].map(i=>i.value);
-}
-function labelBuild(){
-  const area = document.getElementById('printArea');
-  if(labelCtx.mode==='text'){
-    const raw = (document.getElementById('lb-text').value||'').trim();
-    const blocks = raw ? raw.split(/\n\s*\n/) : [];
-    area.innerHTML = blocks.map(b=>{
-      const lines = b.split('\n').map(l=>esc(l.trim())).filter(Boolean);
-      return `<div class="lbl"><b>${lines[0]||''}</b>${lines.slice(1).map(l=>`<div class="f"><span>${l}</span></div>`).join('')}</div>`;
-    }).join('');
-    return area.innerHTML || '<i>先填文案</i>';
-  }
-  const fs = labelCtx.fields||[];
-  area.innerHTML = (labelCtx.prods||[]).map(p=>{
-    const title = fs.map(f=>p[f]).filter(Boolean)[0] || p['型号'] || p['内部货号'] || '';
-    return `<div class="lbl"><b>${esc(str(title))}</b>`
-      + fs.map(f=>`<div class="f"><span>${esc(f)}</span><span>${esc(str(p[f]||'—'))}</span></div>`).join('')+'</div>';
-  }).join('');
-  return area.innerHTML || '<i>先选分类和字段</i>';
-}
-function labelPrint(){
-  const html = labelBuild();
-  if(html.includes('<i>')) return alert('先准备好内容再打印');
-  window.print();
-}
 </script>
 </body>
 </html>
