@@ -87,6 +87,15 @@ img.big{width:86px;height:86px}
 .tg-chat code{display:block;background:#fff;border-radius:8px;padding:8px;margin-top:8px;white-space:normal}
 .tg-step p{font-size:14px;line-height:1.6;margin-bottom:0}
 .tg-setup .tg-status{font-size:14px;margin:0 0 10px}
+  .lbl{break-inside:avoid;border:1.5px solid #222;border-radius:8px;padding:10px 12px;
+       width:46%;display:inline-block;margin:4px;vertical-align:top;font-size:13px;line-height:1.6;background:#fff}
+  .lbl b{display:block;font-size:15px;margin-bottom:4px;border-bottom:1px dashed #999;padding-bottom:3px}
+  .lbl .f{display:flex;gap:6px}.lbl .f span:first-child{color:#555;min-width:5em}
+  .lblPrev{max-height:260px;overflow:auto;border:1px solid #e3e3e3;border-radius:8px;padding:8px;background:#fafafa}
+  @media print{
+    body>*:not(#printArea){display:none!important}
+    #printArea{display:block!important}
+  }
 </style>
 </head>
 <body>
@@ -133,6 +142,7 @@ img.big{width:86px;height:86px}
       <button class="btn o" id="rename-cat" onclick="renameCat()" hidden>✏️ 分类改名</button>
       <button class="btn o" id="supplier-cat" onclick="setSupplier()" hidden>🏷️ 供应商</button>
       <button class="btn o" onclick="shareChat()">🎧 客服链接</button>
+      <button class="btn o" onclick="openLabels()">🏷️ 标签打印</button>
       <button class="btn o" id="toggle-visible" onclick="toggleCategoryVisible()" hidden>👁 整体可见性</button>
       <button class="btn o" id="download-template" onclick="downloadTemplate()">下载当前分类模板</button>
       <input id="q" placeholder="搜索型号 / 内部货号 / 字段…" oninput="renderProducts()" style="max-width:320px">
@@ -149,6 +159,7 @@ img.big{width:86px;height:86px}
   <button class="nav" id="lbNext" onclick="event.stopPropagation();lbStep(1)">›</button>
 </div>
 <div id="modal"><div class="box" id="modalBox"></div></div>
+<div id="printArea" style="display:none"></div>
 <script>
 const MANAGE_PREFIX = location.pathname.match(/^\/merchant\/manage\/[a-f0-9]{24}/)?.[0] || '';
 const QUERY_TOKEN = new URLSearchParams(location.search).get('t') || '';
@@ -797,6 +808,88 @@ async function delP(pid){
   loadCats();
 }
 show('review');
+
+async function shareChat(){
+  try{
+    const r = await api('/cs/chat-token', {method:'POST'});
+    const url = location.origin + '/cs/chat/' + r.chat_token;
+    if (navigator.clipboard) { await navigator.clipboard.writeText(url); alert('客服链接已复制，发给采购员即可打开对话：\n' + url); }
+    else alert('客服链接（发给采购员即可）：\n' + url);
+  }catch(e){ alert('生成失败：' + e.message); }
+}
+
+let labelCtx = {mode:'text', cat:'', fields:[]};
+async function openLabels(){
+  labelCtx = {mode:'text', cat:'', fields:[]};
+  document.getElementById('modalBox').innerHTML =
+    '<h3>🏷️ 标签打印</h3>'
+    + '<div class="row" style="gap:8px;margin:6px 0">'
+    + '<button class="btn s p" id="lb-t" onclick="labelMode(\'text\')">自定义文案</button>'
+    + '<button class="btn s o" id="lb-p" onclick="labelMode(\'prod\')">按分类/商品</button></div>'
+    + '<div id="lb-body"></div>'
+    + '<div class="row" style="justify-content:flex-end;margin-top:8px">'
+    + '<button class="btn o" onclick="closeForm()">关闭</button>'
+    + '<button class="btn o" onclick="document.getElementById(\'lb-prev\').innerHTML=labelBuild()">预览</button>'
+    + '<button class="btn p" onclick="labelPrint()">🖨️ 打印</button></div>'
+    + '<div class="lblPrev" id="lb-prev" style="margin-top:8px"></div>';
+  labelMode('text');
+  document.getElementById('modal').style.display='flex';
+}
+function labelMode(m){
+  labelCtx.mode = m;
+  document.getElementById('lb-t').className = 'btn s'+(m==='text'?' p':' o');
+  document.getElementById('lb-p').className = 'btn s'+(m==='prod'?' p':' o');
+  const body = document.getElementById('lb-body');
+  if(m==='text'){
+    body.innerHTML = '<div class="fg"><label>文案（一段 = 一张标签，段内换行 = 标签内多行）</label>'
+      + '<textarea id="lb-text" rows="6" style="width:100%" placeholder="A23 货架\n颜色:黑 电压:220V\n\nB12 货架\n只做批发"></textarea></div>'
+      + '<div class="muted" style="margin-top:6px">示例：空行分隔多张标签。</div>';
+  } else {
+    body.innerHTML = '<div class="fg"><label>分类</label><select id="lb-cat" onchange="labelLoadFields()"></select></div>'
+      + '<div class="fg"><label>要打出的字段</label><div id="lb-fields" class="row" style="flex-wrap:wrap"></div></div>'
+      + '<p class="muted" id="lb-count" style="margin:6px 0 0"></p>';
+    api('/categories').then(d => {
+      document.getElementById('lb-cat').innerHTML = d.categories.map(c=>`<option value="${c.key}">${esc(c.name)}</option>`).join('');
+      labelCtx.cat = d.categories[0]?.key||'';
+      labelLoadFields();
+    });
+  }
+  document.getElementById('printArea').innerHTML='';
+}
+async function labelLoadFields(){
+  labelCtx.cat = document.getElementById('lb-cat').value;
+  const d = await api('/products/'+labelCtx.cat);
+  labelCtx.prods = d.products||[]; labelCtx.fields = [];
+  document.getElementById('lb-fields').innerHTML = d.template.fields
+    .map(f=>`<label style="display:flex;gap:4px;align-items:center;font-weight:400">`
+      +`<input type="checkbox" value="${esc(f.label)}"> ${esc(f.label)}</label>`).join('');
+  document.getElementById('lb-count').textContent = `该分类 ${labelCtx.prods.length} 款商品，勾选字段后点打印。`;
+  labelCtx.fields = [...document.querySelectorAll('#lb-fields input:checked')].map(i=>i.value);
+}
+function labelBuild(){
+  const area = document.getElementById('printArea');
+  if(labelCtx.mode==='text'){
+    const raw = (document.getElementById('lb-text').value||'').trim();
+    const blocks = raw ? raw.split(/\n\s*\n/) : [];
+    area.innerHTML = blocks.map(b=>{
+      const lines = b.split('\n').map(l=>esc(l.trim())).filter(Boolean);
+      return `<div class="lbl"><b>${lines[0]||''}</b>${lines.slice(1).map(l=>`<div class="f"><span>${l}</span></div>`).join('')}</div>`;
+    }).join('');
+    return area.innerHTML || '<i>先填文案</i>';
+  }
+  const fs = labelCtx.fields||[];
+  area.innerHTML = (labelCtx.prods||[]).map(p=>{
+    const title = fs.map(f=>p[f]).filter(Boolean)[0] || p['型号'] || p['内部货号'] || '';
+    return `<div class="lbl"><b>${esc(str(title))}</b>`
+      + fs.map(f=>`<div class="f"><span>${esc(f)}</span><span>${esc(str(p[f]||'—'))}</span></div>`).join('')+'</div>';
+  }).join('');
+  return area.innerHTML || '<i>先选分类和字段</i>';
+}
+function labelPrint(){
+  const html = labelBuild();
+  if(html.includes('<i>')) return alert('先准备好内容再打印');
+  window.print();
+}
 </script>
 </body>
 </html>
