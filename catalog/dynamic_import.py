@@ -257,6 +257,7 @@ def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
         for section in sections:
             section['template'].setdefault('supplier', supplier_guess)
     return {'kind': 'template_import', 'phase': 'template', 'doc_id': doc_id,
+            'filename': os.path.basename(xlsx_path),
             'source_key': source_key, 'mode': mode, 'category_key': category_key,
             'work_dir': str(work_dir), 'supplier_guess': supplier_guess, 'sheets': sections}
 
@@ -320,6 +321,7 @@ def build_product_payload(conn, xlsx_path, work_dir, *, source_key: str,
                          'source_snapshot': _source_snapshot(source_rows),
                          'drafts': _classify_rows(existing, incoming, model_keys)})
         return {'kind': 'template_import', 'phase': 'products', 'doc_id': doc_id,
+                'filename': os.path.basename(xlsx_path),
                 'template_doc_id': template_doc_id, 'source_key': source_key,
                 'mode': mode, 'category_key': category_key, 'work_dir': str(work_dir),
                 'sheets': sections}
@@ -352,6 +354,7 @@ def build_product_payload(conn, xlsx_path, work_dir, *, source_key: str,
                          'source_snapshot': _source_snapshot(source_rows),
                          'drafts': _classify_rows(existing, incoming, model_keys)})
     return {'kind': 'template_import', 'phase': 'products', 'doc_id': doc_id,
+                'filename': os.path.basename(xlsx_path),
             'template_doc_id': template_doc_id, 'source_key': source_key,
             'mode': mode, 'category_key': category_key, 'work_dir': str(work_dir),
             'sheets': sections}

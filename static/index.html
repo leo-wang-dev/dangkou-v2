@@ -311,7 +311,7 @@ function renderTemplateImport(tid, payload, box){
     html += `<section class="card template-section" data-ticket-id="${tid}" data-template-key="${esc(tpl.key)}">
       <div class="row" style="justify-content:space-between"><div>
         <span class="tag ${section.template_action==='create'?'new':'upd'}">${productPhase?'模板已确认 · 商品导入':section.template_action==='create'?'新建分类':section.template_action==='update'?'更新模板':'沿用模板'}</span>
-        <b>文件：${esc(cleanSrc(payload.source_key))}</b>
+        <b>文件：${esc(cleanSrc(payload.filename || payload.source_key))}</b>
         <b>Sheet：${esc(section.source_sheet||tpl.source_sheet||tpl.name)}</b>
       </div><span class="muted">表头第 ${section.header_row||'-'} 行 · ${section.image_count||0} 张图</span></div>
       ${productPhase?'<p class="muted">本次使用已审批模板解析商品；模板字段不再重复确认。</p>':`<p class="muted">本工单只建立分类模板，不导入商品。模板审批通过后，请再次上传同一份商品 Excel。</p><div class="fg" style="margin-top:12px"><label>分类名称</label>
