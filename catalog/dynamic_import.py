@@ -78,6 +78,82 @@ def _file_sha256(path: str) -> str:
         return ''
 
 
+_TEMPLATE_ROLES = {'model', 'image', 'sequence', 'price', 'cost', 'stock', 'note', 'spec'}
+
+
+def _agent_template_sheets(xlsx_path: str, work_dir) -> list[dict] | None:
+    """模板阶段表头发现优先走子代理：多级表头、无标头图片列靠语义找齐。
+
+    把 agent 的 columns 转成 discover_workbook 的 discovered 形状
+    （label/key 用 _field_key，图片列 role=image type=image，image_count=0）。
+    失败（异常或 0 个有效 Sheet）返回 None——调用方回落 discover_workbook。
+    """
+    try:
+        result = agent.parse_dynamic_template(xlsx_path, work_dir)
+    except Exception as exc:  # noqa: BLE001
+        print(f'[dynamic_import] 子代理模板发现失败，回落代码表头发现：{exc}', flush=True)
+        return None
+    discovered = []
+    for item in result.get('sheets') or []:
+        if not isinstance(item, dict):
+            continue
+        title = workbook_templates._label(item.get('title'))
+        columns = item.get('columns')
+        # title 是商品阶段按 Sheet 名回查模板的钥匙，空标题无法回查。
+        if not title or not isinstance(columns, list):
+            continue
+        used: set[str] = set()
+        fields = []
+        for spec in columns:
+            if not isinstance(spec, dict):
+                continue
+            try:
+                col = int(spec.get('col') or 0)
+            except (TypeError, ValueError):
+                continue
+            if col < 1 or col > 200:
+                continue
+            label = workbook_templates._label(spec.get('label'))
+            role = spec.get('role')
+            fb_role, fb_type, fb_visibility, fb_searchable = workbook_templates._role(label)
+            if role not in _TEMPLATE_ROLES:
+                role = fb_role
+            if role == 'image':
+                label = label or '图片'
+            elif not label:
+                # 无表头又非图片角色=空列，跳过
+                continue
+            field_type = spec.get('type')
+            if role == 'image' or field_type == 'image':
+                field_type = 'image'
+            elif field_type not in ('text', 'number', 'money'):
+                field_type = fb_type
+            visibility = spec.get('visibility')
+            if visibility not in ('public', 'internal'):
+                visibility = fb_visibility
+            searchable = spec.get('searchable')
+            if not isinstance(searchable, bool):
+                searchable = fb_searchable
+            fields.append({'key': workbook_templates._field_key(label, role, used),
+                           'label': label, 'type': field_type, 'required': False,
+                           'visibility': visibility, 'searchable': searchable,
+                           'role': role, 'source_column': col})
+        if not fields:
+            continue
+        try:
+            header_row = max(1, int(item.get('header_row') or 1))
+        except (TypeError, ValueError):
+            header_row = 1
+        key = workbook_templates._category_key(title)
+        discovered.append({'key': key, 'name': title, 'source_sheet': title,
+                           'title': title, 'header_row': header_row,
+                           'fields': fields, 'rows': [], 'image_count': 0})
+    if not discovered:
+        print('[dynamic_import] 子代理模板发现 0 个有效 Sheet，回落代码表头发现', flush=True)
+        return None
+    return discovered
+
+
 def _agent_rows(template: dict, xlsx_path: str, work_dir, sheet: str = '') -> list[dict] | None:
     """子代理（Claude）整表语义解析：合并跨行商品、图片按锚点归属、容忍乱表。
 
@@ -242,10 +318,18 @@ def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
         raise ValueError('并入已有分类时必须提供 category_key')
     if mode != 'existing' and category_key:
         raise ValueError('只有 existing 模式可以提供 category_key')
-    discovered = workbook_templates.discover_workbook(
-        xlsx_path, None, include_rows=False, include_images=False)
-    # 模板阶段字段属性（类型/角色/可见性）由 AI 推断，代码推断保留为回落。
-    ai_extract.apply_field_attributes(discovered, ai_extract.infer_field_attributes(discovered))
+    # 表头发现优先走子代理：多级表头/无标头图片列靠语义找齐（真实表上代码
+    # 按行猜会丢列、错把数据行当表头）。agent 失败回落 discover_workbook。
+    discovered = _agent_template_sheets(xlsx_path, work_dir)
+    if discovered is not None:
+        # agent 路径字段属性以 agent 为准，不再跑 qwen 属性推断覆盖 role/image。
+        print(f'[dynamic_import] 模板阶段表头发现：子代理（{len(discovered)} 个 Sheet）', flush=True)
+    else:
+        discovered = workbook_templates.discover_workbook(
+            xlsx_path, None, include_rows=False, include_images=False)
+        # 模板阶段字段属性（类型/角色/可见性）由 AI 推断，代码推断保留为回落。
+        ai_extract.apply_field_attributes(discovered, ai_extract.infer_field_attributes(discovered))
+        print('[dynamic_import] 模板阶段表头发现：代码 discover_workbook（子代理回落）', flush=True)
     # 供应商由 AI 从文件名/表名推断（判断不出留空，审批页可改）。
     supplier_guess = ai_extract.guess_supplier(
         source_key or os.path.basename(xlsx_path), [d.get('title') or '' for d in discovered])

@@ -56,10 +56,58 @@ def build_dynamic_prompt(template: dict, xlsx_path: str, out_json: str, sheet: s
 def parse_dynamic(template: dict, xlsx_path: str, work_dir: str, *, sheet: str = '') -> dict:
     """动态分类的商品解析：提示词由已审批模板字段现场生成，同一容器链路执行。"""
     prompt = build_dynamic_prompt(template, '/input/source.xlsx', '/work/products.json', sheet)
-    return _run_container(prompt, xlsx_path, work_dir)
+    data = _run_container(prompt, xlsx_path, work_dir)
+    if not isinstance(data.get('products'), list) or not all(isinstance(p, dict) for p in data['products']):
+        raise RuntimeError('Agent 输出必须包含 products 对象数组')
+    return data
 
 
-def _run_container(prompt: str, xlsx_path: str, work_dir: str) -> dict:
+def build_template_discovery_prompt(xlsx_path: str, out_json: str, sheet: str = '') -> str:
+    """模板阶段表头发现提示词：多级表头找齐、无标头图片列识别，只出结构不出商品。
+
+    代码按行猜表头在真实商家表上翻车的两个案例：
+    华岳表两级表头丢型号/图片列、琉砾表把数据行当表头——交给子代理按语义找。
+    """
+    sheet_clause = f"只分析工作表「{sheet}」，其他 Sheet 一律忽略。\n" if sheet else ""
+    return f"""分析这份 Excel 厂家报价单的表头结构，产出每个工作表的模板字段清单（不提取商品数据）。
+
+输入：{xlsx_path}（你的工作目录）
+输出：{out_json}
+{sheet_clause}# 硬性规则
+表头不一定在第一行：可能在标题行下方，也可能是多级表头（跨行/跨列合并单元格——合并值只在左上角，语义覆盖整个合并区域）。逐列把每一列的表头找齐：多级表头把各级语义拼成一个 label（如上级「ITEM.NO」+下级「型号」→「ITEM.NO 型号」）。
+没有表头文字、但该列锚定了内嵌图片的列=图片列：label 固定「图片」、role=image、type=image。内嵌图片在 xlsx（zip）的 xl/media/，锚点在 xl/drawings/（按 drawing 锚点的列号判断图片落在哪一列）。
+既没有表头文字、该列又没有图片的空列直接跳过；禁止发明表里不存在的列。
+一张 Sheet 里可能有多个区块/多张小表：只取主商品表（商品行最多的那张），其余区块忽略。
+header_row=主商品表表头区块的起始行号（多级表头取最上一级所在行）。
+label 用表头单元格原文拼接，禁止翻译/改写/换算；role 只能取白名单：
+model=该表唯一的型号/货号/品名列（没有就给 spec）；image=图片列；sequence=纯序号列；
+price=价格/报价/单价类；cost=成本/进货价类；stock=库存；note=备注/说明/链接类；其余一律 spec。
+type：image 列给 image，价格/成本给 money，序号/库存给 number，其余 text。
+visibility：价格、成本、库存、供应商类内部信息一律 internal，其余 public。
+searchable：只对客户会拿来搜索的字段（型号、品名）给 true，其余 false。
+
+# 输出
+{{"sheets":[{{"title":"Sheet 名","header_row":N,"columns":[{{"col":1,"label":"表头原文","role":"model","type":"text","visibility":"public","searchable":true}},{{"col":2,"label":"图片","role":"image","type":"image","visibility":"public","searchable":false}}]}}]}}
+只输出有主商品表的 Sheet；col 从 1 开始、按列号升序。
+用 python 的 json.dump(..., ensure_ascii=False, indent=1) 写入输出文件。
+完成后只回一行：DONE N（N=Sheet 数）"""
+
+
+def parse_dynamic_template(xlsx_path: str, work_dir: str, sheet: str = '') -> dict:
+    """模板阶段表头发现：同一容器链路，让子代理找齐多级表头与无标头图片列。
+
+    返回 {"sheets":[{"title","header_row","columns":[{col,label,role,type,visibility,searchable}]}]}；
+    结构无效（缺 sheets/非对象数组）抛 RuntimeError，由调用方回落代码发现。
+    """
+    prompt = build_template_discovery_prompt('/input/source.xlsx', '/work/template.json', sheet)
+    data = _run_container(prompt, xlsx_path, work_dir, out_name='template.json')
+    sheets = data.get('sheets')
+    if not isinstance(sheets, list) or not all(isinstance(s, dict) for s in sheets):
+        raise RuntimeError('Agent 模板输出必须包含 sheets 对象数组')
+    return data
+
+
+def _run_container(prompt: str, xlsx_path: str, work_dir: str, *, out_name: str = 'products.json') -> dict:
     docker = shutil.which('docker')
     image = os.environ.get('CATALOG_AGENT_CONTAINER_IMAGE', '')
     if not docker or not image:
@@ -71,7 +119,7 @@ def _run_container(prompt: str, xlsx_path: str, work_dir: str) -> dict:
     if not os.path.isfile(source) or any(',' in p for p in (source, work_dir)):
         raise ValueError('解析输入不存在或路径含不支持的逗号')
     os.makedirs(work_dir, exist_ok=True)
-    out_json = os.path.join(work_dir, 'products.json')
+    out_json = os.path.join(work_dir, out_name)
     if os.path.exists(out_json):
         os.remove(out_json)
     # Only the parser-specific API credential enters the container. No messaging,
@@ -106,6 +154,6 @@ def _run_container(prompt: str, xlsx_path: str, work_dir: str) -> dict:
         raise RuntimeError('Agent 结果文件无效或过大')
     with open(out_json, encoding='utf-8') as result:
         data = json.load(result)
-    if not isinstance(data, dict) or not isinstance(data.get('products'), list) or not all(isinstance(p, dict) for p in data['products']):
-        raise RuntimeError('Agent 输出必须包含 products 对象数组')
+    if not isinstance(data, dict):
+        raise RuntimeError('Agent 结果必须是 JSON 对象')
     return data

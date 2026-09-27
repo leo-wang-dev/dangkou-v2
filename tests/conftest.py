@@ -62,7 +62,7 @@ def seed_products(conn, rows, *, key='test_cat', name='测试品类', fields=Non
 
 @pytest.fixture(autouse=True)
 def offline_dynamic_agent(monkeypatch, request):
-    """离线测试没有 Docker/子代理：用代码发现结果顶替 agent.parse_dynamic。
+    """离线测试没有 Docker/子代理：用代码发现结果顶替 agent.parse_dynamic / parse_dynamic_template。
 
     删A 后商品阶段解析只有子代理一条路（子代理失败即 ValueError，无代码回落）；
     导入流的既有用例靠这个替身拿到确定性的“子代理产出”（按标签把源行列值
@@ -107,4 +107,26 @@ def offline_dynamic_agent(monkeypatch, request):
             products.append(item)
         return {'vendor': None, 'products': products}
 
+    def _fake_parse_dynamic_template(xlsx_path, work_dir, sheet=''):
+        """模板阶段表头发现的离线替身：把代码发现结果转成 agent 输出形状。
+
+        与生产链路一致——build_template_payload 优先走“子代理”，离线测试用
+        discover_workbook 顶替子代理，保证不碰 Docker 且字段属性不跑 qwen。
+        """
+        drafts = workbook_templates.discover_workbook(
+            xlsx_path, None, include_rows=False, include_images=False)
+        sheets = []
+        for draft in drafts:
+            if sheet and sheet not in (draft.get('title'), draft.get('source_sheet'), draft.get('name')):
+                continue
+            sheets.append({'title': draft.get('source_sheet') or draft.get('name'),
+                           'header_row': draft.get('header_row'),
+                           'columns': [{'col': f.get('source_column'), 'label': f.get('label'),
+                                        'role': f.get('role'), 'type': f.get('type'),
+                                        'visibility': f.get('visibility'),
+                                        'searchable': f.get('searchable')}
+                                       for f in draft.get('fields', [])]})
+        return {'sheets': sheets}
+
     monkeypatch.setattr(agent, 'parse_dynamic', _fake_parse_dynamic)
+    monkeypatch.setattr(agent, 'parse_dynamic_template', _fake_parse_dynamic_template)
