@@ -152,6 +152,10 @@ function manageAssetUrl(value){
   }
   return MANAGE_PREFIX + '/' + src;
 }
+function cleanSrc(n){
+  return String(n||'').replace(/^\d{4}-\d{2}-\d{2}T[\d-]+Z-wechat-file-/,'')
+                      .replace(/-[0-9a-f]{8}(\.\w+)?$/, '$1') || '（未记录）';
+}
 const api = async (p, opt={}) => {
   const r = await fetch(MANAGE_PREFIX+p, {...opt, headers:H});
   if(!r.ok){
@@ -307,6 +311,7 @@ function renderTemplateImport(tid, payload, box){
     html += `<section class="card template-section" data-ticket-id="${tid}" data-template-key="${esc(tpl.key)}">
       <div class="row" style="justify-content:space-between"><div>
         <span class="tag ${section.template_action==='create'?'new':'upd'}">${productPhase?'模板已确认 · 商品导入':section.template_action==='create'?'新建分类':section.template_action==='update'?'更新模板':'沿用模板'}</span>
+        <b>文件：${esc(cleanSrc(payload.source_key))}</b>
         <b>Sheet：${esc(section.source_sheet||tpl.source_sheet||tpl.name)}</b>
       </div><span class="muted">表头第 ${section.header_row||'-'} 行 · ${section.image_count||0} 张图</span></div>
       ${productPhase?'<p class="muted">本次使用已审批模板解析商品；模板字段不再重复确认。</p>':`<p class="muted">本工单只建立分类模板，不导入商品。模板审批通过后，请再次上传同一份商品 Excel。</p><div class="fg" style="margin-top:12px"><label>分类名称</label>
