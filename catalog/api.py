@@ -95,6 +95,13 @@ def _push_redline_card(conn, ticket_id, token, product_id, old_text, new_text):
 def register_routes(app: FastAPI):
     from .merchant_binding import register as register_merchant
     register_merchant(app)
+    # C端接口（/cs/...）无 Cookie（身份=链接/访客 token），放开跨域供 uni-app H5
+    # 开发期直连；同源旧页与商家管理页行为不变，浏览器不带凭据不构成放大。
+    from fastapi.middleware.cors import CORSMiddleware
+    app.add_middleware(
+        CORSMiddleware, allow_origins=['*'],
+        allow_methods=['GET', 'POST', 'PATCH', 'OPTIONS'], allow_headers=['*'],
+        expose_headers=['Content-Disposition'])
     import asyncio
     from contextvars import ContextVar
     from . import db

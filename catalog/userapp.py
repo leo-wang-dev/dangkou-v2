@@ -17,6 +17,7 @@ import secrets
 import sqlite3
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
 from . import llm as default_llm
@@ -86,6 +87,13 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     app.state.photo_dir = photo_dir
     app.state.codes_log = codes_log
     app.state.llm = llm or default_llm
+
+    # C端无 Cookie（身份=游客参数/链接token），放开跨域供 uni-app H5 开发期
+    # 直连与调试工具使用；同源部署的旧页行为不变。非浏览器端（小程序）无 CORS 概念。
+    app.add_middleware(
+        CORSMiddleware, allow_origins=['*'],
+        allow_methods=['GET', 'POST', 'OPTIONS'], allow_headers=['*'],
+        expose_headers=['Content-Disposition'])
 
     # ---------- 身份：bearer（邮箱登录）或 guest= 参数（游客），手写解析 ----
 

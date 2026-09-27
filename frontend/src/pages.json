@@ -1,0 +1,21 @@
+{
+  "pages": [
+    {
+      "path": "pages/tool/tool",
+      "style": { "navigationBarTitleText": "拍照清单" }
+    },
+    {
+      "path": "pages/chat/chat",
+      "style": { "navigationBarTitleText": "采购助手" }
+    },
+    {
+      "path": "pages/list/list",
+      "style": { "navigationBarTitleText": "我的采购清单" }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarBackgroundColor": "#1677ff",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f6f8"
+  }
+}

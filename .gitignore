@@ -9,3 +9,6 @@ __pycache__/
 deploy/.deploy.env
 runs/
 data/cs_photos/
+frontend/node_modules/
+frontend/dist/
+frontend/unpackage/
