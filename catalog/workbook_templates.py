@@ -211,3 +211,31 @@ def discover_workbook(path, image_dir=None, *, include_rows=True, include_images
                        'header_row': header_row, 'fields': fields, 'rows': rows,
                        'image_count': image_count})
     return drafts
+
+
+def extract_header_evidence(path, max_rows=8, max_cols=25) -> list:
+    """模板表头发现的证据：前几行网格 + 每列图片锚点数 + 顶部合并区。
+
+    表头判断交给 LLM，结构事实（单元格内容/锚点/合并）由代码提供——锚点是
+    xlsx drawings 里的确定数据，无标头图片列靠它识别。
+    """
+    wb = load_workbook(path, read_only=False)
+    out = []
+    for ws in wb.worksheets:
+        if ws.sheet_state != 'visible':
+            continue
+        grid = []
+        for r in range(1, min(ws.max_row, max_rows) + 1):
+            grid.append([str(ws.cell(r, c).value).strip()
+                         if ws.cell(r, c).value is not None else ''
+                         for c in range(1, min(ws.max_column, max_cols) + 1)])
+        col_imgs = {}
+        for im in getattr(ws, '_images', ()):
+            a = getattr(im.anchor, '_from', None)
+            if a is not None:
+                col_imgs[a.col + 1] = col_imgs.get(a.col + 1, 0) + 1
+        merges = [str(m) for m in (ws.merged_cells.ranges if hasattr(ws, 'merged_cells') else [])][:15]
+        out.append({'title': ws.title, 'grid': grid,
+                    '图片锚点列': col_imgs, '合并区': merges})
+    wb.close()
+    return out

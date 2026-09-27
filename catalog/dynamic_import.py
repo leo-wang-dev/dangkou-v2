@@ -82,7 +82,7 @@ _TEMPLATE_ROLES = {'model', 'image', 'sequence', 'price', 'cost', 'stock', 'note
 
 
 def _agent_template_sheets(xlsx_path: str, work_dir) -> list[dict] | None:
-    """模板阶段表头发现优先走子代理：多级表头、无标头图片列靠语义找齐。
+    """模板阶段表头发现（慢路，子代理）：多级表头、无标头图片列靠语义找齐。
 
     把 agent 的 columns 转成 discover_workbook 的 discovered 形状
     （label/key 用 _field_key，图片列 role=image type=image，image_count=0）。
@@ -93,8 +93,30 @@ def _agent_template_sheets(xlsx_path: str, work_dir) -> list[dict] | None:
     except Exception as exc:  # noqa: BLE001
         print(f'[dynamic_import] 子代理模板发现失败，回落代码表头发现：{exc}', flush=True)
         return None
+    return _convert_template_sheets(result.get('sheets') or [])
+
+
+def _qwen_template_sheets(xlsx_path: str) -> list[dict] | None:
+    """模板阶段表头发现（快路，qwen 关思考直调，约 5-8 秒/份）。
+
+    代码抽证据（前几行网格+每列图片锚点+合并区）交给 qwen3.8-max 判断，
+    与子代理共用 columns→discovered 转换；失败回落子代理再回落代码。
+    """
+    try:
+        evidence = workbook_templates.extract_header_evidence(xlsx_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f'[dynamic_import] 表头证据抽取失败：{exc}', flush=True)
+        return None
+    data = ai_extract.discover_headers(evidence)
+    if data is None:
+        return None
+    return _convert_template_sheets(data)
+
+
+def _convert_template_sheets(items: list) -> list[dict] | None:
+    """子代理/qwen 共用：columns 输出 → discovered 形状；0 个有效 Sheet 返回 None。"""
     discovered = []
-    for item in result.get('sheets') or []:
+    for item in items:
         if not isinstance(item, dict):
             continue
         title = workbook_templates._label(item.get('title'))
@@ -149,7 +171,7 @@ def _agent_template_sheets(xlsx_path: str, work_dir) -> list[dict] | None:
                            'title': title, 'header_row': header_row,
                            'fields': fields, 'rows': [], 'image_count': 0})
     if not discovered:
-        print('[dynamic_import] 子代理模板发现 0 个有效 Sheet，回落代码表头发现', flush=True)
+        print('[dynamic_import] 模板发现 0 个有效 Sheet，回落下一条路径', flush=True)
         return None
     return discovered
 
@@ -318,18 +340,21 @@ def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
         raise ValueError('并入已有分类时必须提供 category_key')
     if mode != 'existing' and category_key:
         raise ValueError('只有 existing 模式可以提供 category_key')
-    # 表头发现优先走子代理：多级表头/无标头图片列靠语义找齐（真实表上代码
-    # 按行猜会丢列、错把数据行当表头）。agent 失败回落 discover_workbook。
-    discovered = _agent_template_sheets(xlsx_path, work_dir)
+    # 表头发现三级链：qwen 快路（5-8 秒，证据=网格+图片锚点+合并区）→ 子代理
+    # （约 4 分钟，稳）→ 代码按行猜（最后兜底）。多级表头/无标头图片列靠语义找齐。
+    discovered = _qwen_template_sheets(xlsx_path)
     if discovered is not None:
-        # agent 路径字段属性以 agent 为准，不再跑 qwen 属性推断覆盖 role/image。
-        print(f'[dynamic_import] 模板阶段表头发现：子代理（{len(discovered)} 个 Sheet）', flush=True)
+        print(f'[dynamic_import] 模板阶段表头发现：qwen 快路（{len(discovered)} 个 Sheet）', flush=True)
     else:
-        discovered = workbook_templates.discover_workbook(
-            xlsx_path, None, include_rows=False, include_images=False)
-        # 模板阶段字段属性（类型/角色/可见性）由 AI 推断，代码推断保留为回落。
-        ai_extract.apply_field_attributes(discovered, ai_extract.infer_field_attributes(discovered))
-        print('[dynamic_import] 模板阶段表头发现：代码 discover_workbook（子代理回落）', flush=True)
+        discovered = _agent_template_sheets(xlsx_path, work_dir)
+        if discovered is not None:
+            print(f'[dynamic_import] 模板阶段表头发现：子代理（{len(discovered)} 个 Sheet）', flush=True)
+        else:
+            discovered = workbook_templates.discover_workbook(
+                xlsx_path, None, include_rows=False, include_images=False)
+            # 代码按行猜的结构不可靠，属性再由 qwen 修正。
+            ai_extract.apply_field_attributes(discovered, ai_extract.infer_field_attributes(discovered))
+            print('[dynamic_import] 模板阶段表头发现：代码 discover_workbook（兜底）', flush=True)
     # 供应商由 AI 从文件名/表名推断（判断不出留空，审批页可改）。
     supplier_guess = ai_extract.guess_supplier(
         source_key or os.path.basename(xlsx_path), [d.get('title') or '' for d in discovered])

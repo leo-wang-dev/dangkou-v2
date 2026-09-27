@@ -35,9 +35,12 @@ def _chat(payload: dict) -> str:
 
 
 def chat_text(system: str, messages: list, model: str = TEXT_MODEL,
-              temperature: float = 0.3) -> str:
-    return _chat({'model': model, 'temperature': temperature,
-                  'messages': [{'role': 'system', 'content': system}, *messages]})
+              temperature: float = 0.3, extra: dict | None = None) -> str:
+    payload = {'model': model, 'temperature': temperature,
+               'messages': [{'role': 'system', 'content': system}, *messages]}
+    if extra:
+        payload.update(extra)
+    return _chat(payload)
 
 
 def chat_vision(prompt: str, image_bytes: bytes, model: str = VISION_MODEL) -> str:

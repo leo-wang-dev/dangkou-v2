@@ -111,3 +111,35 @@ def guess_supplier(source_key: str, sheet_names: list) -> str:
         return str(raw).strip().strip('"\'')[:40]
     except Exception:
         return ''
+
+
+_DISCOVER_PROMPT = """你是 Excel 表头结构分析员。给你工作表的证据：前几行单元格网格（空串=空格）、每列嵌入图片锚点数、合并单元格区。
+任务：找出每一列的真实表头字段。规则：
+1. 表头可能多级/跨行合并：合并值在左上角，语义覆盖整列；把网格里能对应到列的表头文字都归到对应列；
+2. 只有两种情况可以判 role=image：a) 该列网格里没有表头文字、但"图片锚点列"显示该列有图片（label 给"图片"）；b) 表头文字本身含 图片/照片/photo/image 字样。其他有文字表头的列一律不许判 image；
+3. 无表头又无图片锚点的列跳过；不发明列；
+4. role 白名单：model(该表唯一型号/货号列)/image/sequence(纯序号)/price(价格类)/cost(成本)/stock(库存)/note(备注链接)/spec(其他规格)；
+5. type 按内容定：图片列=image、价格列=money、纯数字量词列=number、其余 text；visibility：价格/成本/库存/供应商类 internal 其余 public；searchable 只给型号/品名列 true。
+对每个工作表输出一个对象，输出 JSON 数组（只输出 JSON）：
+[{"title":"Sheet名","header_row":2,"columns":[{"col":1,"label":"...","role":"model","type":"text","visibility":"public","searchable":true}]}]
+证据："""
+
+
+def discover_headers(sheets_evidence: list) -> list | None:
+    """模板表头发现（B 案）：代码证据 + qwen3.8-max 关思考直调，5-8 秒/表。
+
+    失败返回 None，调用方回落 Docker 子代理（慢而稳）。
+    """
+    if not _enabled() or not sheets_evidence:
+        return None
+    try:
+        raw = llm.chat_text(
+            '你是 Excel 表头结构分析员，只输出 JSON。',
+            [{'role': 'user',
+              'content': _DISCOVER_PROMPT + json.dumps(sheets_evidence, ensure_ascii=False)}],
+            temperature=0.1, extra={'enable_thinking': False, 'max_tokens': 3000})
+        data = _parse_json_array(raw)
+        return data if isinstance(data, list) and data else None
+    except Exception as exc:  # noqa: BLE001
+        print(f'[ai_extract] qwen 表头发现失败：{exc}', flush=True)
+        return None

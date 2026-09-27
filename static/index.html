@@ -152,6 +152,7 @@ function manageAssetUrl(value){
   }
   return MANAGE_PREFIX + '/' + src;
 }
+const TYPE_LABELS = {image:'图片', text:'文本', number:'数字', money:'金额'};
 function cleanSrc(n){
   return String(n||'').replace(/^\d{4}-\d{2}-\d{2}T[\d-]+Z-wechat-file-/,'')
                       .replace(/-[0-9a-f]{8}(\.\w+)?$/, '$1') || '（未记录）';
@@ -317,9 +318,10 @@ function renderTemplateImport(tid, payload, box){
       ${productPhase?'<p class="muted">本次使用已审批模板解析商品；模板字段不再重复确认。</p>':`<p class="muted">本工单只建立分类模板，不导入商品。模板审批通过后，请再次上传同一份商品 Excel。</p><div class="fg" style="margin-top:12px"><label>分类名称</label>
         <input data-template-name value="${esc(tpl.name)}"></div>
       <div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>
-        <th style="text-align:left;padding:7px">表头字段</th><th>客户可见</th><th></th></tr></thead><tbody>
+        <th style="text-align:left;padding:7px">表头字段</th><th>类型</th><th>客户可见</th><th></th></tr></thead><tbody>
         ${(tpl.fields||[]).map(field=>`<tr data-template-field="${esc(field.key)}">
           <td style="padding:7px"><input data-field-label value="${esc(field.label)}" aria-label="${esc(field.label)}字段名称"></td>
+          <td style="padding:7px" class="muted">${TYPE_LABELS[field.type]||field.type}</td>
           <td style="padding:7px"><select data-template-visibility="${esc(field.key)}" data-field-label-name="${esc(field.label)}">${selectOptions([['public','公开'],['internal','内部']],field.visibility)}</select></td>
         </tr>`).join('')}
       </tbody></table></div>

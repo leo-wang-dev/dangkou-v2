@@ -225,3 +225,31 @@ def test_parse_dynamic_template_validates_container_output(tmp_path, monkeypatch
     monkeypatch.setattr(agent, '_run_container', bad_run)
     with pytest.raises(RuntimeError, match='sheets 对象数组'):
         agent.parse_dynamic_template(str(tmp_path / 'in.xlsx'), str(tmp_path))
+
+
+def test_qwen_fast_path_discovery(conn, tmp_path, monkeypatch):
+    """快路：qwen 证据直调（关思考）→ 与子代理共用转换；失败回落子代理。"""
+    from catalog import ai_extract, dynamic_import
+    monkeypatch.setattr(ai_extract, '_enabled', lambda: True)
+    reply = json.dumps([{'title': 'Sheet1', 'header_row': 1, 'columns': [
+        {'col': 1, 'label': 'ITEM.NO 型号', 'role': 'model', 'type': 'text',
+         'visibility': 'public', 'searchable': True},
+        {'col': 2, 'label': '', 'role': 'image', 'type': 'image', 'visibility': 'public'},
+        {'col': 3, 'label': '', 'role': 'spec', 'type': 'text'},          # 无表头非图片→跳过
+    ]}], ensure_ascii=False)
+    monkeypatch.setattr(ai_extract.llm, 'chat_text', lambda *a, **kw: reply)
+    import unittest.mock as mk
+    with mk.patch.object(dynamic_import.workbook_templates, 'extract_header_evidence',
+                         return_value=[{'title': 'Sheet1', 'grid': [], '图片锚点列': {}, '合并区': []}]):
+        got = dynamic_import._qwen_template_sheets('/tmp/fake.xlsx')
+        assert got and got[0]['fields'][0]['label'] == 'ITEM.NO 型号'
+        assert got[0]['fields'][0]['role'] == 'model'
+        assert got[0]['fields'][1]['label'] == '图片' and got[0]['fields'][1]['type'] == 'image'
+        assert len(got[0]['fields']) == 2                       # 空白列被剔除
+        # 关思考参数确实下发
+        seen = {}
+        def spy(system, messages, **kw):
+            seen.update(kw); return reply
+        monkeypatch.setattr(ai_extract.llm, 'chat_text', spy)
+        dynamic_import._qwen_template_sheets('/tmp/fake.xlsx')
+        assert seen.get('extra', {}).get('enable_thinking') is False
