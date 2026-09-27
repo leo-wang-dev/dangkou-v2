@@ -540,6 +540,12 @@ def register_routes(app: FastAPI):
             raise HTTPException(404, 'no such ticket')
         _ticket_auth(request, r)
         payload = _json.loads(r['payload'])
+        # 审批卡要显示解析来源的原始文件名；source_key 是模型起的拼音别名，不能给人看。
+        if not payload.get('filename') and payload.get('doc_id'):
+            doc = request_conn().execute('SELECT filename FROM import_doc WHERE id=?',
+                                         (payload['doc_id'],)).fetchone()
+            if doc and doc['filename']:
+                payload['filename'] = doc['filename']
         # 行级决策钥匙：new 行=_rid，update/delist 行=商品 id；顺带补图片预览地址
         wd = payload.get('work_dir')
         preview_rows = list(payload.get('drafts', {}).get('new', []))
