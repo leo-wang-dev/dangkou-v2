@@ -253,3 +253,24 @@ def test_qwen_fast_path_discovery(conn, tmp_path, monkeypatch):
         monkeypatch.setattr(ai_extract.llm, 'chat_text', spy)
         dynamic_import._qwen_template_sheets('/tmp/fake.xlsx')
         assert seen.get('extra', {}).get('enable_thinking') is False
+
+
+def test_manual_category_direct_products(conn, tmp_path, monkeypatch):
+    """手工分类直灌：products 无 templateDocId、传 categoryKey，按已审批模板解析。"""
+    from catalog import dynamic_catalog, dynamic_import, agent
+    dynamic_catalog.approve_template(conn, {'key': 'cat_manual', 'name': '吹风机',
+        'source_sheet': '吹风机', 'fields': [
+            {'key': 'model', 'label': '型号', 'role': 'model', 'type': 'text', 'visibility': 'public'},
+            {'key': 'price', 'label': '价格', 'role': 'price', 'type': 'money', 'visibility': 'internal'}]},
+        expected_version=0)
+    monkeypatch.setattr(agent, 'parse_dynamic', lambda tpl, xlsx, wd, sheet='': {'products': [
+        {'model': 'HD15', 'price': '65', 'images': [], 'image_main': '', 'image_count': 0}]})
+    payload = dynamic_import.build_product_payload(conn, blowdryer_fixture(tmp_path), tmp_path / 'w',
+                                                   source_key='manual-a', template_doc_id=None,
+                                                   doc_id=None, mode='existing', category_key='cat_manual')
+    drafts = payload['sheets'][0]['drafts']
+    assert len(drafts['new']) == 1 and drafts['new'][0]['data']['model'] == 'HD15'
+    assert payload['category_key'] == 'cat_manual'
+    with __import__('pytest').raises(ValueError, match='templateDocId|categoryKey'):
+        dynamic_import.build_product_payload(conn, blowdryer_fixture(tmp_path), tmp_path / 'w2',
+                                             source_key='manual-a', template_doc_id=None)

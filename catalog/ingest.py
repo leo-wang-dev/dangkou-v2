@@ -42,12 +42,12 @@ def start(conn, storage, xlsx_path, callback=None, source_key=None,
         raise ValueError('导入 mode 只能是 new 或 existing')
     if mode == 'existing' and not category_key:
         raise ValueError('并入已有分类时必须提供 category_key')
-    if mode != 'existing' and category_key:
+    if mode != 'existing' and category_key and not (phase == 'products' and not template_doc_id):
         raise ValueError('只有 existing 模式可以提供 category_key')
     if phase not in ('template', 'products'):
         raise ValueError('导入 phase 只能是 template 或 products')
-    if phase == 'products' and not template_doc_id:
-        raise ValueError('商品导入必须提供已审批的 template_doc_id')
+    if phase == 'products' and not template_doc_id and not category_key:
+        raise ValueError('商品导入必须提供已审批的 template_doc_id 或已有分类的 category_key')
     if phase != 'products' and template_doc_id:
         raise ValueError('只有 products 阶段可以提供 template_doc_id')
     xlsx_path = _ensure_xlsx(xlsx_path)

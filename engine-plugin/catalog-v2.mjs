@@ -68,11 +68,18 @@ export async function apply(ctx, _config = {}) {
       if (!['new', 'existing'].includes(mode)) throw new Error('mode 必须是 new 或 existing')
       if (mode === 'existing') requiredText(categoryKey, 'categoryKey')
       if (mode === 'new' && categoryKey !== undefined) throw new Error('new 模式不能传 categoryKey')
-      if (phase === 'products' && (!Number.isInteger(templateDocId) || templateDocId <= 0)) {
-        throw new Error('products 阶段必须传 templateDocId（模板审批通过后返回的 docId）')
+      if (phase === 'products' && (!Number.isInteger(templateDocId) || templateDocId <= 0) && !categoryKey) {
+        throw new Error('products 阶段必须传 templateDocId（模板工单的 docId），或手工分类直灌时传 categoryKey')
       }
       if (phase === 'template' && templateDocId !== undefined) {
         throw new Error('template 阶段不能传 templateDocId')
+      }
+      // 手工分类直灌：商家先建好分类（category_create/页面），Excel 只灌商品。
+      if (phase === 'products' && !Number.isInteger(templateDocId) && categoryKey) {
+        const note2 = `目标分类：${categoryKey}（已审批模板），子代理按该分类字段整表解析`
+        const r2 = await call('/import', 'POST', { path, source_key: sourceKey, phase, mode: 'existing', category_key: categoryKey, wait: true })
+        return JSON.stringify({ docId: r2.doc_id, phase, status: r2.status || 'parsing',
+          note: r2.status === 'ticketed' ? `商品解析完成：新增${(r2.stats && r2.stats.new) || 0} 款。审批入口：${MANAGE}/?t=${TOKEN}` : note2 })
       }
       optionalText(sourceKey, 'sourceKey')
       const body = { path, source_key: sourceKey, mode, phase }

@@ -455,8 +455,8 @@ def register_routes(app: FastAPI):
             raise HTTPException(400, '只有 existing 模式可以提供 category_key')
         if body.phase not in (None, 'template', 'products'):
             raise HTTPException(400, '导入 phase 只能是 template 或 products')
-        if body.phase == 'products' and (body.template_doc_id is None or body.template_doc_id <= 0):
-            raise HTTPException(400, '商品导入必须提供已审批的 template_doc_id')
+        if body.phase == 'products' and (body.template_doc_id is None or body.template_doc_id <= 0) and not body.category_key:
+            raise HTTPException(400, '商品导入必须提供已审批的 template_doc_id，或已有分类的 category_key')
         if body.phase != 'products' and body.template_doc_id is not None:
             raise HTTPException(400, '只有 products 阶段可以提供 template_doc_id')
         # 实测 91MB/378 图解析<1s；按每 MB 4s 估并封顶 10 分钟，宁可报短不报长。

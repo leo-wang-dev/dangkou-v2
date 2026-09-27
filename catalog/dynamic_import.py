@@ -176,6 +176,28 @@ def _convert_template_sheets(items: list) -> list[dict] | None:
     return discovered
 
 
+def _products_into_template(conn, xlsx_path: str, work_dir, template: dict, *,
+                            source_key: str, doc_id: int | None) -> dict:
+    """手工分类直灌：整簿各 Sheet 全部按该分类已审批模板解析成商品草稿。"""
+    incoming = _agent_rows(template, xlsx_path, work_dir)
+    if incoming is None:
+        raise ValueError('解析服务暂不可用，请稍后重试导入')
+    source_rows = _source_rows(conn, template['key'], source_key, template['source_sheet'])
+    existing = [row for row in source_rows if row['status'] != 'delisted']
+    model_keys = [field['key'] for field in template['fields'] if field['role'] == 'model']
+    section = {'template': template, 'template_action': 'reuse',
+               'expected_version': template['version'], 'title': template['name'],
+               'header_row': None, 'image_count': 0,
+               'source_sheet': template['source_sheet'],
+               'source_snapshot': _source_snapshot(source_rows),
+               'drafts': _classify_rows(existing, incoming, model_keys)}
+    return {'kind': 'template_import', 'phase': 'products', 'doc_id': doc_id,
+            'filename': os.path.basename(xlsx_path),
+            'template_doc_id': None, 'source_key': source_key,
+            'mode': 'existing', 'category_key': template['key'],
+            'work_dir': str(work_dir), 'sheets': [section]}
+
+
 def _agent_rows(template: dict, xlsx_path: str, work_dir, sheet: str = '') -> list[dict] | None:
     """子代理（Claude）整表语义解析：合并跨行商品、图片按锚点归属、容忍乱表。
 
@@ -389,6 +411,16 @@ def build_product_payload(conn, xlsx_path, work_dir, *, source_key: str,
                           mode: str | None = None,
                           category_key: str | None = None) -> dict:
     """Parse a second upload against an already approved template session."""
+    # 手工建分类直灌：无 template_doc_id 时按 category_key 用已审批模板
+    # （商家页面对话建好分类字段后，Excel 只灌商品数据——复杂表的人工兜底）。
+    if template_doc_id is None:
+        if not category_key:
+            raise ValueError('商品导入必须提供 templateDocId（模板工单）或 categoryKey（已有分类）')
+        template = dynamic_catalog.get_template(conn, category_key)
+        if template['storage'] != 'dynamic':
+            raise ValueError('目标分类不是动态分类，不能直灌商品')
+        return _products_into_template(conn, xlsx_path, work_dir, template,
+                                       source_key=source_key, doc_id=doc_id)
     session, mapping = _template_session(conn, template_doc_id)
     # SQLite stores omitted mode as an empty string.  Treat that as the same
     # value as an omitted API argument so legacy callers can complete the
