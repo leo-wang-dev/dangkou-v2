@@ -58,9 +58,24 @@ def _hash(value: str) -> str:
 
 
 def _send_code_stub(email: str, code: str, codes_log: str):
-    """验证码发送桩（真渠道明天接）：打印日志 + 追加写明文码日志，便于人工测试。"""
+    """验证码发送：Resend 真渠道（受限 key 只发信）；未配 key 时回落明文日志桩。"""
+    api_key = os.environ.get('RESEND_API_KEY', '')
+    sender = os.environ.get('RESEND_FROM', 'onboarding@resend.dev')
+    if api_key:
+        import requests
+        r = requests.post(
+            'https://api.resend.com/emails',
+            headers={'Authorization': f'Bearer {api_key}'},
+            json={'from': sender, 'to': [email],
+                  'subject': '你的登录验证码',
+                  'text': f'验证码：{code}\n10 分钟内有效。若非本人操作请忽略。'},
+            timeout=15)
+        if r.status_code not in (200, 201):
+            raise RuntimeError(f'resend {r.status_code}: {r.text[:200]}')
+        print(f'[userapp] auth code sent via resend -> {email}', flush=True)
+        return
     line = f'{email}\t{code}'
-    print(f'[userapp] auth code -> {line}')
+    print(f'[userapp] auth code(stub) -> {line}')
     os.makedirs(os.path.dirname(os.path.abspath(codes_log)), exist_ok=True)
     with open(codes_log, 'a', encoding='utf-8') as fh:
         fh.write(line + '\n')
