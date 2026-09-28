@@ -71,3 +71,13 @@ def test_manual_create_rejects_product_already_imported(conn):
     with pytest.raises(tickets.TicketConflict, match='同一商品'):
         tickets.decide(conn, t['id'], t['token'], approved=True)
     assert conn.execute("select status from approval_ticket where id=?", (t['id'],)).fetchone()[0] == 'pending'
+
+
+def test_manual_create_allows_same_model_with_explicit_different_variant(conn):
+    from tests.conftest import seed_products
+    seed_products(conn, [{'id': 'first', 'data': {'model': 'A', 'color': '白色'}}])
+    t = tickets.create(conn, 'mutate', 'test_cat', {
+        'kind': 'dynamic_mutate', 'action': 'create', 'product_id': None,
+        'template_version': 1, 'changes': {'model': 'A', 'color': '黑色'}})
+    tickets.decide(conn, t['id'], t['token'], approved=True)
+    assert conn.execute("select count(*) from product_dynamic where category_key='test_cat'").fetchone()[0] == 2
