@@ -55,3 +55,11 @@ The second review reproduced a resource-lifetime gap: a second native `asyncio.T
 `catalog/request_lifecycle.py` now drains the worker's completion event through repeated native cancellations by awaiting one shielded waiter until it finishes. Middleware in both apps records any interruption, rolls back the cancelled request, then closes the connection and propagates cancellation. The tests assert that the worker-completion event stays unset while vision is blocked and is set after release, before the cancelled request has finished cleanup. The bounded model worker remains occupied until the actual worker exits.
 
 Green verification: `tests/test_http_concurrency.py::test_h5_photo_cancel_waits_for_worker_and_rolls_back tests/test_http_concurrency.py::test_userapp_photo_cancel_waits_for_worker_and_rolls_back -q` → **2 passed** in 0.51 seconds. Related focused command: `tests/test_http_concurrency.py tests/test_h5_transactions.py tests/test_userapp.py tests/test_cs_api.py -q` → **38 passed**, with the two existing Starlette deprecation warnings, in 1.48 seconds. No full-suite rerun was requested for this second scoped review fix.
+
+## Third review fix — cancelled-scope drain efficiency
+
+Implementation and helper regression committed as `e4b1e0e` (`Shield cancelled worker drain from AnyIO busy spin`).
+
+The approved second-round review measured 12,671 shield awaits in 0.2 seconds when `drain_worker` ran inside an already-cancelled AnyIO scope. A new helper regression reproduced the issue with **1,904 shield awaits in 0.03 seconds**, failing the bounded-call assertion. The drain now takes one cancellation checkpoint before entering an AnyIO shield. Inside that shield it still catches repeated native `Task.cancel()` calls and keeps waiting on the same worker-completion task. It reports interruption so middleware rolls back after the worker exits.
+
+Focused verification: `tests/test_request_lifecycle.py tests/test_http_concurrency.py::test_h5_photo_cancel_waits_for_worker_and_rolls_back tests/test_http_concurrency.py::test_userapp_photo_cancel_waits_for_worker_and_rolls_back -q` → **3 passed**, with the two existing Starlette deprecation warnings, in 0.55 seconds. No broader suite was run for this narrow follow-up.
