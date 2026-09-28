@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 import time
 
-from . import agent, ai_extract, dynamic_catalog, inner_code, workbook_templates
+from . import agent, ai_extract, dynamic_catalog, inner_code, workbook_templates, fast_import
 
 
 def _clean_template(draft: dict) -> dict:
@@ -273,7 +273,7 @@ def _products_into_template(conn, xlsx_path: str, work_dir, template: dict, *,
 
 
 def _agent_rows(template: dict, xlsx_path: str, work_dir, sheet: str = '') -> list[dict] | None:
-    """Model-only product parsing, with source coverage and reusable checkpoints."""
+    """Parse products with source coverage and reusable checkpoints."""
     identity = hashlib.sha256(json.dumps({'template': template, 'sheet': sheet,
         'source': _file_sha256(xlsx_path)}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     root = Path(work_dir); root.mkdir(parents=True, exist_ok=True)
@@ -311,7 +311,9 @@ def _agent_rows(template: dict, xlsx_path: str, work_dir, sheet: str = '') -> li
     started = time.monotonic()
     parse_dir = root / identity[:16]; parse_dir.mkdir(exist_ok=True)
     try:
-        result = agent.parse_dynamic(template, xlsx_path, parse_dir, sheet=sheet)
+        result = fast_import.parse_structured(template, xlsx_path, parse_dir, sheet=sheet)
+        if result is None:
+            result = agent.parse_dynamic(template, xlsx_path, parse_dir, sheet=sheet)
     except Exception as exc:
         return ParsedRows(failures=[{'source_sheet': sheet, 'source_rows': sorted(set().union(*evidence.values())) if evidence else [],
             'reason': '解析服务暂不可用，请重试：' + str(exc)[:160]}], coverage={'uncertain': True})
