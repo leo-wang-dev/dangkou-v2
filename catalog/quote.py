@@ -260,6 +260,7 @@ def generate_generic(conn, storage, items, price_adjustment_pct, out_path, depos
     ws.cell(T, 9, sums['ctns']).number_format = '0'
     ws.cell(T, 13, round(sums['gw'], 2)).number_format = '0.0'
     ws.cell(T, 14, round(sums['cbm'], 3)).number_format = '0.000'
+    ws.cell(T + 1, 6, Decimal(str(deposit_pct)) / 100).number_format = '0.##%'
     ws.cell(T + 1, 7, deposit).number_format = '0.00'            # DEPOSIT = 总额×定金%
     ws.cell(T + 2, 7, round(sums['amount'] - deposit, 2)).number_format = '0.00'  # BALANCE = 差额
 

@@ -202,6 +202,8 @@ def test_full_fields_three_items(tmp_path):
     assert ws.cell(5, 14).value == round(round(3 * (38.5 * 37.5 * 42.5) / 1e6, 3) + 0.091 + 0.192, 3)
     # 定金 20%：总额3935 → 787；尾款差额（写值不写公式）
     assert ws.cell(6, 1).value == '定金'
+    assert ws.cell(6, 6).value == 0.2
+    assert ws.cell(6, 6).number_format == '0.##%'
     assert ws.cell(6, 7).value == round(3935 * 0.2, 2)
     assert ws.cell(7, 1).value == '尾款'
     assert ws.cell(7, 7).value == 3935 - round(3935 * 0.2, 2)
@@ -283,6 +285,7 @@ def test_deposit_default_and_edges(tmp_path):
                                        'quantity': 100}], 0, out)
     ws = openpyxl.load_workbook(out).active
     T = 3                                                    # 2+1
+    assert ws.cell(T + 1, 6).value == 0.3
     assert ws.cell(T + 1, 7).value == round(10 * 120 * 0.3, 2)      # 默认30%（整箱120台）
     # 定金100%（尾款0）与0%（定金0）不炸
     for pct in (0, 100):
