@@ -1,0 +1,31 @@
+import sys
+from types import SimpleNamespace
+from pathlib import Path
+sys.path.insert(0, '/Users/a1/workSpace/Eryuan/dangkou-v2/.worktrees/h5-trial-20260928')
+
+def test_authorized_tenant_chat_routes(tmp_path, monkeypatch):
+    import socket, subprocess, time
+    def fail(*a, **k): raise AssertionError('external operation forbidden')
+    monkeypatch.setattr(socket.socket, 'connect', fail)
+    monkeypatch.setattr(socket.socket, 'connect_ex', fail)
+    monkeypatch.setattr(socket, 'getaddrinfo', fail)
+    monkeypatch.setattr(subprocess, 'Popen', fail)
+    # No config import can read any .env; all storage is isolated.
+    monkeypatch.setitem(sys.modules, 'catalog.config', SimpleNamespace(DB_PATH=str(tmp_path/'catalog.db')))
+    monkeypatch.setenv('MERCHANT_HUB_DB', str(tmp_path/'hub.db'))
+    monkeypatch.setenv('MERCHANT_RUNTIME_DIR', str(tmp_path/'shops'))
+    monkeypatch.setenv('MERCHANT_HUB_ENABLED', '1')
+    from catalog import merchant_onboarding as hub, merchant_binding, merchant_verification
+    monkeypatch.setattr(merchant_verification, 'verified', lambda c,m: True)
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    mid='a'*24
+    c=hub.connect()
+    c.execute("INSERT INTO merchant(id,owner,state,port,db_path,runtime_status,manage_hash,manage_expires) VALUES(?,?,'catalog_ready',19002,?,'running',?,?)",(mid,'owner',str(tmp_path/'tenant.db'),hub.digest('probe-capability'),int(time.time())+300))
+    c.commit(); c.close()
+    app=FastAPI(); merchant_binding.register(app)
+    with TestClient(app,base_url='https://example.test') as client:
+        paths=[('POST',f'/merchant/manage/{mid}/cs/chat-token?t=probe-capability'),('GET',f'/merchant/customer/{mid}/cs/chat/shop-token'),('POST',f'/merchant/customer/{mid}/cs/chat/shop-token/session')]
+        results=[(method,path,client.request(method,path).status_code) for method,path in paths]
+        print('TENANT_ROUTING_PROBE',results)
+        assert [r[2] for r in results] == [404,404,405]

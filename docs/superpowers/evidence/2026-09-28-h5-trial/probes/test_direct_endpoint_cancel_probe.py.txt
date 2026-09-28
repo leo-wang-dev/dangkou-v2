@@ -1,0 +1,160 @@
+import asyncio
+import contextvars
+import io
+import json
+import sqlite3
+import subprocess
+import threading
+import time
+
+import anyio
+import httpx
+import pytest
+from fastapi import FastAPI
+from PIL import Image
+from catalog import db, guest_sessions, llm, merchant_policy, userapp
+from catalog.api import register_routes
+from catalog.storage import LocalStorage
+
+
+@pytest.mark.parametrize('surface', ['h5', 'central'])
+def test_direct_endpoint_cancel(surface, tmp_path, monkeypatch):
+    # Enforce no child provider/subprocess even if a future code path changes.
+    def forbidden(*a, **kw):
+        raise AssertionError('offline probe forbids child provider/process')
+    monkeypatch.setattr(subprocess, 'Popen', forbidden)
+    monkeypatch.setattr(llm, 'chat_text', lambda *a, **kw: '{"actions":[]}')
+    started, release, thread_done = threading.Event(), threading.Event(), threading.Event()
+    observations = {}
+    timeline = []
+    t0 = time.monotonic()
+    def event(label):
+        timeline.append((round(time.monotonic() - t0, 4), label))
+
+    real_connect = sqlite3.connect
+    class ObservedConnection(sqlite3.Connection):
+        closed = False
+        def close(self):
+            self.closed = True
+            if self is observations.get('connection'):
+                event('middleware closes actual request connection')
+            return super().close()
+    def connect(*a, **kw):
+        kw['factory'] = ObservedConnection
+        return real_connect(*a, **kw)
+    monkeypatch.setattr(sqlite3, 'connect', connect)
+
+    def vision(*a, **kw):
+        event('fake model entered in actual worker thread')
+        started.set()
+        assert release.wait(5), 'finite model hold expired'
+        event('fake model released')
+        return json.dumps([{'型号或品名': 'SAMPLE-1'}], ensure_ascii=False)
+    monkeypatch.setattr(llm, 'chat_vision', vision)
+    database = tmp_path / (surface + '.db')
+    picture = io.BytesIO()
+    Image.new('RGB', (32, 32), 'blue').save(picture, 'JPEG')
+    if surface == 'h5':
+        monkeypatch.setenv('CATALOG_CS_PHOTOS', str(tmp_path / 'photos'))
+        monkeypatch.delenv('CATALOG_CS_API_URL', raising=False)
+        conn = db.connect(str(database))
+        db.init_db(conn)
+        merchant_policy.apply(conn, {'wechat_managed': True}, 1)
+        conn.execute("UPDATE shop_profile SET chat_token='test-shop', owner_wechat='boss'")
+        capability = guest_sessions.issue(conn)
+        conn.commit()
+        app = FastAPI()
+        app.state.conn = conn
+        app.state.token = 'test-token'
+        app.state.storage = LocalStorage(str(tmp_path / 'images'))
+        app.state.callback = None
+        register_routes(app)
+        route, table = '/cs/chat/test-shop/photo', 'cs_note'
+    else:
+        class FakeLLM:
+            chat_vision = staticmethod(vision)
+        app = userapp.build_app(db_path=str(database), photo_dir=str(tmp_path / 'photos'),
+                                codes_log=str(tmp_path / 'codes.log'), llm=FakeLLM())
+        route, table = '/photo', 'notes'
+
+    real_run_sync = anyio.to_thread.run_sync
+    async def observed_run_sync(work, *a, **kw):
+        if kw.get('limiter') is None:
+            return await real_run_sync(work, *a, **kw)
+        observations['endpoint_task'] = asyncio.current_task()
+        observations['limiter'] = kw['limiter']
+        observations['connection'] = next(v for k, v in contextvars.copy_context().items()
+            if k.name in ('catalog_request_connection', 'userapp_request_connection'))
+        def actual_work(*args):
+            try:
+                return work(*args)
+            except BaseException as exc:
+                observations['thread_error'] = type(exc).__name__ + ': ' + str(exc)
+                event('actual worker error: ' + observations['thread_error'])
+                raise
+            finally:
+                event('actual worker thread callback exits')
+                thread_done.set()
+        return await real_run_sync(actual_work, *a, **kw)
+    monkeypatch.setattr(anyio.to_thread, 'run_sync', observed_run_sync)
+    class Capture:
+        async def __call__(self, scope, receive, send):
+            if scope['path'] == route:
+                observations['scope'] = scope
+            await app(scope, receive, send)
+
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=Capture(), raise_app_exceptions=False),
+                                     base_url='http://test') as client:
+            if surface == 'h5':
+                response = await client.post('/cs/chat/test-shop/mode', json={'visitor': capability, 'mode':'notes'})
+                assert response.status_code == 200
+                data = {'visitor': capability}
+            else:
+                response = await client.post('/guest')
+                assert response.status_code == 200
+                data = {'owner': response.json()['guest']}
+            outer = asyncio.create_task(client.post(route, data=data,
+                files={'file': ('p.jpg', picture.getvalue(), 'image/jpeg')}))
+            try:
+                assert await asyncio.wait_for(asyncio.to_thread(started.wait, 2), 2.5)
+                endpoint = observations['endpoint_task']
+                assert endpoint is not outer
+                limiter = observations['limiter']
+                assert limiter.borrowed_tokens == 1
+                assert not observations['connection'].closed
+                assert not observations['scope']['state']['database_worker_done'].is_set()
+                event('raw asyncio cancel actual downstream endpoint task; outer task untouched')
+                endpoint.cancel()
+                response = await asyncio.wait_for(asyncio.shield(outer), 1)
+                event('outer HTTP request finishes status ' + str(response.status_code))
+                state = {
+                    'http_status': response.status_code,
+                    'outer_cancelled': outer.cancelled(),
+                    'endpoint_done': endpoint.done(),
+                    'wrapper_done_event': observations['scope']['state']['database_worker_done'].is_set(),
+                    'actual_thread_done': thread_done.is_set(),
+                    'request_connection_closed': observations['connection'].closed,
+                    'model_limiter_borrowed_tokens': limiter.borrowed_tokens,
+                }
+                observations['while_model_held'] = state
+                # Check actual admission, not only limiter's counter.
+                borrower = object()
+                limiter.acquire_on_behalf_of_nowait(borrower)
+                limiter.release_on_behalf_of(borrower)
+                state['replacement_permit_acquirable'] = True
+                assert state['wrapper_done_event'] and not state['actual_thread_done']
+                assert state['request_connection_closed'] and state['model_limiter_borrowed_tokens'] == 0
+            finally:
+                release.set()
+                assert await asyncio.wait_for(asyncio.to_thread(thread_done.wait, 2), 2.5)
+                if not outer.done():
+                    await asyncio.wait_for(outer, 1)
+    asyncio.run(exercise())
+    with real_connect(database) as check:
+        count = check.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0]
+    app.state.conn.close()
+    assert observations.get('thread_error') == 'ProgrammingError: Cannot operate on a closed database.'
+    print('\nPROBE ' + json.dumps({'surface': surface, 'while_model_held': observations['while_model_held'],
+          'thread_error_after_release': observations.get('thread_error'), 'persisted_note_count':count,
+          'timeline': timeline}, ensure_ascii=False))
