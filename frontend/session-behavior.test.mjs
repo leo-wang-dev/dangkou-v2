@@ -15,12 +15,12 @@ function harness(surface, endStatus) {
   if(isStatic)code=code.slice(0,code.indexOf(tool?'(async function init(){':'ready=(async function init(){'))
   const values=new Map(), nodes=new Map(), calls=[], tips=[]
   const store={get:k=>values.get(k)||'',set:(k,v)=>values.set(k,v),remove:k=>values.delete(k),getItem:k=>values.get(k)||'',setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)}
-  const node=()=>({textContent:'',style:{},hidden:false,replaceChildren(){this.cleared=true},append(){},appendChild(){},className:''})
+  const node=()=>({textContent:'',innerHTML:'',style:{},hidden:false,children:[],replaceChildren(){this.cleared=true;this.children=[]},append(){},appendChild(child){this.children.push(child)},prepend(child){this.children.unshift(child)},className:''})
   async function end(){calls.push('end');if(endStatus==='network')throw Error('offline');return {ok:endStatus===200,status:endStatus}}
   async function issue(){calls.push('issue');return {ok:true,status:200,data:{guest:'fresh',visitor:'fresh'}}}
   async function state(){return {ok:true,status:200,data:{notes:[],batches:[],photo_mode:'',intent_required:false}}}
   const context=vm.createContext({console,Promise,Map,ref:value=>({value}),nextTick:fn=>fn(),onLoad(){},onUnload(){},storage:store,sessionStorage:store,localStorage:store,
-    location:{pathname:'/cs/chat/shop'},setTimeout(){},clearTimeout(){},encodeURIComponent,
+    location:{pathname:'/cs/chat/shop'},setTimeout(){},clearTimeout(){},encodeURIComponent,URLSearchParams,
     document:{getElementById:id=>{if(!nodes.has(id))nodes.set(id,node());return nodes.get(id)},createElement:node,createTextNode:t=>t,querySelectorAll:()=>[]},
     uni:{showToast:x=>tips.push(x.title)},customerSessionKey:token=>'h5v:'+token,getBases:()=>({tool:'',cs:''}),
     toolApi:{endSession:end,newGuest:issue,notes:state},csApi:{endSession:end,newSession:issue,session:state},
@@ -122,6 +122,21 @@ test('uni buyer chat verifies email, claims guest and displays restored history'
   assert.equal(h.values.get('ut_token'),'account-token')
   assert.equal(h.identity(),'')
   assert.equal(vm.runInContext('messages.value[0].text',h.context),'Find B')
+})
+
+for (const surface of ['static-chat','uni-chat']) test(`${surface} loads older account chat history with cursor`,async()=>{
+  const h=harness(surface,200), isStatic=surface==='static-chat', urls=[]
+  const first={messages:[{role:'user',content:'newer'}],next_before:51}
+  const older={messages:[{role:'assistant',content:'oldest'}],next_before:0}
+  if(isStatic){
+    vm.runInContext("AUTH_TOKEN='account-token'",h.context)
+    h.context.fetch=async url=>{urls.push(url);return {ok:true,json:async()=>url.includes('before=51')?older:first}}
+  }else h.context.csApi.history=async(_token,_visitor,before)=>{urls.push(before);return {ok:true,data:before?older:first}}
+  await vm.runInContext('loadHistory()',h.context)
+  await vm.runInContext('loadOlderHistory()',h.context)
+  assert.ok(isStatic?urls.at(-1).includes('before=51'):urls.at(-1)===51)
+  assert.deepEqual(isStatic?h.nodes.get('log').children.map(x=>x.textContent):Array.from(vm.runInContext('messages.value.map(m=>m.text)',h.context)),['oldest','newer'])
+  if(!isStatic)assert.equal(vm.runInContext('tail.value',h.context),0)
 })
 
 test('uni buyer chat follows the visual viewport as browser chrome and keyboard move',()=>{

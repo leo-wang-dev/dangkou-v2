@@ -22,6 +22,36 @@ def test_production_mail_and_container_route_required(monkeypatch):
     assert any('CATALOG_AGENT_NETWORK' in e for e in errors)
     assert any('localhost' in e for e in errors)
 
+
+def test_buyer_identity_must_match_private_user_app_port(monkeypatch):
+    module=load()
+    monkeypatch.delenv('CUSTOMER_IDENTITY_BASE_URL',raising=False)
+    monkeypatch.setenv('USER_APP_PORT','19211')
+    assert any('CUSTOMER_IDENTITY_BASE_URL' in e for e in module.missing())
+    monkeypatch.setenv('CUSTOMER_IDENTITY_BASE_URL','http://127.0.0.1:19100')
+    assert any('CUSTOMER_IDENTITY_BASE_URL' in e and 'USER_APP_PORT' in e for e in module.missing())
+    monkeypatch.setenv('CUSTOMER_IDENTITY_BASE_URL','http://127.0.0.1:19211')
+    assert not any('CUSTOMER_IDENTITY_BASE_URL' in e for e in module.missing())
+    monkeypatch.setenv('CUSTOMER_IDENTITY_BASE_URL','http://127.0.0.1:not-a-port')
+    assert any('CUSTOMER_IDENTITY_BASE_URL' in e for e in module.missing())
+
+
+def test_sample_public_tool_targets_same_private_user_app():
+    sample=(ROOT/'deploy/nginx-merchant.conf').read_text()
+    import re
+    port=re.search(r'^USER_APP_PORT=(\d+)$',(ROOT/'.env.example').read_text(),re.M).group(1)
+    assert f'proxy_pass http://127.0.0.1:{port}/;' in sample
+
+
+def test_preflight_rejects_wrong_public_tool_upstream(tmp_path, monkeypatch):
+    module = load()
+    monkeypatch.setenv('USER_APP_PORT', '19211')
+    config = tmp_path / 'site.conf'
+    config.write_text('location /tool/ {\n proxy_pass http://127.0.0.1:19100/;\n}\n')
+    assert any('/tool/' in error for error in module.missing(nginx_config=config))
+    config.write_text('location /tool/ {\n proxy_pass http://127.0.0.1:19211/;\n}\n')
+    assert not any('/tool/' in error for error in module.missing(nginx_config=config))
+
 def test_preflight_dry_run_does_not_spawn_or_write(monkeypatch):
     module=load()
     monkeypatch.setattr(subprocess,'run',lambda *a,**k: (_ for _ in ()).throw(AssertionError('child not allowed')))

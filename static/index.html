@@ -313,13 +313,14 @@ function renderTemplateImport(tid, payload, box){
   let html = '';
   for(const section of payload.sheets||[]){
     const tpl = section.template;
+    const hasImageField = (tpl.fields||[]).some(field=>field.type==='image'||field.role==='image');
     templateDrafts[tid][tpl.key] = tpl;
     const counts = section.drafts||{};
     const imageHints = productPhase ? '' : (section.review_hints||[])
       .filter(h=>h.kind==='unlabeled_image_column')
       .map(h=>`<div role="alert" class="card" style="background:#fff8e8;border:1px solid #e9ce8a">
         <b>图片列需要人工确认</b>：${esc(excelColumn(h.column))} 列没有文字表头，但有 ${esc(h.image_count)} 张内嵌图片。
-        ${h.mapped?'AI 已建议“图片”字段；请核对下方字段类型为“图片”、客户可见性符合预期。':
+        ${hasImageField?'模板已有“图片”字段；请核对下方字段类型、客户可见性，以及商品预览中该列图片是否正确对应。':
           '<b>当前模板缺少对应图片字段。</b>请先补上并把类型选为“图片”，再批准模板。<button class="btn o s" onclick="addTemplateImageField(this)">＋ 补图片字段</button>'}
         <span class="muted">也可以先手工建立分类，再上传商品。模板批准后须再次上传 Excel 才会导入商品。</span>
       </div>`).join('');
@@ -533,7 +534,7 @@ async function openForm(pid){
   formCtx = {mode: p?'product':'create', pid,
     images: (p?(p['图集']||[p['主图']].filter(Boolean)):[]).map(rel=>({rel, url:`${MANAGE_PREFIX}/img/${rel}?token=${TOKEN}`}))};
   document.getElementById('modalBox').innerHTML =
-    formHtml(`${p?'编辑':'新增'}商品（${CAT_NAMES[cur.cat]||cur.tpl?.name||cur.cat}）`, p||{}, fields).replace('{{FORM_NOTE}}','保存后立即生效。');
+    formHtml(`${p?'编辑':'新增'}商品（${CAT_NAMES[cur.cat]||cur.tpl?.name||cur.cat}）`, p||{}, fields).replace('{{FORM_NOTE}}','提交后生成审批工单，批准后生效。');
   document.getElementById('modal').style.display='flex';
 }
 async function submitForm(){
@@ -566,12 +567,12 @@ async function submitForm(){
       refreshDetail(tid);
     }else if(formCtx.mode==='product'){
       const body={changes, images:formCtx.images.map(x=>x.rel).filter(Boolean)};
-      await api(`/products/${cur.cat}/${formCtx.pid}/direct`, {method:'PATCH', body:JSON.stringify(body)});
-      closeForm(); loadCats();
+      const result=await api(`/products/${cur.cat}/${formCtx.pid}`, {method:'PATCH', body:JSON.stringify(body)});
+      closeForm(); show('review'); alert(`商品修改已提交审批（#${result.ticket_id}）`);
     }else{
       const body={changes, images:formCtx.images.map(x=>x.rel).filter(Boolean)};
-      await api(`/products/${cur.cat}/direct`, {method:'POST', body:JSON.stringify(body)});
-      closeForm(); loadCats();
+      const result=await api(`/products/${cur.cat}`, {method:'POST', body:JSON.stringify(body)});
+      closeForm(); show('review'); alert(`新增商品已提交审批（#${result.ticket_id}）`);
     }
   }catch(e){ alert('提交失败：'+e.message); }
 }
@@ -723,15 +724,17 @@ async function submitQuote(pid){
 async function toggleProductVisible(pid, visible){
   if(!cur.cat) return;
   try{
-    await api(`/products/${encodeURIComponent(cur.cat)}/${encodeURIComponent(pid)}/direct`,
+    const result=await api(`/products/${encodeURIComponent(cur.cat)}/${encodeURIComponent(pid)}`,
       {method:'PATCH', body:JSON.stringify({changes:{cs_visible: visible?'0':'1'}})});
-    loadCats();
+    show('review'); alert(`可见性修改已提交审批（#${result.ticket_id}）`);
   }catch(e){ alert('切换失败：'+e.message); }
 }
 async function delP(pid){
-  if(!confirm('确认下架？')) return;
-  await api(`/products/${cur.cat}/${pid}/direct`, {method:'DELETE'});
-  loadCats();
+  if(!confirm('确认提交下架审批？')) return;
+  try{
+    const result=await api(`/products/${cur.cat}/${pid}`, {method:'DELETE'});
+    show('review'); alert(`下架已提交审批（#${result.ticket_id}）`);
+  }catch(e){ alert('提交失败：'+e.message); }
 }
 show('review');
 

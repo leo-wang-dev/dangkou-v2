@@ -195,7 +195,7 @@ def test_chat_page_list_drawer(server):
         browser.close()
 
 
-def test_direct_delist_disappears_from_management_page(server):
+def test_management_delist_requires_approval_before_disappearing(server):
     from playwright.sync_api import sync_playwright
     base, path = server
     conn = sqlite3.connect(path)
@@ -217,6 +217,14 @@ def test_direct_delist_disappears_from_management_page(server):
         card.wait_for()
         page.once('dialog', lambda dialog: dialog.accept())
         card.get_by_role('button', name='下架').click()
+        review = page.locator('#review .card').first
+        review.wait_for()
+        assert json.load(urllib.request.urlopen(urllib.request.Request(
+            f'{base}/products/cat_e2e', headers={'X-Service-Token': 'e2e-service-token'}
+        )))['products'][0]['状态'] == 'approved'
+        page.on('dialog', lambda dialog: dialog.accept())
+        review.get_by_role('button', name='整单通过').click()
+        page.locator('#v-products').click()
         card.wait_for(state='detached')
         browser.close()
 

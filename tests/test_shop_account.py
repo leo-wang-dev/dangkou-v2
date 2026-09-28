@@ -70,9 +70,35 @@ def test_claim_merges_guest_notes_card_history_and_reissues_link(h5, monkeypatch
         new_link = client.get('/cs/chat/test-shop/list-token', headers=auth).json()['token']
         assert new_link and new_link != old_link
         assert client.get('/cs/link/' + new_link, headers=auth).status_code == 200
+        for path in ('/cs/link/' + new_link, '/cs/link/' + new_link + '/export.xlsx'):
+            assert client.get(path, headers={'Authorization': 'Bearer invalid'}).status_code == 401
+        assert client.patch('/cs/link/' + new_link + '/note/' + str(note_id),
+                            json={'field': '备注', 'value': 'should not save'},
+                            headers={'Authorization': 'Bearer invalid'}).status_code == 401
         again = client.post('/cs/chat/test-shop/session/claim', json={'visitor': visitor}, headers=auth)
         assert again.status_code == 200 and again.json()['customer_id'] == cid
         assert app.state.conn.execute('SELECT count(*) FROM cs_note').fetchone()[0] == 1
+
+
+def test_first_account_session_creation_is_conflict_safe(h5, monkeypatch):
+    from catalog import shop_account
+    app, _, _ = h5
+    account = 'c' * 32
+    connection = app.state.conn
+    shop_account.account_session(connection, account)
+    # Emulate two connections that both read "absent" before one inserts.
+    class StaleRead:
+        def __init__(self, conn): self.conn=conn; self.hidden=set()
+        def execute(self, sql, args=()):
+            if sql.startswith(('SELECT * FROM guest_sessions WHERE owner_id=',
+                               'SELECT 1 FROM cs_customer WHERE account_id=')) and sql not in self.hidden:
+                self.hidden.add(sql)
+                return self.conn.execute('SELECT * FROM guest_sessions WHERE 0')
+            return self.conn.execute(sql,args)
+    row = shop_account.account_session(StaleRead(connection), account)
+    assert row['owner_id'] == shop_account.owner_id(account)
+    assert connection.execute('SELECT count(*) FROM guest_sessions WHERE owner_id=?', (row['owner_id'],)).fetchone()[0] == 1
+    assert connection.execute('SELECT count(*) FROM cs_customer WHERE account_id=?', (account,)).fetchone()[0] == 1
 
 
 def test_existing_account_merge_is_idempotent_and_isolated(h5, monkeypatch):

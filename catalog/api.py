@@ -1210,6 +1210,11 @@ def register_routes(app: FastAPI):
         return Response(content=open(fp, 'rb').read(), media_type='image/jpeg')
 
     def _link_conn(token, request):
+        # A capability link remains available to guests, but an explicitly supplied
+        # login token must never bypass revocation through the link route.
+        if request.headers.get('authorization'):
+            from . import buyer_identity
+            buyer_identity.verify(request)
         row = request_conn().execute('SELECT * FROM cs_link WHERE token=?', (token,)).fetchone()
         if row is None:
             raise HTTPException(404, '链接无效')

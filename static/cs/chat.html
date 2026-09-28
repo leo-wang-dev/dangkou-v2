@@ -14,6 +14,7 @@
   #loginbar .row{display:flex;gap:8px}#loginbar input{flex:1;min-width:0;border:1px solid #ddd;border-radius:8px;padding:9px 12px;font-size:15px}
   #loginbar button{border:0;border-radius:8px;padding:9px 12px;background:#1677ff;color:#fff}#loginbar button:disabled{background:#9ec4ff}
   #log{flex:1;min-height:0;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+  #history-more{align-self:center;margin:6px;padding:6px 14px;border:1px solid #d5e6ff;border-radius:16px;background:#fff;color:#1677ff}
   .msg{max-width:82%;padding:9px 12px;border-radius:12px;font-size:15px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
   .bot{background:#fff;align-self:flex-start;box-shadow:0 1px 3px rgba(0,0,0,.08)}
   .me{background:#1677ff;color:#fff;align-self:flex-end}
@@ -49,7 +50,7 @@
 <div id="loginbar"><div class="row"><input id="email" type="email" data-i18n-placeholder="email" placeholder="邮箱" autocomplete="email"><button id="sendbtn" onclick="sendCode()" data-i18n="sendCodeShort">发验证码</button></div><div class="row"><input id="code" type="text" data-i18n-placeholder="verificationCode" placeholder="6位验证码" autocomplete="one-time-code" inputmode="numeric"><button id="verifybtn" onclick="doLogin()" data-i18n="login">登录</button></div><small data-i18n="loginHint">登录后清单会挂到您的账号；未登录也可直接用。</small></div>
 <div id="claimretry" class="session-controls" style="display:none"><button onclick="retryClaim()" data-i18n="refresh">重试合并记录</button><span data-i18n="networkError">网络错误，请重试</span></div>
 <div id="langbar" hidden></div>
-<div class="session-controls"><span id="photo-mode">图片模式：待选择</span><button onclick="setMode('search')" data-i18n="findProduct" data-icon="">查商品</button><button onclick="setMode('notes')" data-i18n="takeNotes" data-icon="">记笔记</button><button onclick="newSession(true)" data-i18n="endSession" data-icon="">结束当前会话</button><button onclick="manualBatch()" data-i18n="manualSwitchShop" data-icon="">手动切换档口</button></div><div id="pending-photo" class="session-controls" hidden><span data-i18n="pendingPhoto" data-icon="">有一张照片待处理。请选择模式后重试，或明确放弃。</span><button onclick="retryPhoto()" data-i18n="retryPhoto" data-icon="">重试待处理照片</button><button onclick="discardPhoto()" data-i18n="discardPhoto" data-icon="">放弃待处理照片</button></div><div id="batches"></div><div id="log"></div>
+<div class="session-controls"><span id="photo-mode">图片模式：待选择</span><button onclick="setMode('search')" data-i18n="findProduct" data-icon="">查商品</button><button onclick="setMode('notes')" data-i18n="takeNotes" data-icon="">记笔记</button><button onclick="newSession(true)" data-i18n="endSession" data-icon="">结束当前会话</button><button onclick="manualBatch()" data-i18n="manualSwitchShop" data-icon="">手动切换档口</button></div><div id="pending-photo" class="session-controls" hidden><span data-i18n="pendingPhoto" data-icon="">有一张照片待处理。请选择模式后重试，或明确放弃。</span><button onclick="retryPhoto()" data-i18n="retryPhoto" data-icon="">重试待处理照片</button><button onclick="discardPhoto()" data-i18n="discardPhoto" data-icon="">放弃待处理照片</button></div><div id="batches"></div><button id="history-more" hidden onclick="loadOlderHistory()" data-i18n="loadOlderMessages">加载更早消息</button><div id="log"></div>
 <form onsubmit="event.preventDefault();send()">
   <input id="text" type="text" placeholder="发消息，或点 📷 拍照整理采购清单" data-i18n-placeholder="chatInputHint" autocomplete="off">
   <button type="submit">➤</button>
@@ -81,6 +82,7 @@ let AUTH_TOKEN = localStorage.getItem('ut_token') || '';
 let AUTH_EMAIL = localStorage.getItem('ut_email') || '';
 let photoMode = '';
 let hasPending = false;
+let historyBefore = 0;
 let ready;
 const log = document.getElementById('log');
 function fitViewport(){
@@ -95,13 +97,16 @@ if(typeof window!=='undefined'){
   window.visualViewport?.addEventListener('scroll',fitViewport);
   window.addEventListener('resize',fitViewport);
 }
-function bubble(role, text){
+function messageElement(role, text){
   const d = document.createElement('div');
   d.className = 'msg ' + (role === 'me' ? 'me' : 'bot');
   d.textContent = text;
   // 链接可点（出表回复里的清单链接）
   if (role !== 'me') { d.innerHTML = d.innerHTML.replace(/(https?:\/\/[^\s）)]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>'); }
-  log.appendChild(d); log.scrollTop = log.scrollHeight;
+  return d;
+}
+function bubble(role, text){
+  log.appendChild(messageElement(role,text)); log.scrollTop = log.scrollHeight;
 }
 function tip(t){ const el=document.getElementById('tip'); el.textContent=t; el.style.opacity=1; setTimeout(()=>el.style.opacity=0, 1800); }
 function renderWho(){
@@ -138,6 +143,18 @@ async function loadHistory(){
   const r=await customerFetch(`/cs/chat/${TOKEN}/history${AUTH_TOKEN?'':'?visitor='+encodeURIComponent(visitor)}`);
   if(!r.ok)return;const d=await r.json();log.replaceChildren();
   for(const m of d.messages||[])bubble(m.role==='user'?'me':'bot',m.content||'');
+  historyBefore=d.next_before||0;document.getElementById('history-more').hidden=!historyBefore;
+}
+async function loadOlderHistory(){
+  if(!historyBefore)return;
+  const query=new URLSearchParams({before:String(historyBefore)});
+  if(!AUTH_TOKEN)query.set('visitor',visitor);
+  const r=await customerFetch(`/cs/chat/${TOKEN}/history?${query}`);
+  if(!r.ok){tip(t('loadError'));return;}
+  const d=await r.json(), height=log.scrollHeight;
+  for(const m of [...(d.messages||[])].reverse())log.prepend(messageElement(m.role==='user'?'me':'bot',m.content||''));
+  historyBefore=d.next_before||0;document.getElementById('history-more').hidden=!historyBefore;
+  log.scrollTop+=log.scrollHeight-height;
 }
 async function doLogin(){
   const email=document.getElementById('email').value.trim(),code=document.getElementById('code').value.trim();
@@ -208,7 +225,7 @@ async function newSession(end=false){
     if(AUTH_TOKEN){
       if(end){const ended=await customerFetch(`/cs/chat/${TOKEN}/session/end`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
         if(!ended.ok){tip(t('networkError'));return;}}
-      log.replaceChildren();closeList();await refreshSession();return;
+      log.replaceChildren();historyBefore=0;document.getElementById('history-more').hidden=true;closeList();await refreshSession();return;
     }
     if(end&&visitor){
       const ended=await customerFetch(`/cs/chat/${TOKEN}/session/end`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor})});
@@ -217,7 +234,7 @@ async function newSession(end=false){
     }
     const r=await customerFetch(`/cs/chat/${TOKEN}/session`,{method:'POST'}),d=await r.json();
     if(!r.ok||!d.visitor){tip(t('initError'));return;}
-    visitor=d.visitor;sessionStorage.setItem(VISITOR_KEY,visitor);log.replaceChildren();closeList();await refreshSession();
+    visitor=d.visitor;sessionStorage.setItem(VISITOR_KEY,visitor);log.replaceChildren();historyBefore=0;document.getElementById('history-more').hidden=true;closeList();await refreshSession();
   }catch(e){tip(t('networkError'));}
 }
 async function refreshSession(){

@@ -24,6 +24,50 @@ def test_review_preserves_product_boxes_by_unique_name_not_order(tmp_path):
             assert all(abs(a-b)<5 for a,b in zip(im.getpixel((50,50)), expected))
 
 
+def test_missing_multi_product_boxes_get_targeted_vision_recovery():
+    class Model:
+        def __init__(self): self.prompts=[]
+        def chat_vision(self,prompt,data):
+            self.prompts.append(prompt)
+            if len(self.prompts)<3:
+                return json.dumps([{'型号或品名':'A','图框':[0,0,300,1000]},
+                                   {'型号或品名':'B','图框':None},
+                                   {'型号或品名':'C','图框':None}])
+            return json.dumps([{'序号':2,'图框':[350,0,650,1000]},
+                               {'序号':3,'图框':[700,0,1000,1000]}])
+    model=Model()
+    items,_=extract_photo_items(model,b'image')
+    assert len(model.prompts)==3
+    assert [it.get('__图框__') for it in items]==[[0,0,300,1000],[350,0,650,1000],[700,0,1000,1000]]
+
+
+def test_targeted_boxes_reject_full_frame_and_overlap_without_losing_notes():
+    class Model:
+        calls=0
+        def chat_vision(self,prompt,data):
+            self.calls+=1
+            if self.calls<3:return json.dumps([{'型号或品名':'A','图框':[0,0,300,1000]},{'型号或品名':'B','图框':None}])
+            return json.dumps([{'序号':2,'图框':[0,0,1000,1000]}])
+    items,_=extract_photo_items(Model(),b'image')
+    assert len(items)==2
+    assert '__图框__' not in items[1]
+
+
+def test_duplicate_valid_boxes_trigger_targeted_recovery():
+    class Model:
+        calls = 0
+        def chat_vision(self, prompt, data):
+            self.calls += 1
+            if self.calls < 3:
+                return json.dumps([{'型号或品名':'A','图框':[0,0,450,1000]},
+                                   {'型号或品名':'B','图框':[0,0,450,1000]}])
+            return json.dumps([{'序号':2,'图框':[550,0,1000,1000]}])
+    model = Model()
+    items, _ = extract_photo_items(model, b'image')
+    assert model.calls == 3
+    assert [item['__图框__'] for item in items] == [[0,0,450,1000], [550,0,1000,1000]]
+
+
 def test_product_box_rejects_invalid_geometry_and_duplicate_matches():
     for box in ([500,0,100,1000], [0,0,math.inf,1000], [0,0,0,500]):
         assert '__图框__' not in CsBot._parse_items(json.dumps([{'型号或品名':'X','图框':box}]))[0]

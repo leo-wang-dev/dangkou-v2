@@ -1,6 +1,12 @@
 # H5 trial operations and acceptance
 
-These are new reproducible deployment templates, not recovered server configuration. No live deployment, model call, email delivery, or credential rotation was performed for this delivery. Read the [guest lifecycle](2026-09-28-guest-session-contract.md), [import recovery](2026-09-28-import-recovery-contract.md), [supplier/quote](2026-09-28-supplier-quote-contract.md) and [customer language](2026-09-28-customer-language-contract.md) contracts first.
+The original 2026-09-28 sections below describe reproducible templates and offline validation. A later isolated live trial was deployed on 2026-09-29; its observed results and limitations are recorded in [buyer login trial evidence](evidence/2026-09-29-buyer-login-trial.md). Read the [guest lifecycle](2026-09-28-guest-session-contract.md), [import recovery](2026-09-28-import-recovery-contract.md), [supplier/quote](2026-09-28-supplier-quote-contract.md) and [customer language](2026-09-28-customer-language-contract.md) contracts first.
+
+## 2026-09-29 buyer identity trial wiring
+
+Set `CUSTOMER_IDENTITY_BASE_URL=http://127.0.0.1:${USER_APP_PORT}` in the shop API's private runtime environment. The buyer API verifies bearer tokens through that service's `/me` before binding a shop guest to an account. The URL must match the exact user-app instance behind the public `/tool/` route; the read-only preflight rejects a missing, public, malformed or port-mismatched URL. Pass `--nginx-config /etc/nginx/sites-enabled/dangkou` to the preflight to verify the deployed `/tool/` upstream against `USER_APP_PORT` too. Do not point a trial shop at a shared user-app database. For the isolated H5 trial, `run/launch.py` supplies port 19211 to both API and user-app, while NGINX `/tool/` targets 19211 and the scoped customer/manage paths target 19210. The sample NGINX config uses port 19100 because its sample `USER_APP_PORT` is 19100.
+
+Before changing a live route, back up the old NGINX file and code, preserve `data/`, `run/admin-token` and parser state, validate `nginx -t`, then restart the trial API, user-app and notification processes. Verify public `/tool/` returns 200, `/tool/me` without auth returns 401, an invalid scoped chat token returns 404, and the matching private services are active. The 2026-09-29 rollback copy is under `backups/buyer-login-20260929-050249/` in the isolated trial directory. Do not enable `USER_APP_DEV_EMAIL_LOG=1` on this public trial; use the configured sender and an owner-supplied mailbox for final OTP acceptance.
 
 ## Runtime prerequisites and templates
 

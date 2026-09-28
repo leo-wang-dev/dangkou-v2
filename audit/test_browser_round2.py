@@ -179,6 +179,15 @@ def submit(page):
     expect(page.locator('#modal')).not_to_be_visible()
 
 
+def approve_product_change(page, category=NAME_A):
+    card = page.locator('#review .card').first
+    expect(card).to_be_visible()
+    card.get_by_role('button', name='整单通过', exact=True).click()
+    expect(page.locator('#review')).to_contain_text('没有待办工单')
+    page.locator('#v-products').click()
+    page.locator('#catTabs').get_by_role('button', name=category, exact=True).click()
+
+
 def new_import(site, image=False):
     from catalog.dynamic_import import _source_snapshot, _source_rows
     drafts = [{'data': {'model': 'IMPORT-A', 'price': '12'}, 'images': [], 'image_main': ''},
@@ -228,13 +237,16 @@ def test_b_tabs_search_create_edit_delist(page, site):
     page.locator('#fg-model').fill('NEW-B1')
     page.locator('#fg-price').fill('19')
     submit(page)
+    approve_product_change(page, NAME_B)
     card = page.locator('.pcard').filter(has_text='NEW-B1')
     expect(card).to_be_visible()
     card.get_by_role('button', name='编辑', exact=True).click()
     page.locator('#fg-price').fill('21')
     submit(page)
+    approve_product_change(page, NAME_B)
     expect(card).to_contain_text('21')
     card.get_by_role('button', name='下架', exact=True).click()
+    approve_product_change(page, NAME_B)
     expect(card).to_have_count(0)
     row = site['conn'].execute(
         "SELECT json_extract(data_json,'$.price') price,status FROM product_dynamic "
@@ -257,6 +269,7 @@ def test_b_clear_field_persists(page, site):
     page.locator('.pcard').get_by_role('button', name='编辑').click()
     page.locator('#fg-color').fill('')
     submit(page)
+    approve_product_change(page)
     value = site['conn'].execute(
         "SELECT json_extract(data_json,'$.color') FROM product_dynamic WHERE id='r1'").fetchone()[0]
     assert not value, f'cleared color remained {value!r}'
@@ -268,6 +281,7 @@ def test_b_upload_gallery_and_remove_last_image(page, site):
     page.locator('#formFile').set_input_files(str(site['photo']))
     expect(page.locator('.imgman .cell')).to_have_count(1)
     submit(page)
+    approve_product_change(page)
     image = page.locator('.pcard img.big')
     expect(image).to_be_visible()
     image.click()
@@ -282,6 +296,7 @@ def test_b_upload_gallery_and_remove_last_image(page, site):
     page.locator('.imgman .cell button').click()
     expect(page.locator('.imgman .cell')).to_have_count(0)
     submit(page)
+    approve_product_change(page)
     row = site['conn'].execute("SELECT image_main,images_json FROM product_dynamic WHERE id='r1'").fetchone()
     assert not row['image_main'] and json.loads(row['images_json']) == [], 'last image deletion did not persist'
 
@@ -473,8 +488,10 @@ def test_tier_edit_persists_and_reopens(page, site):
     expect(page.locator('#fg-tier_price')).to_have_count(0)
     expect(page.locator('#fg-cs_visible')).to_have_count(0)  # 可观测不在编辑表单
     submit(page)
+    approve_product_change(page, NAME_B)
     # 可观测由卡片开关直接切换（按钮显示当前状态）；重进页面后状态保持
     page.locator('.pcard').get_by_role('button', name='👁 客户可见', exact=True).click()
+    approve_product_change(page, NAME_B)
     expect(page.locator('.pcard').get_by_role('button', name='🚫 客户不可见')).to_be_visible()
     assert site['conn'].execute("SELECT cs_visible FROM product_dynamic WHERE id='c1'").fetchone()[0] == 0
     products(page, site, category=NAME_B)

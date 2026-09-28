@@ -1680,6 +1680,21 @@
       "th": "เริ่มรายการใหม่",
       "id": "Mulai daftar baru"
     },
+    "loadOlderMessages": {
+      "zh": "加载更早消息",
+      "en": "Load earlier messages",
+      "fr": "Charger les messages précédents",
+      "es": "Cargar mensajes anteriores",
+      "pt": "Carregar mensagens anteriores",
+      "ru": "Загрузить ранние сообщения",
+      "ar": "تحميل الرسائل السابقة",
+      "de": "Ältere Nachrichten laden",
+      "ja": "以前のメッセージを読み込む",
+      "ko": "이전 메시지 불러오기",
+      "vi": "Tải tin nhắn cũ hơn",
+      "th": "โหลดข้อความก่อนหน้า",
+      "id": "Muat pesan sebelumnya"
+    },
     "history": {
       "zh": "历史清单",
       "en": "List history",

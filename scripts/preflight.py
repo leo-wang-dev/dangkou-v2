@@ -26,12 +26,13 @@ def load_env(path):
     os.environ.update(values)
 
 
-def missing():
+def missing(nginx_config=None):
     required = ['CATALOG_V2_SERVICE_TOKEN','CATALOG_V2_PUBLIC_URL',
         'BAILIAN_API_KEY','BAILIAN_BASE_URL','CATALOG_AGENT_API_KEY',
         'CATALOG_AGENT_BASE_URL','CATALOG_AGENT_MODEL','CATALOG_NOTIFY_TOKEN',
         'CATALOG_AGENT_CONTAINER_IMAGE','CATALOG_AGENT_NETWORK','CATALOG_PARSER_STATE_DIR',
-        'CATALOG_V2_DB','CATALOG_V2_IMG','CATALOG_CS_PHOTOS','USER_APP_DB','USER_APP_PHOTOS']
+        'CATALOG_V2_DB','CATALOG_V2_IMG','CATALOG_CS_PHOTOS','USER_APP_DB','USER_APP_PHOTOS',
+        'CUSTOMER_IDENTITY_BASE_URL']
     development = os.environ.get('USER_APP_ENV') == 'development' and os.environ.get('USER_APP_DEV_EMAIL_LOG') == '1'
     if not development:
         required += ['RESEND_API_KEY','RESEND_FROM']
@@ -43,6 +44,26 @@ def missing():
     if public and (urlsplit(public).scheme != 'https' or not urlsplit(public).hostname):
         errors.append('CATALOG_V2_PUBLIC_URL 必须为可访问的 HTTPS 地址')
     agent = urlsplit(os.environ.get('CATALOG_AGENT_BASE_URL',''))
+    identity = urlsplit(os.environ.get('CUSTOMER_IDENTITY_BASE_URL',''))
+    user_port = os.environ.get('USER_APP_PORT', '19100')
+    try:
+        identity_port = identity.port
+    except ValueError:
+        identity_port = None
+    if identity.scheme and (identity.scheme != 'http' or identity.hostname not in ('127.0.0.1', '::1')
+                            or str(identity_port or '') != user_port or identity.path.rstrip('/')):
+        errors.append('CUSTOMER_IDENTITY_BASE_URL must be private loopback and match USER_APP_PORT')
+    if nginx_config:
+        import re
+        try:
+            config = Path(nginx_config).read_text()
+        except OSError as exc:
+            errors.append(f'Cannot read NGINX config: {exc}')
+        else:
+            match = re.search(r'location\s+/tool/\s*\{([^{}]*)\}', config, re.S)
+            expected = f'proxy_pass http://127.0.0.1:{user_port}/;'
+            if not match or expected not in match.group(1):
+                errors.append(f'NGINX /tool/ must proxy to USER_APP_PORT {user_port}')
     if agent.hostname in ('localhost','127.0.0.1','::1'):
         errors.append('CATALOG_AGENT_BASE_URL: parser container localhost is not the host; use the dedicated bridge DNS')
     if os.environ.get('CATALOG_AGENT_NETWORK') in ('host','bridge','none'):
@@ -72,9 +93,10 @@ if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dry-run',action='store_true',help='Explicit read-only mode (also the default)')
     parser.add_argument('--env-file',type=Path,help='Explicit read-only dotenv input; values never executed or printed')
+    parser.add_argument('--nginx-config',type=Path,help='Optional deployed NGINX site config to verify /tool/ upstream')
     args=parser.parse_args()
     if args.env_file:load_env(args.env_file)
-    errors=missing()
+    errors=missing(nginx_config=args.nginx_config)
     for error in errors:print('BLOCKED:',error)
     print('配置预检通过（未验证真实模型、邮件、SSH、容器及公网连通）' if not errors else '部署预检未通过（只读，未修改配置）')
     sys.exit(2 if errors else 0)

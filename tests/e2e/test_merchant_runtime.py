@@ -113,6 +113,7 @@ def test_two_live_workers_pause_resume(tmp_path,monkeypatch):
                 with sync_playwright() as browser_api:
                     browser=browser_api.chromium.launch();page=browser.new_page();errors=[]
                     page.on('pageerror',lambda err:errors.append(str(err)))
+                    page.on('dialog',lambda dialog:dialog.accept())
                     # Existing customer prefix must initialize assets, edit and export.
                     from playwright.sync_api import expect
                     from catalog import cs_i18n
@@ -143,11 +144,17 @@ def test_two_live_workers_pause_resume(tmp_path,monkeypatch):
                     page.get_by_role('button',name='新增商品').click()
                     page.locator('#fg-model').fill('BROWSER-NEW')
                     page.locator('#modalBox').get_by_role('button',name='提交').click()
+                    page.locator('#review .card').first.get_by_role('button',name='整单通过').click()
+                    expect(page.locator('#review')).to_contain_text('没有待办工单')
+                    page.locator('#v-products').click()
                     page.get_by_text('BROWSER-NEW',exact=True).wait_for()
                     # 可观测不再是表单字段：卡片上的开关控制，默认不可见就点开
                     card=page.locator('.pcard',has_text='BROWSER-NEW')
                     if card.get_by_role('button',name='🚫 客户不可见').count():
                         card.get_by_role('button',name='🚫 客户不可见').click()
+                        page.locator('#review .card').first.get_by_role('button',name='整单通过').click()
+                        expect(page.locator('#review')).to_contain_text('没有待办工单')
+                        page.locator('#v-products').click()
                         card.get_by_role('button',name='👁 客户可见').wait_for()
                     assert not errors
                     # The customer brain reads the new product through the live merchant API.

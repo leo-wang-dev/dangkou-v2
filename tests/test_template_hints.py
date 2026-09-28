@@ -41,9 +41,9 @@ def test_template_notification_explains_unlabelled_image_column(monkeypatch):
                                            'image_count': 58, 'mapped': False}]}}
     message = notify.render_import(payload)
     assert 'Sheet1 的 B 列有图片但没有文字表头' in message
-    assert '补“图片”字段' in message
+    assert '核对“图片”字段、类型与商品预览的对应关系' in message
+    assert '若缺少图片字段再补上' in message
 
     payload['stats']['review_hints'][0]['mapped'] = True
     message = notify.render_import(payload)
-    assert 'AI 已建议“图片”字段' in message
-    assert '补“图片”字段' not in message
+    assert '核对“图片”字段、类型与商品预览的对应关系' in message

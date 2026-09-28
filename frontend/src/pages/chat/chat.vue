@@ -29,6 +29,7 @@
       <button v-for="b in batches.filter(x=>x.state==='pending')" :key="'decline'+b.id" @click="confirmBatch(b.id,null,'decline')">{{ t('declineCard') }}: {{ b.fields['档口名称'] }}</button>
       <view v-if="hasPending"><text>{{ t('pendingPhoto') }}</text><button @click="retryPhoto">{{ t('retryPhoto') }}</button><button @click="discardPhoto">{{ t('discardPhoto') }}</button></view>
     </view>
+    <button v-if="historyBefore" class="history-more" @click="loadOlderHistory">{{ t('loadOlderMessages') }}</button>
     <scroll-view class="log" scroll-y :scroll-top="tail" scroll-with-animation>
       <view v-for="(m, i) in messages" :key="i" class="msg" :class="m.role === 'me' ? 'me' : 'bot'">
         <text v-for="(seg, j) in segments(m.text)" :key="j"
@@ -98,6 +99,7 @@ const hasPending=ref(false)
 const photoMode=ref(''), batches=ref([]),unassigned=ref([]),selected=ref([])
 const input = ref('')
 const messages = ref([])
+const historyBefore = ref(0)
 const tail = ref(0)
 const langBar = ref(false)
 const drawer = ref(false)
@@ -140,7 +142,16 @@ async function loadHistory(){
   const r=await csApi.history(token.value,visitor.value)
   if(!r.ok){tip(r.data?.detail||t('loadError'));return}
   messages.value=(r.data?.messages||[]).map(m=>({role:m.role==='user'?'me':'bot',text:m.content||''}))
+  historyBefore.value=r.data?.next_before||0
   nextTick(()=>{tail.value+=10000})
+}
+async function loadOlderHistory(){
+  if(!historyBefore.value)return
+  const r=await csApi.history(token.value,visitor.value,historyBefore.value)
+  if(!r.ok){tip(r.data?.detail||t('loadError'));return}
+  messages.value=[...(r.data?.messages||[]).map(m=>({role:m.role==='user'?'me':'bot',text:m.content||''})),...messages.value]
+  historyBefore.value=r.data?.next_before||0
+  tail.value=0
 }
 async function retryClaim(){if(await claimCurrentGuest()){await refreshSession();await loadHistory()}}
 async function doLogin(){
@@ -237,7 +248,7 @@ async function newSession(end=false){
   try{
     if(accountToken.value){
       if(end){const r=await csApi.endSession(token.value,'');if(!r.ok){tip(t('networkError'));return}}
-      messages.value=[];drawer.value=false;selected.value=[];await refreshSession();return
+      messages.value=[];historyBefore.value=0;drawer.value=false;selected.value=[];await refreshSession();return
     }
     if(end&&visitor.value){
       const r=await csApi.endSession(token.value,visitor.value)
@@ -246,7 +257,7 @@ async function newSession(end=false){
     }
     const r=await csApi.newSession(token.value)
     if(!r.ok||!r.data?.visitor){tip(t('initError'));return}
-    visitor.value=r.data.visitor;storage.set(customerSessionKey(token.value),visitor.value);messages.value=[];drawer.value=false;selected.value=[];await refreshSession()
+    visitor.value=r.data.visitor;storage.set(customerSessionKey(token.value),visitor.value);messages.value=[];historyBefore.value=0;drawer.value=false;selected.value=[];await refreshSession()
   }catch(e){tip(t('networkError'))}
 }
 async function setMode(mode){
@@ -320,6 +331,7 @@ onUnload(detachViewport)
 .langbtn { margin: 0; border: 1px solid #ddd; background: #fff; border-radius: 14px; font-size: 13px; line-height: 1.8; padding: 0 14px; }
 .langbtn::after { border: 0; }
 .log { flex: 1; min-height:0; overflow-y: auto; padding: 14px; box-sizing: border-box; }
+.history-more{margin:6px auto;padding:4px 14px;border:1px solid #d5e6ff;border-radius:16px;background:#fff;color:#1677ff;font-size:13px}
 .msg { max-width: 82%; padding: 9px 12px; border-radius: 12px; font-size: 15px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; margin-bottom: 10px; }
 .bot { background: #fff; align-self: flex-start; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
 .me { background: #1677ff; color: #fff; align-self: flex-end; }

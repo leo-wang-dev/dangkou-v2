@@ -1,6 +1,6 @@
 """Real browser/API regression for merchant supplier and template controls."""
 from playwright.sync_api import expect
-from audit.test_browser_round2 import server, site, browser, page, products, submit, TOKEN
+from audit.test_browser_round2 import server, site, browser, page, products, submit, approve_product_change, TOKEN
 from catalog import dynamic_import, tickets, dynamic_catalog
 
 
@@ -32,4 +32,5 @@ def test_merchant_template_type_delete_and_supplier_action(page, site):
     page.locator('#plist').get_by_role('button', name='编辑',exact=True).first.click()
     page.locator('#fg-supplier').fill('独立厂')
     submit(page)
+    approve_product_change(page)
     assert site['api'].get('/products/cat_a').json()['products'][0]['supplier'] == '独立厂'

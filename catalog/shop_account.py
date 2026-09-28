@@ -26,11 +26,11 @@ def account_session(conn, account_id: str):
     row = conn.execute('SELECT * FROM guest_sessions WHERE owner_id=?', (owner,)).fetchone()
     if row is None:
         now = time.time()
-        conn.execute('INSERT INTO guest_sessions(token_hash,owner_id,state,created_at,last_active_at,expires_at) VALUES(?,?,?,?,?,?)',
+        conn.execute('INSERT OR IGNORE INTO guest_sessions(token_hash,owner_id,state,created_at,last_active_at,expires_at) VALUES(?,?,?,?,?,?)',
                      (guest_sessions.digest(secrets.token_urlsafe(32)), owner, 'account', now, now, now + 10 * 365 * 86400))
         row = conn.execute('SELECT * FROM guest_sessions WHERE owner_id=?', (owner,)).fetchone()
     if not conn.execute('SELECT 1 FROM cs_customer WHERE account_id=?', (account_id,)).fetchone():
-        conn.execute('INSERT INTO cs_customer(id,tg_id,account_id) VALUES(?,?,?)',
+        conn.execute('INSERT OR IGNORE INTO cs_customer(id,tg_id,account_id) VALUES(?,?,?)',
                      (secrets.token_hex(6), owner, account_id))
     return row
 

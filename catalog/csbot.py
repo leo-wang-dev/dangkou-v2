@@ -99,12 +99,69 @@ def extract_photo_items(llm, data):
         items = CsBot._conservative_prices(items, CsBot._parse_items(reviewed))
     # 复核回显的名片透传条目不是商品，不进清单（名片只在初抽那轮分流）。
     items = [it for it in items if '名片' not in it]
+    _recover_missing_boxes(llm, data, items)
     for item in items:
         item.pop('__box_cleared__', None)
         if cards:
             for key in cs_supplier.FIELDS:
                 item.pop(key, None)
     return items, cards
+
+
+def _recover_missing_boxes(llm, data, items):
+    """Ask vision only for missing localization; never change reviewed product facts."""
+    def overlap(box, other):
+        area = (box[2] - box[0]) * (box[3] - box[1])
+        other_area = (other[2] - other[0]) * (other[3] - other[1])
+        x = max(0, min(box[2], other[2]) - max(box[0], other[0]))
+        y = max(0, min(box[3], other[3]) - max(box[1], other[1]))
+        return x * y / min(area, other_area)
+
+    occupied = []
+    missing = []
+    for i, item in enumerate(items):
+        box = item.get('__图框__')
+        if not CsBot._valid_product_box(box) or any(overlap(box, other) > .65 for other in occupied):
+            item.pop('__图框__', None)
+            missing.append(i)
+        else:
+            occupied.append(box)
+    if len(items) < 2 or not missing:
+        return
+    targets = [{'序号': i + 1, '型号或品名': items[i].get('型号或品名', '')} for i in missing]
+    prompt = (
+        '只做图像定位，不改商品名称、价格或条目数。请对照原图，为以下每个序号的商品主体定位图框，'
+        '坐标按原图宽高归一化到0到1000，格式为[左,上,右,下]。不要框整张图、价签或别的商品；'
+        '实在无法定位时填null。只返回JSON数组，每项仅含序号和图框：'
+        + json.dumps(targets, ensure_ascii=False)
+    )
+    try:
+        raw = llm.chat_vision(prompt, data).strip()
+        fence = re.search(r'```(?:json)?\s*([\s\S]*?)```', raw, re.I)
+        rows = json.loads(fence.group(1) if fence else raw)
+    except Exception:  # optional localization must not discard already reviewed notes
+        return
+    if not isinstance(rows, list):
+        return
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            index = int(row.get('序号')) - 1
+        except (TypeError, ValueError):
+            continue
+        if index not in missing or CsBot._valid_product_box(items[index].get('__图框__')):
+            continue
+        box = row.get('图框')
+        if not CsBot._valid_product_box(box):
+            continue
+        area = (box[2] - box[0]) * (box[3] - box[1])
+        if area < 5000 or area >= 850000:
+            continue
+        if any(overlap(box, other) > .65 for other in occupied):
+            continue
+        items[index]['__图框__'] = box
+        occupied.append(box)
 
 
 class CsBot:
