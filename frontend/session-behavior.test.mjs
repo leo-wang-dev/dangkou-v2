@@ -22,7 +22,7 @@ function harness(surface, endStatus) {
   const context=vm.createContext({console,Promise,Map,ref:value=>({value}),nextTick:fn=>fn(),onLoad(){},storage:store,sessionStorage:store,localStorage:store,
     location:{pathname:'/cs/chat/shop'},setTimeout(){},clearTimeout(){},encodeURIComponent,
     document:{getElementById:id=>{if(!nodes.has(id))nodes.set(id,node());return nodes.get(id)},createElement:node,createTextNode:t=>t,querySelectorAll:()=>[]},
-    uni:{showToast:x=>tips.push(x.title)},getBases:()=>({tool:'',cs:''}),
+    uni:{showToast:x=>tips.push(x.title)},customerSessionKey:token=>'h5v:'+token,getBases:()=>({tool:'',cs:''}),
     toolApi:{endSession:end,newGuest:issue,notes:state},csApi:{endSession:end,newSession:issue,session:state},
     fetch:async url=>{let r;if(url.includes('/end'))r=await end();else if(url==='guest'||url.endsWith('/session'))r=await issue();else r=await state();return {...r,json:async()=>r.data||{}}}
   })
@@ -58,4 +58,33 @@ for(const surface of ['static-chat','uni-chat'])test(`${surface} exposes retaine
   pending=true;await vm.runInContext('refreshSession()',h.context);assert.equal(visible(),true)
   await vm.runInContext('discardPhoto()',h.context);assert.equal(visible(),false)
   assert.deepEqual(h.calls,['mode','mode','discard'])
+})
+
+test('customer APIs keep validated tenant context across static and uni routes',async()=>{
+  const api=await import('./src/api.js')
+  const previousFetch=globalThis.fetch, previousLocation=globalThis.location
+  const previousStorage=globalThis.localStorage, values=new Map(), calls=[]
+  globalThis.localStorage={getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v)}
+  globalThis.fetch=async(url,options)=>{calls.push({url,options});return {ok:true,status:200,json:async()=>({})}}
+  try {
+    const mid='a'.repeat(24), prefix='/merchant/customer/'+mid
+    globalThis.location={pathname:'/tool/',href:'https://example.test/tool/'}
+    api.setCustomerTenant(mid)
+    await api.csApi.newSession('shop');await api.csApi.send('shop','hello','guest');await api.csApi.setMode('shop','guest','notes');await api.csApi.linkNotes('link')
+    assert.ok(calls.every(call=>call.url.startsWith(prefix+'/cs/')))
+    assert.equal(api.csApi.photoUrl('/cs/link/link/note/1/photo'),'https://example.test'+prefix+'/cs/link/link/note/1/photo')
+    assert.equal(api.customerSessionKey('shop'),'h5v:'+prefix+':shop')
+    api.setBases({cs:'https://example.test'})
+    assert.equal(api.getBases().cs,'https://example.test'+prefix)
+    api.setBases({});api.setCustomerTenant('https://attacker.invalid:1234')
+    assert.equal(api.getBases().cs,'')
+    globalThis.location.pathname=prefix+'/cs/chat/shop'
+    assert.equal(api.getBases().cs,prefix)
+    globalThis.location.pathname='/cs/chat/shop'
+    assert.equal(api.getBases().cs,'')
+    assert.equal(api.customerSessionKey('shop'),'h5v:shop')
+  } finally {
+    api.setCustomerTenant('');api.setBases({})
+    globalThis.fetch=previousFetch;globalThis.location=previousLocation;globalThis.localStorage=previousStorage
+  }
 })

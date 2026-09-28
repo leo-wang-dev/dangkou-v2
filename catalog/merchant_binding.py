@@ -127,14 +127,24 @@ def register(app):
             return FileResponse(Path(__file__).resolve().parent.parent / 'static' / path,
                                 headers={'Cache-Control':'no-cache'})
 
-    @app.api_route('/merchant/customer/{mid}/{path:path}',methods=['GET','PATCH'])
+    @app.api_route('/merchant/customer/{mid}/{path:path}',methods=['GET','POST','PATCH'])
     async def customer_proxy(mid: str, path: str, request: Request):
         # Narrow allowlist: never proxy merchant admin APIs or user-supplied hosts.
         if not re.fullmatch(r'[a-f0-9]{24}',mid):raise HTTPException(404)
         if request.method=='GET':
             asset=public_language_asset(path)
             if asset is not None:return asset
-        allowed=(path=='cs/list.html' and request.method=='GET') or re.fullmatch(r'cs/link/[A-Za-z0-9_-]{16,100}(?:/export\.xlsx|/note/[0-9]+(?:/photo)?)?',path)
+        chat = re.fullmatch(r'cs/chat/[A-Za-z0-9_-]{16,100}(?:/(session(?:/end)?|message|photo|lang|mode|pending-photo/discard|batches/confirm|list-token))?', path)
+        link = re.fullmatch(r'cs/link/[A-Za-z0-9_-]{16,100}(?:/(export\.xlsx|note/[0-9]+(?:/photo)?))?', path)
+        allowed = path == 'cs/list.html' and request.method == 'GET'
+        if chat:
+            action = chat[1]
+            allowed = (request.method == 'GET' and action in (None, 'session', 'list-token') or
+                       request.method == 'POST' and action in ('session', 'session/end', 'message', 'photo', 'lang', 'mode', 'pending-photo/discard', 'batches/confirm'))
+        if link:
+            action = link[1]
+            allowed = (request.method == 'GET' and (action is None or action == 'export.xlsx' or action.endswith('/photo')) or
+                       request.method == 'PATCH' and action is not None and re.fullmatch(r'note/[0-9]+', action))
         if not allowed:raise HTTPException(404)
         c=hub.connect()
         try:m=c.execute("SELECT port FROM merchant WHERE id=? AND state IN ('enabled','catalog_ready') AND runtime_status='running'",(mid,)).fetchone()
@@ -144,12 +154,19 @@ def register(app):
         from fastapi.responses import Response
         from . import cs_i18n
         language=request.headers.get('X-Customer-Language') or request.query_params.get('lang')
-        headers={'Content-Type':'application/json'}
+        headers={'Content-Type':request.headers.get('content-type','application/json')}
         if language:headers['X-Customer-Language']=cs_i18n.normalize_language(language)
-        body=await request.body()
-        if len(body)>20000:raise HTTPException(413)
+        photo = bool(chat and chat[1] == 'photo')
+        limit = int(os.environ.get('CATALOG_UPLOAD_MAX_BYTES',20*1024*1024)) + 65536 if photo else 20000
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > limit:
+                from fastapi.responses import JSONResponse
+                return JSONResponse({'detail':cs_i18n.t('uploadError', language), 'code':'upload_too_large'}, status_code=413)
+        body = bytes(body)
         try:
-            async with httpx.AsyncClient(trust_env=False,timeout=30) as client:
+            async with httpx.AsyncClient(trust_env=False,timeout=180) as client:
                 r=await client.request(request.method,f'http://127.0.0.1:{int(m[0])}/{path}',params=request.query_params,content=body,headers=headers)
         except httpx.HTTPError:raise HTTPException(503,'客服暂不可用') from None
         headers={k:v for k,v in r.headers.items() if k in ('content-type','content-disposition')}
@@ -218,7 +235,8 @@ def register(app):
         quote_route = (path=='quote' and request.method=='POST') or (
             request.method=='GET' and re.fullmatch(r'quotes/quote-[0-9a-f]{8}\.xlsx',path))
         # Never expose filesystem import, shop rebinding, arbitrary jobs or hub routes.
-        if not quote_route and path not in ('','index.html','upload','tickets','stats','categories') and not re.fullmatch(
+        chat_link = path == 'cs/chat-token' and request.method == 'POST'
+        if not chat_link and not quote_route and path not in ('','index.html','upload','tickets','stats','categories') and not re.fullmatch(
                 r'(?:products|tickets|img|ticketimg)/[^?#\\]+|categories/[^/?#]+/template\.xlsx', path):
             raise HTTPException(404)
         if '%' in path or any(part in ('.','..') for part in path.split('/')):raise HTTPException(404)

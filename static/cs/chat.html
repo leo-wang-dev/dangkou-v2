@@ -61,10 +61,13 @@
 <script src="../../customer-sources.js"></script>
 <script src="../../customer-i18n.js"></script>
 <script>
-const {t,label,display,request:customerFetch}=CustomerI18n;
+const {t,label,display}=CustomerI18n;
+const CUSTOMER_PREFIX = location.pathname.match(/^\/merchant\/customer\/[a-f0-9]{24}(?=\/)/)?.[0] || '';
+const customerFetch = (path, options) => CustomerI18n.request(CUSTOMER_PREFIX + path, options);
 
 const TOKEN = location.pathname.split('/').pop();
-let visitor = sessionStorage.getItem('h5v:'+TOKEN) || '';
+const VISITOR_KEY = 'h5v:' + (CUSTOMER_PREFIX ? CUSTOMER_PREFIX + ':' : '') + TOKEN;
+let visitor = sessionStorage.getItem(VISITOR_KEY) || '';
 let photoMode = '';
 let hasPending = false;
 let ready;
@@ -121,7 +124,7 @@ async function openList(){
     const r = await customerFetch(`/cs/chat/${TOKEN}/list-token?visitor=${encodeURIComponent(visitor)}`);
     const d = await r.json();
     if (d.token){
-      frame.src = `/cs/list.html?k=${encodeURIComponent(d.token)}`;
+      frame.src = `${CUSTOMER_PREFIX}/cs/list.html?k=${encodeURIComponent(d.token)}&lang=${CustomerI18n.language}`;
     } else {
       document.getElementById('dempty').hidden = false;
     }
@@ -133,11 +136,11 @@ async function newSession(end=false){
     if(end&&visitor){
       const ended=await customerFetch(`/cs/chat/${TOKEN}/session/end`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor})});
       if(!ended.ok&&![401,410].includes(ended.status)){tip(t('networkError'));return;}
-      visitor='';sessionStorage.removeItem('h5v:'+TOKEN);
+      visitor='';sessionStorage.removeItem(VISITOR_KEY);
     }
     const r=await customerFetch(`/cs/chat/${TOKEN}/session`,{method:'POST'}),d=await r.json();
     if(!r.ok||!d.visitor){tip(t('initError'));return;}
-    visitor=d.visitor;sessionStorage.setItem('h5v:'+TOKEN,visitor);log.replaceChildren();closeList();await refreshSession();
+    visitor=d.visitor;sessionStorage.setItem(VISITOR_KEY,visitor);log.replaceChildren();closeList();await refreshSession();
   }catch(e){tip(t('networkError'));}
 }
 async function refreshSession(){

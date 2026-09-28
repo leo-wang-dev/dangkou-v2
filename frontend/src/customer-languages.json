@@ -2819,6 +2819,36 @@
       "vi": "Mã của bạn là {code}. Hết hạn sau {seconds} giây. Bỏ qua email nếu bạn không yêu cầu.",
       "th": "รหัสของคุณคือ {code} หมดอายุใน {seconds} วินาที หากคุณไม่ได้ขอ โปรดละเว้นอีเมลนี้",
       "id": "Kode Anda adalah {code}. Kedaluwarsa dalam {seconds} detik. Abaikan email ini jika Anda tidak memintanya."
+    },
+    "uploadTooManyFiles": {
+      "zh": "每次只能上传一张图片。",
+      "en": "Upload one image at a time.",
+      "fr": "Envoyez une seule image à la fois.",
+      "es": "Sube una imagen cada vez.",
+      "pt": "Envie uma imagem de cada vez.",
+      "ru": "Загружайте по одному изображению.",
+      "ar": "حمّل صورة واحدة في كل مرة.",
+      "de": "Laden Sie jeweils ein Bild hoch.",
+      "ja": "画像は一度に1枚ずつアップロードしてください。",
+      "ko": "이미지를 한 번에 한 장씩 업로드하세요.",
+      "vi": "Mỗi lần chỉ tải lên một ảnh.",
+      "th": "อัปโหลดภาพครั้งละหนึ่งภาพ",
+      "id": "Unggah satu gambar setiap kali."
+    },
+    "uploadTooManyFields": {
+      "zh": "上传表单字段过多，请重试。",
+      "en": "Too many upload form fields. Please try again.",
+      "fr": "Trop de champs dans le formulaire. Réessayez.",
+      "es": "Demasiados campos en el formulario. Inténtalo de nuevo.",
+      "pt": "Demasiados campos no formulário. Tente novamente.",
+      "ru": "Слишком много полей формы. Повторите попытку.",
+      "ar": "عدد حقول نموذج الرفع كبير جدًا. حاول مرة أخرى.",
+      "de": "Zu viele Formularfelder. Bitte versuchen Sie es erneut.",
+      "ja": "アップロードフォームの項目が多すぎます。再試行してください。",
+      "ko": "업로드 양식의 필드가 너무 많습니다. 다시 시도하세요.",
+      "vi": "Biểu mẫu tải lên có quá nhiều trường. Vui lòng thử lại.",
+      "th": "ช่องในแบบฟอร์มอัปโหลดมากเกินไป โปรดลองอีกครั้ง",
+      "id": "Terlalu banyak kolom formulir unggahan. Silakan coba lagi."
     }
   }
 }

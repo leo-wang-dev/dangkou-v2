@@ -57,6 +57,7 @@ const { locale, dir, t, label, display, changeLanguage } = useCustomerLanguage('
 
 import { ref, nextTick } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import { setCustomerTenant, customerSessionKey } from '../../api.js'
 import { csApi, choosePhoto } from '../../api.js'
 import { storage } from '../../storage.js'
 import NoteTable from '../../components/note-table.vue'
@@ -162,11 +163,11 @@ async function newSession(end=false){
     if(end&&visitor.value){
       const r=await csApi.endSession(token.value,visitor.value)
       if(!r.ok&&![401,410].includes(r.status)){tip(t('networkError'));return}
-      visitor.value='';storage.remove('h5v:'+token.value)
+      visitor.value='';storage.remove(customerSessionKey(token.value))
     }
     const r=await csApi.newSession(token.value)
     if(!r.ok||!r.data?.visitor){tip(t('initError'));return}
-    visitor.value=r.data.visitor;storage.set('h5v:'+token.value,visitor.value);messages.value=[];drawer.value=false;selected.value=[];await refreshSession()
+    visitor.value=r.data.visitor;storage.set(customerSessionKey(token.value),visitor.value);messages.value=[];drawer.value=false;selected.value=[];await refreshSession()
   }catch(e){tip(t('networkError'))}
 }
 async function setMode(mode){
@@ -187,6 +188,7 @@ function manualBatch(){uni.showModal({title:t('newShopName'),editable:true,succe
 
 onLoad((options) => {
   options = options || {}
+  setCustomerTenant(options.mid || '')
   token.value = options.token || ''
   // #ifdef H5
   if (!token.value) {
@@ -196,7 +198,7 @@ onLoad((options) => {
   }
   // #endif
   if (!token.value) token.value = 'invalid-token'
-  visitor.value = storage.get('h5v:'+token.value)
+  visitor.value = storage.get(customerSessionKey(token.value))
   ready = visitor.value ? refreshSession() : newSession()
   // 首访先选语言；老访客直接欢迎（旧页用 sessionStorage，小程序无此能力，改持久标记）
   if (!storage.get('dk_lang_done')) {

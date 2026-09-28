@@ -311,3 +311,43 @@ def test_contact_handle_is_protected_and_new_handle_rejected():
     conn.execute('INSERT INTO cs_translation VALUES(?,?,?)',('fr','Hello','Bonjour @invented'));conn.commit()
     assert cs_i18n.translate_texts(conn,None,'fr',['Hello'],max_missing=0)[0]==cs_i18n.t('translationUnavailable','fr')+': Hello'
     conn.close()
+
+
+@pytest.mark.parametrize('surface', ['h5', 'central'])
+@pytest.mark.parametrize('kind', ['files', 'fields'])
+@pytest.mark.parametrize('language', ['ar', 'fr'])
+def test_multipart_counts_are_fixed_localized_errors(h5, tmp_path, surface, kind, language):
+    from catalog import cs_i18n, userapp
+    from fastapi.testclient import TestClient
+    app, _, photo = h5
+    if surface == 'central':
+        app = userapp.build_app(db_path=str(tmp_path/'central.db'), photo_dir=str(tmp_path/'central-photos'))
+    try:
+        with TestClient(app) as client:
+            route = '/cs/chat/test-shop/photo' if surface == 'h5' else '/photo'
+            parts = [('file', ('a.jpg', photo, 'image/jpeg'))]
+            if kind == 'files':
+                parts.append(('file', ('b.jpg', photo, 'image/jpeg')))
+            else:
+                parts += [('field'+str(i), (None, 'x')) for i in range(9)]
+            response = client.post(route, files=parts, headers={'X-Customer-Language':language})
+            assert response.status_code == 400
+            assert response.json() == {'detail':cs_i18n.t('uploadTooManyFiles' if kind == 'files' else 'uploadTooManyFields', language),
+                                       'code':'upload_too_many_'+kind}
+    finally:
+        if surface == 'central': app.state.conn.close()
+
+
+def test_multipart_handler_preserves_unrelated_framework_and_admin_errors():
+    from fastapi import FastAPI, HTTPException
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+    app=FastAPI();cs_i18n.install_errors(app,customer_only=True)
+    @app.get('/cs/unrelated')
+    def unrelated():raise StarletteHTTPException(418,'unchanged',headers={'X-Test':'yes'})
+    @app.get('/admin')
+    def admin():raise HTTPException(403,'管理权限不足')
+    with TestClient(app) as client:
+        response=client.get('/cs/unrelated',headers={'X-Customer-Language':'ar'})
+        assert response.status_code==418 and response.json()=={'detail':'unchanged'}
+        assert response.headers['X-Test']=='yes'
+        assert client.get('/admin',headers={'X-Customer-Language':'ar'}).json()=={'detail':'管理权限不足'}

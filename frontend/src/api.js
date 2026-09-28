@@ -24,12 +24,26 @@ if (typeof uni !== 'undefined') {  // node 冒烟导入时无 uni，退回同源
 }
 // #endif
 
+let customerTenant = ''
+export function setCustomerTenant(mid = '') {
+  customerTenant = /^[a-f0-9]{24}$/.test(mid) ? mid : ''
+}
+export function customerSessionKey(token) {
+  const base = getBases().cs
+  return 'h5v:' + (base ? base + ':' : '') + token
+}
+function customerPrefix() {
+  const path = typeof location !== 'undefined' ? (location.pathname || '') : ''
+  const mounted = path.match(/^\/merchant\/customer\/[a-f0-9]{24}(?=\/|$)/)?.[0]
+  return mounted || (customerTenant ? '/merchant/customer/' + customerTenant : '')
+}
+
 export function getBases() {
   let override = null
   try { override = JSON.parse(storage.get('dk_bases') || '') } catch (e) { override = null }
   return {
     tool: (override && override.tool) || DEFAULT_TOOL_BASE,
-    cs: (override && override.cs) || DEFAULT_CS_BASE
+    cs: customerPrefix() ? (((override && override.cs) || DEFAULT_CS_BASE).replace(/\/merchant\/customer\/[a-f0-9]{24}\/?$/, '').replace(/\/+$/, '') + customerPrefix()) : ((override && override.cs) || DEFAULT_CS_BASE)
   }
 }
 

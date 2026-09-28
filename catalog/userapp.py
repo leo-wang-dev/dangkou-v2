@@ -31,7 +31,7 @@ from .cs_export import render_notes
 from . import cs_i18n
 from .cs_supplier import normalize as normalize_fields
 from .csbot import CsBot, extract_photo_items
-from .request_lifecycle import drain_worker
+from .request_lifecycle import drain_worker, run_worker
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMAIL_RE = re.compile(r'[^\s@]+@[^\s@]+\.[^\s@]+\Z')
@@ -126,13 +126,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         return current_connection.get() or conn
 
     async def run_request_worker(request, work, *, model=False):
-        done = threading.Event()
-        request.state.database_worker_done = done
-        try:
-            return await anyio.to_thread.run_sync(
-                work, limiter=model_limiter if model else None)
-        finally:
-            done.set()
+        return await run_worker(request, work, limiter=model_limiter if model else None)
 
     @app.middleware('http')
     async def database_request(request, call_next):

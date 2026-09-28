@@ -14,6 +14,7 @@ const { locale, dir, t, label, display, changeLanguage } = useCustomerLanguage('
 
 import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import { setCustomerTenant, customerSessionKey } from '../../api.js'
 import NoteTable from '../../components/note-table.vue'
 
 function pickLang(lang){changeLanguage(lang)}
@@ -21,6 +22,7 @@ const k = ref('')
 
 onLoad((options) => {
   options = options || {}
+  setCustomerTenant(options.mid || '')
   k.value = options.k || ''
   // #ifdef H5
   if (!k.value) {

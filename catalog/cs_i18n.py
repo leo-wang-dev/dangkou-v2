@@ -78,11 +78,12 @@ def request_language(request, default='zh'):
 
 def install_errors(app, customer_only=False):
     from fastapi import HTTPException
+    from starlette.exceptions import HTTPException as StarletteHTTPException
     from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse
     from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
     async def error(request, exc):
-        if customer_only and not request.url.path.startswith('/cs/'):
+        if customer_only and not request.url.path.startswith(('/cs/', '/merchant/customer/')):
             return await http_exception_handler(request, exc)
         lang = request_language(request)
         source = str(exc.detail)
@@ -91,9 +92,20 @@ def install_errors(app, customer_only=False):
             detail = t('requestInvalid', lang) + ' — ' + t('translationUnavailable', lang) + ': ' + source
         return JSONResponse({'detail':detail, 'code':source}, status_code=exc.status_code, headers=exc.headers)
     async def validation(request, exc):
-        if customer_only and not request.url.path.startswith('/cs/'):
+        if customer_only and not request.url.path.startswith(('/cs/', '/merchant/customer/')):
             return await request_validation_exception_handler(request, exc)
         return JSONResponse({'detail':t('requestInvalid',request_language(request)), 'code':'invalid_request'},status_code=422)
+    async def multipart_error(request, exc):
+        key = {
+            'Too many files. Maximum number of files is 1.': ('uploadTooManyFiles', 'upload_too_many_files'),
+            'Too many fields. Maximum number of fields is 8.': ('uploadTooManyFields', 'upload_too_many_fields'),
+        }.get(str(exc.detail))
+        customer = not customer_only or request.url.path.startswith(('/cs/', '/merchant/customer/'))
+        if exc.status_code == 400 and key and customer:
+            return JSONResponse({'detail':t(key[0], request_language(request)), 'code':key[1]},
+                                status_code=exc.status_code, headers=exc.headers)
+        return await http_exception_handler(request, exc)
+    app.add_exception_handler(StarletteHTTPException, multipart_error)
     app.add_exception_handler(HTTPException, error)
     app.add_exception_handler(RequestValidationError, validation)
 

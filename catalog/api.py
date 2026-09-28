@@ -111,7 +111,7 @@ def register_routes(app: FastAPI):
     import threading
     from contextvars import ContextVar
     from . import db, guest_sessions, note_batches
-    from .request_lifecycle import drain_worker
+    from .request_lifecycle import drain_worker, run_worker
     current_connection = ContextVar('catalog_request_connection', default=None)
     memory_lock = asyncio.Lock()
     model_limiter = anyio.CapacityLimiter(4)
@@ -120,13 +120,7 @@ def register_routes(app: FastAPI):
         return current_connection.get() or app.state.conn
 
     async def run_request_worker(request, work, *, model=False):
-        done = threading.Event()
-        request.state.database_worker_done = done
-        try:
-            return await anyio.to_thread.run_sync(
-                work, limiter=model_limiter if model else None)
-        finally:
-            done.set()
+        return await run_worker(request, work, limiter=model_limiter if model else None)
 
     @app.middleware('http')
     async def database_request(request, call_next):

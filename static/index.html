@@ -715,7 +715,7 @@ show('review');
 async function shareChat(){
   try{
     const r = await api('/cs/chat-token', {method:'POST'});
-    const url = location.origin + '/cs/chat/' + r.chat_token;
+    const url = location.origin + MANAGE_PREFIX.replace('/merchant/manage/', '/merchant/customer/') + '/cs/chat/' + r.chat_token;
     if (navigator.clipboard) { await navigator.clipboard.writeText(url); alert('客服链接已复制，发给采购员即可打开对话：\n' + url); }
     else alert('客服链接（发给采购员即可）：\n' + url);
   }catch(e){ alert('生成失败：' + e.message); }
