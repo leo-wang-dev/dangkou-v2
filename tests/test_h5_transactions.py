@@ -67,6 +67,39 @@ def test_successful_photo_commits_note_candidates_and_log(h5):
     assert _count(database, 'cs_conversation_log') == 1
 
 
+def test_search_service_failure_is_not_reported_as_no_matching_product(h5, monkeypatch):
+    from catalog import customer_catalog
+
+    app, database, photo = h5
+    monkeypatch.setenv('CATALOG_CS_API_URL', 'http://merchant')
+    monkeypatch.setattr(customer_catalog, 'candidates',
+                        lambda *_: (_ for _ in ()).throw(customer_catalog.CatalogUnavailable('offline')))
+    with TestClient(app, raise_server_exceptions=False) as client:
+        visitor = app.state.test_guests['failure']
+        client.post('/cs/chat/test-shop/mode', json={'visitor': visitor, 'mode': 'search'})
+        response = client.post('/cs/chat/test-shop/photo', data={'visitor': visitor},
+                               files={'file': ('p.jpg', photo, 'image/jpeg')})
+    assert response.status_code == 503
+    assert '识图暂不可用' in response.json()['detail']
+    assert _count(database, 'cs_photo_candidates') == 0
+
+
+def test_notes_photo_still_records_when_catalog_search_is_unavailable(h5, monkeypatch):
+    from catalog import customer_catalog
+
+    app, database, photo = h5
+    monkeypatch.setenv('CATALOG_CS_API_URL', 'http://merchant')
+    monkeypatch.setattr(customer_catalog, 'candidates',
+                        lambda *_: (_ for _ in ()).throw(customer_catalog.CatalogUnavailable('offline')))
+    with TestClient(app, raise_server_exceptions=False) as client:
+        visitor = app.state.test_guests['other']
+        client.post('/cs/chat/test-shop/mode', json={'visitor': visitor, 'mode': 'notes'})
+        response = client.post('/cs/chat/test-shop/photo', data={'visitor': visitor},
+                               files={'file': ('p.jpg', photo, 'image/jpeg')})
+    assert response.status_code == 200
+    assert _count(database, 'cs_note') == 1
+
+
 def test_successful_boss_handoff_commits_outbox(h5):
     app, database, _ = h5
     with TestClient(app) as client:

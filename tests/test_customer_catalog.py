@@ -53,6 +53,26 @@ def test_bot_calls_merchant_api_and_observes_live_changes(env, monkeypatch):
     assert photo_inquiry.candidates(conn, [{'型号或品名': 'MODEL-1'}], b'photo') == []
 
 
+def test_photo_candidate_remote_request_ignores_non_text_vision_metadata(env, monkeypatch):
+    conn, client, _ = env
+    monkeypatch.setenv('CATALOG_CS_API_URL', 'http://merchant')
+    monkeypatch.setenv('CATALOG_CS_SERVICE_TOKEN', 'customer-reader')
+    sent = []
+
+    def transport(_session, method, url, **kwargs):
+        sent.append(kwargs['json'])
+        return client.request(method, url.removeprefix('http://merchant'),
+                              headers=kwargs['headers'], json=kwargs['json'])
+
+    monkeypatch.setattr('requests.sessions.Session.request', transport)
+    found = photo_inquiry.candidates(conn, [{
+        '型号或品名': 'SUPER V&G MODEL-1', '__图框__': [0, 279, 1000, 740],
+        '颜色': '黑色',
+    }], b'photo')
+    assert [item['name'] for item in found] == ['MODEL-1']
+    assert sent[-1]['fields'] == [{'型号或品名': 'SUPER V&G MODEL-1'}]
+
+
 def test_wrong_shop_rejected_and_price_handoff_survives_api_failure(env, monkeypatch):
     conn, _, bot = env
     monkeypatch.setenv('CATALOG_CS_API_URL', 'http://merchant')

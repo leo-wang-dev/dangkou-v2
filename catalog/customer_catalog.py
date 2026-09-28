@@ -59,8 +59,14 @@ def products(conn):
 
 
 def candidates(conn, fields, photo):
+    # The vision result also contains crop coordinates and other structured
+    # review metadata. The search API accepts only text fields, and matching
+    # uses only these two product-name keys.
+    names = [{key: item[key] for key in ('型号或品名', '型号')
+              if isinstance(item.get(key), str)}
+             for item in fields if isinstance(item, dict)]
     return remote(conn, '/cs/catalog/search', {
-        'fields': fields, 'image_base64': base64.b64encode(photo).decode(),
+        'fields': names, 'image_base64': base64.b64encode(photo).decode(),
     })['candidates']
 
 

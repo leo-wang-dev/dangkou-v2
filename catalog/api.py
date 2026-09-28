@@ -1336,14 +1336,17 @@ def register_routes(app: FastAPI):
         return {'reply': reply}
 
     def _process_guest_photo(request, visitor, data, mode, pending_path=''):
-        from . import cs_chat, photo_inquiry, merchant_policy
+        from . import cs_chat, photo_inquiry, merchant_policy, customer_catalog
         session = _session(request, visitor)
         bot = cs_chat.H5Bot(request_conn(), api=None)
         bot._processing = True
         request.state.created_photos = [pending_path] if pending_path else []
         bot.created_photos = request.state.created_photos
         # All vision/catalog/policy calls precede the final writer transaction.
-        path, items, found, cards = bot._prepare_photo(None, data, mode=mode)
+        try:
+            path, items, found, cards = bot._prepare_photo(None, data, mode=mode)
+        except customer_catalog.CatalogUnavailable as exc:
+            raise HTTPException(503, '商品识图暂不可用，请重试') from exc
         rule = merchant_policy.photo_rule(bot, data, found)
         lang = cs_i18n.request_language(request)
         from . import llm as translation_model

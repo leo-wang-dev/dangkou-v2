@@ -17,10 +17,7 @@ def product(conn, category, product_id):
 def candidates(conn, fields, photo):
     if os.environ.get('CATALOG_CS_API_URL'):
         from . import customer_catalog
-        try:
-            return customer_catalog.candidates(conn, fields, photo)
-        except customer_catalog.CatalogUnavailable:
-            return []  # Keep photo bookkeeping; never substitute an old catalog.
+        return customer_catalog.candidates(conn, fields, photo)
     return local_candidates(conn, fields, photo)
 
 

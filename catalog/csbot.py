@@ -176,8 +176,14 @@ class CsBot:
         if hasattr(self, 'created_photos'):
             self.created_photos.append(path)
         items, cards = extract_photo_items(self.llm, data)
-        from . import photo_inquiry
-        return path, items, photo_inquiry.candidates(self.conn, items, data), cards
+        from . import customer_catalog, photo_inquiry
+        try:
+            found = photo_inquiry.candidates(self.conn, items, data)
+        except customer_catalog.CatalogUnavailable:
+            if mode != 'notes':
+                raise
+            found = []  # A catalog outage must not discard the buyer's photo notes.
+        return path, items, found, cards
 
     @staticmethod
     def _valid_product_box(box):
