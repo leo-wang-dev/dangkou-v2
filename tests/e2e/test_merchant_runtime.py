@@ -113,10 +113,33 @@ def test_two_live_workers_pause_resume(tmp_path,monkeypatch):
                 with sync_playwright() as browser_api:
                     browser=browser_api.chromium.launch();page=browser.new_page();errors=[]
                     page.on('pageerror',lambda err:errors.append(str(err)))
+                    # Existing customer prefix must initialize assets, edit and export.
+                    from playwright.sync_api import expect
+                    from catalog import cs_i18n
+                    page.add_init_script("localStorage.setItem('dk_lang','fr')")
+                    customer='/merchant/customer/'+ids[0]+'/cs/list.html?k='+'123456'+'x'*24
+                    page.goto('http://127.0.0.1:'+str(port)+customer)
+                    cell=page.locator('td[data-field="型号或品名"]')
+                    expect(cell).to_have_text('123456')
+                    patches=[];page.on('request',lambda req:patches.append(req.url) if req.method=='PATCH' else None)
+                    cell.focus();page.locator('#export').focus()
+                    assert not patches
+                    cell.fill('PREFIX-EDIT');page.locator('#export').focus()
+                    expect(cell).to_have_text('PREFIX-EDIT')
+                    expect(page.locator('#tip')).to_have_text(cs_i18n.t('saved','fr'))
+                    with page.expect_download() as downloaded:page.locator('#export').click()
+                    import openpyxl
+                    import io
+                    ws=openpyxl.load_workbook(io.BytesIO(Path(downloaded.value.path()).read_bytes())).active
+                    assert 'PREFIX-EDIT' in [cell.value for row in ws for cell in row]
+                    assert cs_i18n.t('modelHeader','fr') in [cell.value for row in ws for cell in row]
                     page.goto('http://127.0.0.1:'+str(port)+urlsplit(links[0]).path+'?'+urlsplit(links[0]).query)
                     page.locator('#v-products').click()
                     page.get_by_text('ITEM-123456',exact=True).wait_for()
                     assert page.get_by_text('ITEM-234567',exact=True).count()==0
+                    page.locator('.pcard',has_text='ITEM-123456').get_by_role('button',name='生成报价').click()
+                    expect(page.locator('#quote-language option')).to_have_count(13)
+                    page.locator('#modal').get_by_role('button',name='关闭',exact=True).click()
                     page.get_by_role('button',name='新增商品').click()
                     page.locator('#fg-model').fill('BROWSER-NEW')
                     page.locator('#modalBox').get_by_role('button',name='提交').click()

@@ -340,3 +340,69 @@ def test_one_tg_owner_can_switch_between_isolated_shops(c,tmp_path,monkeypatch):
         assert hub.account(c2,'123')['id']==first
         assert hub.account(c2,'999') is None
     finally:c2.close()
+
+
+def test_prefixed_language_assets_customer_and_quote_boundaries(c,client,h5,monkeypatch,tmp_path):
+    import socket,threading,uvicorn,io
+    import openpyxl
+    from fastapi.staticfiles import StaticFiles
+    from pathlib import Path
+    from catalog import notify,cs_i18n
+    from tests.test_quote import _mkdb
+    app,_,_=h5
+    source,_=_mkdb(tmp_path,n=1,dims_only=False)
+    for table in ('category_template','product_dynamic'):
+        for row in source.execute(f'SELECT * FROM {table}').fetchall():
+            row=dict(row)
+            if 'shop_id' in row:row['shop_id']=app.state.conn.execute('SELECT shop_id FROM shop_profile').fetchone()[0]
+            app.state.conn.execute(f'INSERT INTO {table}({",".join(row)}) VALUES({",".join("?" for _ in row)})',tuple(row.values()))
+    source.close()
+    token='customer-link-123456789'
+    app.state.conn.execute("INSERT INTO cs_customer(id,tg_id) VALUES('prefixed','prefixed')")
+    app.state.conn.execute("INSERT INTO cs_link(token,customer_id) VALUES(?,'prefixed')",(token,))
+    app.state.conn.execute("INSERT INTO cs_note(customer_id,fields_json,status) VALUES('prefixed',?,'confirmed')",(json.dumps({'型号或品名':'MODEL-1','备注':'红色外壳'}),))
+    app.state.conn.commit()
+    app.mount('/',StaticFiles(directory=str(Path(__file__).resolve().parents[1]/'static'),html=True))
+    monkeypatch.setattr(notify,'push_file',lambda *a,**kw:None)
+    with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
+    server=uvicorn.Server(uvicorn.Config(app,host='127.0.0.1',port=port,log_level='error'));thread=threading.Thread(target=server.run);thread.start()
+    try:
+        for _ in range(100):
+            if server.started:break
+            time.sleep(.02)
+        mids=[]
+        for owner in ('123','456'):
+            finish(c,owner);m=hub.account(c,owner);mids.append(m['id'])
+            binding.write_secret(binding.credentials(m['id']),{'api_token':'test-token'})
+            c.execute("UPDATE merchant SET state='catalog_ready',runtime_status='running',port=?,manage_hash=?,manage_expires=? WHERE id=?",(port,hub.digest('key-'+owner),int(time.time())+100,m['id']))
+        c.commit()
+        manage='/merchant/manage/'+mids[0];customer='/merchant/customer/'+mids[0]
+        for prefix in (manage,customer):
+            for asset in ('catalog','sources','i18n'):
+                r=client.get(prefix+'/customer-'+asset+'.js')
+                assert r.status_code==200,(prefix,asset,r.text)
+        headers={'X-Service-Token':'key-123'}
+        result=client.post(manage+'/quote',headers=headers,json={'items':[{'category':'test_cat','product_id':'r0','quantity':50}],'target_language':'ar'})
+        assert result.status_code==200,result.text
+        file=client.get(manage+result.json()['download_url'],headers=headers)
+        assert file.status_code==200
+        assert openpyxl.load_workbook(io.BytesIO(file.content)).active.sheet_view.rightToLeft
+        assert client.post('/merchant/manage/'+mids[1]+'/quote',headers=headers,json={}).status_code==401
+        assert client.get('/merchant/manage/'+mids[1]+result.json()['download_url'],headers=headers).status_code==401
+        assert client.get(manage+'/quote',headers=headers).status_code==404
+        assert client.post(manage+result.json()['download_url'],headers=headers).status_code==404
+        assert client.get(manage+'/quotes/other.xlsx',headers=headers).status_code==404
+        r=client.get(customer+'/cs/link/'+token,headers={'X-Customer-Language':'fr'})
+        assert r.status_code==200
+        note=r.json()['notes'][0]
+        assert cs_i18n.t('translationUnavailable','fr') in note['display_fields']['备注']
+        edit=client.patch(customer+'/cs/link/'+token+'/note/'+str(note['id']),headers={'X-Customer-Language':'fr'},json={'field':'型号或品名','value':'MODEL-2'})
+        assert edit.status_code==200
+        app.state.conn.execute("UPDATE cs_link SET expires_at=datetime('now','-1 day') WHERE token=?",(token,));app.state.conn.commit()
+        error=client.get(customer+'/cs/link/'+token,headers={'X-Customer-Language':'fr'})
+        assert error.status_code==410 and error.json()['detail']==cs_i18n.fixed('链接已过期','fr')
+        assert client.get(customer+'/quote').status_code==404
+    finally:server.should_exit=True;thread.join(10);assert not thread.is_alive()
+
+
+from tests.test_h5_transactions import h5

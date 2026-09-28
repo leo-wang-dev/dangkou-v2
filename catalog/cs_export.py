@@ -78,22 +78,6 @@ def _sheet_data(notes):
     return items, keys
 
 
-_LITERAL_FIELDS = frozenset({
-    '型号或品名', '型号', '产品型号', '货号', '品牌', '档口名称', '店铺名称',
-    '供应商', '供应商名称', '供应商联系人', '联系人', '供应商联系方式',
-    '联系方式', '电话', '手机', '邮箱', '网址', '档口号地址', '地址',
-    '价格', '单价', '金额', '数量', '装箱数', '体积或尺寸',
-    'model', 'modelid', 'modelnumber', 'sku', 'productid', 'itemno', 'id', 'brand',
-    'supplier', 'suppliername', 'shopname', 'contact', 'contactperson',
-    'phone', 'telephone', 'email', 'url', 'website', 'address',
-    'price', 'unitprice', 'amount', 'quantity', 'qty', 'cartons', 'pcsctn', 'dimensions',
-})
-
-
-def _literal_field(key):
-    return re.sub(r'[\W_]', '', str(key).casefold()) in _LITERAL_FIELDS
-
-
 def _display_translations(prepared, lang, conn, llm):
     """Plan every worksheet together before any translation cache writes."""
     if lang == 'zh':
@@ -106,7 +90,7 @@ def _display_translations(prepared, lang, conn, llm):
         for item in items:
             for key in keys:
                 value = item.get(key, '')
-                if _literal_field(key):
+                if cs_i18n.literal_field(key):
                     if value not in EMPTY_TOKENS:
                         protected.append(str(value))
                 elif isinstance(value, str) and cs_i18n.display_value(value, lang) == value:
@@ -134,7 +118,7 @@ def _render_sheet(notes, ws, card, lang, translations, items, keys):
         return translations.get(value, cs_i18n.fixed(value, lang))
 
     def display(key, value):
-        if _literal_field(key):
+        if cs_i18n.literal_field(key):
             return cs_i18n.display_value(value, lang)
         localized = cs_i18n.display_value(value, lang)
         if not isinstance(value, str) or localized != value:

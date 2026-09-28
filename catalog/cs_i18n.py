@@ -249,7 +249,7 @@ def _save_cache(conn, lang, pairs, commit: bool = True):
 
 
 # Numbers, identifiers, contact data and URLs are protected by occurrence, including repeats.
-_LITERAL = re.compile(r'https?://[^\s<>）)]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\+?\d[\d ()-]{7,}\d|(?=[A-Za-z0-9_./-]*\d)[A-Za-z][A-Za-z0-9_./-]*|(?:[$€¥£]\s*)?\d+(?:[.,]\d+)*(?:%|\s*(?:USD|CNY|EUR|RMB))?', re.I)
+_LITERAL = re.compile(r'https?://[^\s<>）)]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?<!\w)@[A-Za-z0-9_]+|\+?\d[\d ()-]{7,}\d|(?=[A-Za-z0-9_./-]*\d)[A-Za-z][A-Za-z0-9_./-]*|(?:[$€¥£]\s*)?\d+(?:[.,]\d+)*(?:%|\s*(?:USD|CNY|EUR|RMB))?', re.I)
 
 
 def _protect(text, protected):
@@ -263,7 +263,16 @@ def _protect(text, protected):
     return pattern.sub(replace, text), pairs
 
 
-def translate_texts(conn, llm, lang, texts, *, commit=True, max_missing=None, protected=()):
+def _valid_translation(source, target, protected):
+    if not isinstance(target, str) or not target.strip() or target == source:
+        return False
+    if re.search(r'⟦DK\d+⟧', target):
+        return False
+    # Compare complete inventories, including NEW amounts/contact data/URLs.
+    return Counter(_protect(source, protected)[1].values()) == Counter(_protect(target, protected)[1].values())
+
+
+def translate_texts(conn, llm, lang, texts, *, commit=True, max_missing=None, protected=(), write_cache=True):
     lang = normalize_language(lang)
     texts = [str(x or '') for x in texts]
     if lang == 'zh':
@@ -284,7 +293,7 @@ def translate_texts(conn, llm, lang, texts, *, commit=True, max_missing=None, pr
         masks[src] = (masked,literals)
     if wanted:
         stored=_load_cache(conn,lang,wanted)
-        cache.update({src:dst for src,dst in stored.items() if all(dst.count(v)==src.count(v) for v in masks[src][1].values())})
+        cache.update({src:dst for src,dst in stored.items() if _valid_translation(src,dst,protected)})
     missing = [src for src in wanted if src not in cache]
     new = {}
     if max_missing is None or len(missing) <= max_missing:
@@ -304,14 +313,15 @@ def translate_texts(conn, llm, lang, texts, *, commit=True, max_missing=None, pr
                         continue
                     for token,value in literals.items():
                         dst=dst.replace(token,value)
-                    if not all(dst.count(v)==src.count(v) for v in literals.values()):
+                    if not _valid_translation(src,dst,protected):
                         continue
                     new[src]=dst
             except Exception:
                 continue
     # All external calls finish before the first cache write, even across batches.
     if new:
-        _save_cache(conn,lang,new,commit=commit)
+        if write_cache:
+            _save_cache(conn,lang,new,commit=commit)
         cache.update(new)
     return [cache.get(src, t('translationUnavailable',lang)+': '+src) for src in texts]
 
@@ -320,13 +330,70 @@ def translate_text(conn,llm,lang,text,*,commit=True,protected=()):
     return '\n'.join(translate_texts(conn,llm,lang,str(text).split('\n'),commit=commit,protected=protected))
 
 
-def receipt(items, cards, lang):
-    """Fixed receipt grammar with literal extracted data kept separate from labels."""
+_LITERAL_FIELDS = frozenset({
+    '型号或品名', '型号', '产品型号', '货号', '品牌', '档口名称', '店铺名称',
+    '供应商', '供应商名称', '供应商联系人', '联系人', '供应商联系方式',
+    '联系方式', '电话', '手机', '邮箱', '网址', '档口号地址', '地址',
+    '价格', '单价', '金额', '数量', '装箱数', '体积或尺寸',
+    'model', 'modelid', 'modelnumber', 'sku', 'productid', 'itemno', 'id', 'brand',
+    'supplier', 'suppliername', 'shopname', 'contact', 'contactperson',
+    'phone', 'telephone', 'email', 'url', 'website', 'address',
+    'price', 'unitprice', 'amount', 'quantity', 'qty', 'cartons', 'pcsctn', 'dimensions',
+})
+
+
+def literal_field(key):
+    return re.sub(r'[\W_]', '', str(key).casefold()) in _LITERAL_FIELDS
+
+
+def project_fields(conn, llm, lang, fields, *, write_cache=True):
+    """Separate localized display from authoritative raw keys/values, in one batch."""
+    lang = normalize_language(lang)
+    sources, protected = [], []
+    for row in fields:
+        for key, value in row.items():
+            if key == '__图框__':
+                continue
+            sources.append(key)
+            if literal_field(key):
+                if value is not None and display_value(value, lang) == value:
+                    protected.append(str(value))
+            elif isinstance(value, str) and display_value(value, lang) == value:
+                sources.append(value)
+    sources = list(dict.fromkeys(sources))
+    private = conn is None
+    if private:
+        import sqlite3
+        conn = sqlite3.connect(':memory:')
+        conn.row_factory = sqlite3.Row
+    try:
+        translated = translate_texts(conn, llm, lang, sources, protected=protected,
+            commit=False, write_cache=write_cache,
+            max_missing=0 if conn.in_transaction or llm is None else None)
+        mapping = dict(zip(sources, translated))
+    finally:
+        if private: conn.close()
+    return [{'display_labels':{k:mapping.get(k,fixed(k,lang)) for k in row if k!='__图框__'},
+             'display_fields':{k:(display_value(v,lang) if literal_field(k) or not isinstance(v,str)
+                 or display_value(v,lang)!=v else mapping.get(v,v))
+                 for k,v in row.items() if k!='__图框__'}} for row in fields]
+
+
+def project_notes(conn, llm, lang, notes):
+    projections = project_fields(conn, llm, lang, [n['fields'] for n in notes])
+    return [{**n, **display} for n,display in zip(notes, projections)]
+
+
+def receipt(items, cards, lang, *, conn=None, llm=None):
+    # Photo callers prepare this before business writes; no translation cache writer.
+    projected = project_fields(conn, llm, lang, [*items, *cards], write_cache=False)
+    def text(row):
+        return '; '.join(f"{row['display_labels'][k]}={v}" for k,v in row['display_fields'].items())
     lines = [t('recorded',lang)]
-    for i,fields in enumerate(items,1):
-        lines.append(f'【{i}】' + '; '.join(f'{fixed(k,lang)}={display_value(v,lang)}' for k,v in fields.items() if k!='__图框__'))
-    for card in cards:
-        lines.append(t('newCardPending',lang) + ': ' + '; '.join(f'{fixed(k,lang)}={display_value(v,lang)}' for k,v in card.items()))
+    for i,row in enumerate(projected[:len(items)],1):
+        lines.append(f'【{i}】' + text(row))
+    for row in projected[len(items):]:
+        lines.append(t('newCardPending',lang) + ': ' + text(row))
     return '\n'.join(lines + [t('recordedPrice',lang)])
 
 

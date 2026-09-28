@@ -174,14 +174,14 @@ async function openList(){
       }
       const fields = Object.entries(n.fields || {})
         .filter(([k]) => k !== '__图框__')
-        .map(([k, v]) => label(k) + '=' + display(v)).join('\n');
+        .map(([k, v]) => (n.display_labels?.[k] ?? label(k)) + '=' + (n.display_fields?.[k] ?? display(v))).join('\n');
       const wrap = document.createElement('div');
       wrap.className = 'f';
       wrap.textContent = '【' + (i + 1) + '】\n' + fields;
-      const t = document.createElement('div');
-      t.className = 't';
-      t.textContent = n.created_at || '';
-      wrap.appendChild(t);
+      const timestamp = document.createElement('div');
+      timestamp.className = 't';
+      timestamp.textContent = n.created_at || '';
+      wrap.appendChild(timestamp);
       div.appendChild(wrap);
       list.appendChild(div);
     });

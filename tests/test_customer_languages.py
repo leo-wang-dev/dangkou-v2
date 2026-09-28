@@ -195,3 +195,119 @@ def test_receipt_localizes_missing_data_without_changing_prices_or_models():
     value=cs_i18n.receipt([{'型号或品名':'KS-1100','颜色':'未拍到','价格':'66.95（照片识别，待确认）'}],[],'ar')
     assert '未拍到' not in value and '照片识别' not in value
     assert 'KS-1100' in value and '66.95' in value
+
+
+@pytest.mark.parametrize('cached',[False,True])
+def test_translation_rejects_new_monetary_literal(cached):
+    conn=sqlite3.connect(':memory:');conn.row_factory=sqlite3.Row
+    source='Order KS-1100 at 66.95 USD'
+    if cached:
+        cs_i18n.ensure_tables(conn)
+        conn.execute('INSERT INTO cs_translation VALUES(?,?,?)',('fr',source,'Commander KS-1100 at 66.95 USD 99.00 USD'));conn.commit()
+    class Bad:
+        def chat_text(self,prompt,messages,**kw):
+            return json.dumps([x.replace('Order','Commander')+' 99.00 USD' for x in json.loads(messages[0]['content'])])
+    assert cs_i18n.translate_texts(conn,Bad(),'fr',[source])[0]==cs_i18n.t('translationUnavailable','fr')+': '+source
+    conn.close()
+
+
+def test_unchanged_chinese_cache_retries_then_falls_back_honestly():
+    conn=sqlite3.connect(':memory:');conn.row_factory=sqlite3.Row
+    cs_i18n.ensure_tables(conn);conn.execute('INSERT INTO cs_translation VALUES(?,?,?)',('fr','红色外壳','红色外壳'));conn.commit()
+    class Bad:
+        calls=0
+        def chat_text(self,*args,**kw):self.calls+=1;return '["红色外壳"]'
+    model=Bad()
+    assert cs_i18n.translate_texts(conn,model,'fr',['红色外壳'])[0]==cs_i18n.t('translationUnavailable','fr')+': 红色外壳'
+    assert model.calls==1
+    conn.close()
+
+
+@pytest.mark.parametrize('kind',['central','shop'])
+@pytest.mark.parametrize('failure',[False,True])
+def test_photo_and_list_prose_projection_preserves_source_outside_writer(h5,tmp_path,monkeypatch,kind,failure):
+    from catalog import llm
+    fields={'型号或品名':'KS-1100','颜色':'红色','其他':'可折叠便于收纳'}
+    app,path,photo=h5
+    class Model:
+        calls=0
+        def chat_vision(self,*args,**kw):return json.dumps([fields])
+        def chat_text(self,prompt,messages,**kw):
+            self.calls+=1
+            with sqlite3.connect(path,timeout=.2) as writer:writer.execute("INSERT INTO display_writes VALUES('during model')")
+            if failure:raise RuntimeError('offline')
+            return json.dumps([s.replace('红色','Rouge').replace('可折叠便于收纳','Pliable pour le rangement').replace('商品框缺失或无效，暂用整张照片','Photo complète') for s in json.loads(messages[0]['content'])])
+    model=Model()
+    if kind=='central':
+        path=tmp_path/'central-display.db';app=userapp.build_app(str(path),str(tmp_path/'central-photos'),str(tmp_path/'codes'),llm=model)
+    else:
+        monkeypatch.setattr(llm,'chat_vision',model.chat_vision);monkeypatch.setattr(llm,'chat_text',model.chat_text)
+    app.state.conn.execute('CREATE TABLE display_writes(value TEXT)');app.state.conn.commit()
+    with TestClient(app) as client:
+        headers={'X-Customer-Language':'fr'}
+        if kind=='central':
+            guest=client.post('/guest').json()['guest'];photo_route='/photo?guest='+guest;data={}
+        else:
+            guest=client.post('/cs/chat/test-shop/session').json()['visitor']
+            client.post('/cs/chat/test-shop/mode',json={'visitor':guest,'mode':'notes'})
+            photo_route='/cs/chat/test-shop/photo';data={'visitor':guest}
+        response=client.post(photo_route,headers=headers,data=data,files={'file':('p.jpg',photo)})
+        assert response.status_code==200,response.text
+        expected=(cs_i18n.t('translationUnavailable','fr')+': 可折叠便于收纳') if failure else 'Pliable pour le rangement'
+        assert expected in response.json()['reply']
+        assert 'KS-1100' in response.json()['reply']
+        if kind=='central':r=client.post('/notes?guest='+guest,headers=headers)
+        else:
+            link=client.get('/cs/chat/test-shop/list-token',params={'visitor':guest}).json()['token']
+            r=client.get('/cs/link/'+link,headers=headers)
+        assert r.status_code==200,r.text
+        note=r.json()['notes'][0]
+        assert note['fields']['其他']==fields['其他']
+        assert note['display_fields']['其他']==expected
+        assert note['display_fields']['型号或品名']=='KS-1100'
+        assert note['display_labels']['其他']==cs_i18n.fixed('其他','fr')
+        table='notes' if kind=='central' else 'cs_note'
+        assert json.loads(app.state.conn.execute(f'SELECT fields_json FROM {table}').fetchone()[0])['其他']==fields['其他']
+        assert app.state.conn.execute('SELECT count(*) FROM display_writes').fetchone()[0]>=2
+    if kind=='central':app.state.conn.close()
+
+
+@pytest.mark.parametrize('lang',['fr','ar'])
+def test_multi_note_display_batches_finish_before_cache_writer(tmp_path,lang):
+    conn=sqlite3.connect(tmp_path/'display.db');conn.row_factory=sqlite3.Row
+    conn.execute('CREATE TABLE writer(value TEXT)');conn.commit()
+    class Model:
+        calls=0
+        def chat_text(self,prompt,messages,**kw):
+            self.calls+=1
+            with sqlite3.connect(tmp_path/'display.db',timeout=.2) as writer:
+                writer.execute('INSERT INTO writer VALUES(?)',(lang,))
+            assert cs_i18n.LANGUAGES[lang] in prompt
+            return json.dumps([x.replace('产品介绍','Description' if lang=='fr' else 'وصف').replace('红色','Rouge' if lang=='fr' else 'أحمر') for x in json.loads(messages[0]['content'])])
+    model=Model();notes=[{'id':i,'fields':{'model_id':'KS-1100','产品介绍':f'红色 {i}','数量':i}} for i in range(65)]
+    result=cs_i18n.project_notes(conn,model,lang,notes)
+    assert model.calls==2 and len(result)==65
+    for original,projected in zip(notes,result):
+        assert projected['fields']==original['fields']
+        assert projected['display_labels']['产品介绍']==('Description' if lang=='fr' else 'وصف')
+        assert projected['display_fields']['产品介绍']==('Rouge' if lang=='fr' else 'أحمر')+f" {original['id']}"
+        assert projected['display_fields']['model_id']=='KS-1100'
+        assert projected['display_fields']['数量']==original['id']
+    assert conn.execute('SELECT count(*) FROM writer').fetchone()[0]==2
+    conn.rollback();conn.close()
+
+
+def test_contact_handle_is_protected_and_new_handle_rejected():
+    conn=sqlite3.connect(':memory:');conn.row_factory=sqlite3.Row
+    source='Contact @buyer'
+    class Model:
+        def chat_text(self,prompt,messages,**kw):
+            value=json.loads(messages[0]['content'])[0]
+            assert '@buyer' not in value
+            return json.dumps([value.replace('Contact','Contacter')+' @invented'])
+    assert cs_i18n.translate_texts(conn,Model(),'fr',[source])[0]==cs_i18n.t('translationUnavailable','fr')+': '+source
+    # Cache validation must reject an invented handle even when the source had none.
+    cs_i18n.ensure_tables(conn)
+    conn.execute('INSERT INTO cs_translation VALUES(?,?,?)',('fr','Hello','Bonjour @invented'));conn.commit()
+    assert cs_i18n.translate_texts(conn,None,'fr',['Hello'],max_missing=0)[0]==cs_i18n.t('translationUnavailable','fr')+': Hello'
+    conn.close()

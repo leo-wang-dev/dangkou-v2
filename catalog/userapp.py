@@ -303,6 +303,9 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
             if not items and not cards:
                 os.unlink(path)
                 return {'reply': cs_i18n.t('photoEmpty',cs_i18n.request_language(request)), 'added': 0}
+            lang = cs_i18n.request_language(request)
+            display_reply = _receipt(items,cards) if lang=='zh' else cs_i18n.receipt(
+                items,cards,lang,conn=request_conn(),llm=request.app.state.llm)
             _identity(request, owner)  # expiry/revocation during model work cannot resurrect data
             batch_id, pending = note_batches.prepare(request_conn(), kind, owner_id, cards)
             start = request_conn().execute(
@@ -318,7 +321,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
                     'INSERT INTO notes(owner_kind, owner_id, photo_path, fields_json, batch_id) '
                     'VALUES(?,?,?,?,?)',
                     (kind, owner_id, note_photo, json.dumps(fields, ensure_ascii=False),batch_id))
-            return {'reply': _receipt(items, cards) if cs_i18n.request_language(request)=='zh' else cs_i18n.receipt(items,cards,cs_i18n.request_language(request)), 'added': len(items), 'photo_mode':'notes',
+            return {'reply': display_reply, 'added': len(items), 'photo_mode':'notes',
                     'pending_batches':[b for b in note_batches.listing(request_conn(),kind,owner_id) if b['id'] in pending]}
 
         return await run_request_worker(request, process_photo, model=True)
@@ -355,6 +358,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
             notes.append({'id': n['id'], 'created_at': n['created_at'],
                           'fields': json.loads(n['fields_json']), 'batch_id':n['batch_id'], 'batch_state':n['batch_state'],
                           'photo': (f'/notes/{n["id"]}/photo' if n['photo_path'] else '')})
+        notes = cs_i18n.project_notes(request_conn(),request.app.state.llm,cs_i18n.request_language(request),notes)
         return {'lang':cs_i18n.request_language(request), 'notes': notes, 'batches':note_batches.listing(request_conn(),kind,owner_id)}
 
     @app.get('/notes/{note_id}/photo')

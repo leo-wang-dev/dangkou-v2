@@ -61,10 +61,10 @@ async function load(){
   document.getElementById('export').disabled = false;
   const keys = [...new Set(notes.flatMap(n=>Object.keys(n.fields)))];
   let html = '<div class="table-scroll"><table><tr><th style="width:36px">#</th>' +
-    keys.map(x=>`<th>${esc(label(x))}</th>`).join('') + `<th>${t('statusHeader')}</th><th>${t('photoHeader')}</th></tr>`;
+    keys.map(x=>`<th>${esc(notes.find(n=>n.display_labels?.[x])?.display_labels[x] ?? label(x))}</th>`).join('') + `<th>${t('statusHeader')}</th><th>${t('photoHeader')}</th></tr>`;
   notes.forEach((n,i)=>{
     html += `<tr><td>${i+1}</td>` + keys.map(x=>{
-      const v = display(n.fields[x]??'');
+      const v = n.display_fields?.[x] ?? display(n.fields[x]??'');
       if(x==='档口归属依据') return `<td data-id="${n.id}" data-field="${esc(x)}">${esc(v)}</td>`;
       const isPhoto = x.includes('图') || /^photo$/i.test(x);
       if(isPhoto && n.photo) return `<td><img class="photo" src="${esc(prefix+n.photo)}" onerror="this.remove()"></td>`;
@@ -76,17 +76,14 @@ async function load(){
 }
 async function edit(td){
   const value = td.textContent.trim();
-  if(value===td.dataset.display)return;
+  if(value===String(td.dataset.display).trim())return;
   const r = await customerFetch(`${prefix}/cs/link/${k}/note/${td.dataset.id}`, {
     method:'PATCH', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({field: td.dataset.field, value})});
   if(r.ok){
-    const updated = await r.json();
-    for(const cell of document.querySelectorAll('td[data-id]')){
-      if(cell.dataset.id === td.dataset.id && updated.fields[cell.dataset.field] !== undefined) {cell.textContent = display(updated.fields[cell.dataset.field]);cell.dataset.display=cell.textContent;}
-    }
+    await load();  // fresh projection after the edit transaction completes
   }
-  tip(r.ok ? t('saved') : t('saveError'));
+  tip(r.ok ? t('saved') : ((await r.json()).detail || t('saveError')));
 }
 function esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 CustomerI18n.mount();load();

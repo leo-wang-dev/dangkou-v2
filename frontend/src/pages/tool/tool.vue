@@ -89,7 +89,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import { toolApi, getBases, setBases, choosePhoto } from '../../api.js'
 import { storage } from '../../storage.js'
 
-async function pickLang(lang){changeLanguage(lang);const r=await toolApi.setLang(lang);if(!r.ok)tip(r.data?.detail||t('networkError'))}
+async function pickLang(lang){changeLanguage(lang);const r=await toolApi.setLang(lang);if(!r.ok)tip(r.data?.detail||t('networkError'));if(drawer.value)await openList()}
 
 const guest = ref('')
 const token = ref('')
@@ -120,7 +120,7 @@ function photoUrl(n) { return toolApi.photoUrl(n.id) }
 function noteText(n) {
   return Object.entries(n.fields || {})
     .filter(([k]) => k !== '__图框__')
-    .map(([k, v]) => label(k) + '=' + display(v))
+    .map(([k, v]) => (n.display_labels?.[k] ?? label(k)) + '=' + (n.display_fields?.[k] ?? display(v)))
     .join('\n')
 }
 

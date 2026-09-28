@@ -13,7 +13,7 @@
       <view class="table" :style="{ width: tableWidth + 'px' }">
         <view class="tr th">
           <view class="td idx">#</view>
-          <view v-for="key in keys" :key="key" class="td field">{{ label(key) }}</view>
+          <view v-for="key in keys" :key="key" class="td field">{{ heading(key) }}</view>
           <view class="td status">{{ t('statusHeader') }}</view>
           <view class="td photo-col">{{ t('photoHeader') }}</view>
         </view>
@@ -75,6 +75,7 @@ const photoFailed = reactive({})   // 图片加载失败标记（对应旧页 on
 const tableWidth = computed(() => 40 + keys.value.length * 170 + 80 + 110)
 
 watch(() => props.k, () => { load() })
+watch(locale, () => { load() })
 onMounted(() => { load() })
 
 function photoUrl(n) {
@@ -83,7 +84,11 @@ function photoUrl(n) {
 
 function text(n, key) {
   const v = n.fields ? n.fields[key] : ''
-  return v === null || v === undefined ? '' : String(display(v))
+  return v === null || v === undefined ? '' : String(n.display_fields?.[key] ?? display(v))
+}
+
+function heading(key) {
+  return notes.value.find(n=>n.display_labels?.[key])?.display_labels[key] ?? label(key)
 }
 
 function isPhotoKey(key) {
@@ -118,14 +123,10 @@ async function load() {
 
 async function onEdit(note, key, ev) {
   const value = ((ev && ev.detail && ev.detail.value) || '').trim()
-  if (value === text(note, key)) return  // 未变化不发请求
+  if (value === text(note, key).trim()) return  // 未变化不发请求
   const r = await csApi.editNote(props.k, note.id, key, value)
   if (r.ok) {
-    const fields = (r.data && r.data.fields) || null
-    if (fields) {
-      const target = notes.value.find((n) => n.id === note.id)
-      if (target) target.fields = fields
-    }
+    await load()  // refresh translated display after the committed raw edit
     uni.showToast({ title: t('saved'), icon: 'none' })
   } else {
     uni.showToast({ title: (r.data && r.data.detail) || t('saveError'), icon: 'none' })

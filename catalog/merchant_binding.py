@@ -120,10 +120,20 @@ def register(app):
         finally:
             c.close()
 
+    def public_language_asset(path):
+        # Exact public, nonsecret release assets; no merchant lookup/API forwarding.
+        if path in ('customer-catalog.js','customer-sources.js','customer-i18n.js'):
+            from fastapi.responses import FileResponse
+            return FileResponse(Path(__file__).resolve().parent.parent / 'static' / path,
+                                headers={'Cache-Control':'no-cache'})
+
     @app.api_route('/merchant/customer/{mid}/{path:path}',methods=['GET','PATCH'])
     async def customer_proxy(mid: str, path: str, request: Request):
         # Narrow allowlist: never proxy merchant admin APIs or user-supplied hosts.
         if not re.fullmatch(r'[a-f0-9]{24}',mid):raise HTTPException(404)
+        if request.method=='GET':
+            asset=public_language_asset(path)
+            if asset is not None:return asset
         allowed=(path=='cs/list.html' and request.method=='GET') or re.fullmatch(r'cs/link/[A-Za-z0-9_-]{16,100}(?:/export\.xlsx|/note/[0-9]+(?:/photo)?)?',path)
         if not allowed:raise HTTPException(404)
         c=hub.connect()
@@ -132,11 +142,15 @@ def register(app):
         if not m:raise HTTPException(503,'客服暂未运行')
         import httpx
         from fastapi.responses import Response
+        from . import cs_i18n
+        language=request.headers.get('X-Customer-Language') or request.query_params.get('lang')
+        headers={'Content-Type':'application/json'}
+        if language:headers['X-Customer-Language']=cs_i18n.normalize_language(language)
         body=await request.body()
         if len(body)>20000:raise HTTPException(413)
         try:
             async with httpx.AsyncClient(trust_env=False,timeout=30) as client:
-                r=await client.request(request.method,f'http://127.0.0.1:{int(m[0])}/{path}',params=request.query_params,content=body,headers={'Content-Type':'application/json'})
+                r=await client.request(request.method,f'http://127.0.0.1:{int(m[0])}/{path}',params=request.query_params,content=body,headers=headers)
         except httpx.HTTPError:raise HTTPException(503,'客服暂不可用') from None
         headers={k:v for k,v in r.headers.items() if k in ('content-type','content-disposition')}
         headers.update({'Cache-Control':'no-store','Referrer-Policy':'no-referrer'})
@@ -147,6 +161,9 @@ def register(app):
     async def manage_proxy(mid: str,path: str,request: Request):
         secure(request)
         if not re.fullmatch(r'[a-f0-9]{24}',mid):raise HTTPException(404)
+        if request.method=='GET':
+            asset=public_language_asset(path)
+            if asset is not None:return asset
         key=(request.headers.get('X-Service-Token') or request.query_params.get('auth') or
              request.query_params.get('t') or request.query_params.get('token') or '')
         c=hub.connect()
@@ -197,8 +214,11 @@ def register(app):
                 if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',sid): raise HTTPException(422,'请求格式无效。')
                 return wechat_binding.manage(action, sid)
             return wechat_binding.manage(action)
-        # Never expose filesystem import, shop rebinding, quote jobs or hub routes.
-        if path not in ('','index.html','upload','tickets','stats','categories') and not re.fullmatch(
+        # Only the synchronous quote action and bounded file route are exposed.
+        quote_route = (path=='quote' and request.method=='POST') or (
+            request.method=='GET' and re.fullmatch(r'quotes/quote-[0-9a-f]{8}\.xlsx',path))
+        # Never expose filesystem import, shop rebinding, arbitrary jobs or hub routes.
+        if not quote_route and path not in ('','index.html','upload','tickets','stats','categories') and not re.fullmatch(
                 r'(?:products|tickets|img|ticketimg)/[^?#\\]+|categories/[^/?#]+/template\.xlsx', path):
             raise HTTPException(404)
         if '%' in path or any(part in ('.','..') for part in path.split('/')):raise HTTPException(404)

@@ -1349,6 +1349,9 @@ def register_routes(app: FastAPI):
         # All vision/catalog/policy calls precede the final writer transaction.
         path, items, found, cards = bot._prepare_photo(None, data, mode=mode)
         rule = merchant_policy.photo_rule(bot, data, found)
+        lang = cs_i18n.request_language(request)
+        from . import llm as translation_model
+        display_reply = cs_i18n.receipt(items,cards,lang,conn=request_conn(),llm=translation_model) if lang!='zh' and mode=='notes' and not rule else None
         request_conn().execute('BEGIN IMMEDIATE')
         current = guest_sessions.validate(request_conn(),visitor)
         if not pending_path and current['pending_photo']:
@@ -1376,7 +1379,7 @@ def register_routes(app: FastAPI):
                 from . import cs
                 profile=cs.get_shop(request_conn())
                 reply='\n'.join([cs_i18n.t('contactOwner',lang), *[str(profile[k]) for k in ('owner_tg_username','owner_wechat') if profile[k]]])
-            elif mode=='notes': reply=cs_i18n.receipt(items,cards,lang)
+            elif mode=='notes': reply=display_reply
             else: reply=cs_i18n.t('findProduct' if found else 'noMatchingProducts',lang)+'\n'+'\n'.join(f'{i}: {p["name"]}' for i,p in enumerate(found,1))
         return {'reply':reply,'photo_mode':mode,'batches':note_batches.listing(request_conn(),'guest',cust['id'])}
 
@@ -1454,9 +1457,11 @@ def register_routes(app: FastAPI):
         notes = request_conn().execute(
             "SELECT * FROM cs_note WHERE customer_id=? AND status IN ('draft','confirmed') "
             'ORDER BY id', (row['customer_id'],)).fetchall()
-        return {'notes': [{'id': n['id'], 'status': n['status'],
+        from . import llm as translation_model
+        projected = [{'id': n['id'], 'status': n['status'],
                            'photo': (f'/cs/link/{token}/note/{n["id"]}/photo' if n['photo'] else ''),
-                           'fields': customer_fields(request_conn(),n)} for n in notes]}
+                           'fields': customer_fields(request_conn(),n)} for n in notes]
+        return {'notes':cs_i18n.project_notes(request_conn(),translation_model,cs_i18n.request_language(request),projected)}
 
     @app.get('/cs/link/{token}/note/{note_id}/photo')
     def cs_link_photo(token: str, note_id: int, request: Request):

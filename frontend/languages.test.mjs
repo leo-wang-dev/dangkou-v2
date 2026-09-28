@@ -60,3 +60,25 @@ assert.equal(downloads,1);assert.equal(nodes['quote-result'].link.href,'blob:loc
 nodes['quote-quantity'].value='0';await vm.runInContext("submitQuote('exact-product')",quoteContext);assert.equal(nodes['quote-result'].textContent,'采购数量必须为正整数');assert.equal(downloads,1)
 nodes['quote-quantity'].value='50';fail=true;await vm.runInContext("submitQuote('exact-product')",quoteContext);assert.equal(nodes['quote-result'].textContent,'明确错误');assert.equal(nodes['quote-submit'].disabled,false)
 console.log('Merchant quote control identity, language, validation, download and failure passed')
+
+// No-op focus/blur must never replace raw evidence with a display translation.
+for(const surface of ['static','uni']){
+  const source=readFileSync(new URL(surface==='static'?'../static/cs/list.html':'./src/components/note-table.vue',import.meta.url),'utf8')
+  let saves=0,reloads=0,body
+  const context=vm.createContext({String,JSON,props:{k:'capability'},prefix:'',k:'capability',display:v=>v,t:v=>v,
+    text:(note,key)=>note.display_fields[key],tip(){},uni:{showToast(){}},
+    load:async()=>{reloads++},customerFetch:async(path,options)=>{saves++;body=JSON.parse(options.body);return {ok:true}},
+    csApi:{editNote:async(k,id,field,value)=>{saves++;body={field,value};return {ok:true}}}})
+  const code=surface==='static'?source.slice(source.indexOf('async function edit('),source.indexOf('function esc(')):
+    source.slice(source.indexOf('async function onEdit('),source.indexOf('async function exportXlsx('))
+  vm.runInContext(code,context)
+  context.note={id:1,fields:{颜色:'红色'},display_fields:{颜色:' Rouge '}}
+  context.td={textContent:' Rouge ',dataset:{id:'1',field:'颜色',display:' Rouge '}}
+  await vm.runInContext(surface==='static'?'edit(td)':"onEdit(note,'颜色',{detail:{value:' Rouge '}})",context)
+  assert.equal(saves,0,surface+' unchanged localized blur must not save')
+  context.td.textContent='Vert'
+  await vm.runInContext(surface==='static'?'edit(td)':"onEdit(note,'颜色',{detail:{value:'Vert'}})",context)
+  assert.equal(saves,1);assert.deepEqual(body,{field:'颜色',value:'Vert'});assert.equal(reloads,1)
+  assert.equal(context.note.fields.颜色,'红色')
+}
+console.log('Translated no-op edits preserve raw evidence; intentional edits refresh display')
