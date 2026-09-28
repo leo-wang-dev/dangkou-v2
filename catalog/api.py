@@ -877,8 +877,8 @@ def register_routes(app: FastAPI):
                 continue
             rows = [row for row in dynamic_catalog.list_products(request_conn(), key)
                     if row['status'] != 'delisted']
-            if not rows and category is None:
-                continue
+            # 已审批的动态分类即使尚无商品，也必须在统计中出现；微信 Bot
+            # 通过 category_keys 定位分类，跳过空分类会误判为尚未审批。
             category_keys[template['name']] = key
             by_cat[template['name']] = len(rows)
             visible_by_cat[template['name']] = sum(1 for row in rows if row['cs_visible'])

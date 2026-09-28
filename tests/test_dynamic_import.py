@@ -386,6 +386,29 @@ def test_stats_supports_sheet_defined_categories(conn, tmp_path):
     assert body['customer_visible_total'] == 4
 
 
+def test_stats_includes_approved_empty_dynamic_category(conn, tmp_path):
+    from fastapi.testclient import TestClient
+    from catalog.main import app
+    from catalog import dynamic_catalog
+
+    category = 'cat_empty_test'
+    dynamic_catalog.approve_template(conn, {
+        'key': category, 'name': '电热水壶',
+        'fields': [{'key': 'model', 'label': '型号', 'type': 'text',
+                    'role': 'model', 'visibility': 'public'}],
+    })
+    conn.commit()
+    app.state.conn = conn; app.state.token = 'service'
+    app.state.storage = LocalStorage(str(tmp_path / 'storage'))
+    with TestClient(app, headers={'X-Service-Token': 'service'}) as client:
+        body = client.get('/stats').json()
+    assert body['total'] == 0
+    assert body['by_category']['电热水壶'] == 0
+    assert body['category_keys']['电热水壶'] == category
+    assert {'key': category, 'name': '电热水壶', 'total': 0,
+            'customer_visible': 0} in body['categories']
+
+
 def test_wechat_approval_endpoints_create_update_and_delist_dynamic_products(conn, tmp_path):
     from fastapi.testclient import TestClient
     from catalog.main import app
