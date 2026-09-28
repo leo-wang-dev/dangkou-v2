@@ -62,7 +62,7 @@ def test_mutate_update_ticket(conn):
 def test_manual_create_rejects_product_already_imported(conn):
     from tests.conftest import seed_products
     seed_products(conn, [{'id': 'imported', 'data': {'model': '8277', 'price': '24',
-                                                    'spec': '', 'color': '白色'},
+                                                    'spec': '电吹风', 'color': '白色'},
                           'status': 'approved'}])
     t = tickets.create(conn, 'mutate', 'test_cat', {
         'kind': 'dynamic_mutate', 'action': 'create', 'product_id': None,

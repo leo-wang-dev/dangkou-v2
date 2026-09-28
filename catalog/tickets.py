@@ -175,7 +175,8 @@ def _apply_dynamic_mutate(conn, payload, category):
         if any(incoming.get(key) for key in model_keys):
             for existing in rows:
                 old_supplier = str(existing.get('supplier') or '').strip().casefold()
-                if (nonempty(existing['data']) == incoming and
+                old_data = nonempty(existing['data'])
+                if (all(old_data.get(key) == value for key, value in incoming.items()) and
                         (not supplier or not old_supplier or supplier == old_supplier)):
                     raise TicketConflict('同一商品已入库，请刷新后改为更新，避免重复新增')
         product_id = secrets.token_hex(8)
