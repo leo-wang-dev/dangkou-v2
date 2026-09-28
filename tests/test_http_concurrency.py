@@ -26,8 +26,9 @@ def test_h5_health_responds_while_vision_is_blocked(h5, monkeypatch):
     async def exercise():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                     base_url='http://test') as client:
+            await client.post('/cs/chat/test-shop/mode',json={'visitor':app.state.test_guests['slow'],'mode':'notes'})
             photo_task = asyncio.create_task(client.post(
-                '/cs/chat/test-shop/photo', data={'visitor': 'slow'},
+                '/cs/chat/test-shop/photo', data={'visitor': app.state.test_guests['slow']},
                 files={'file': ('p.jpg', photo, 'image/jpeg')}))
             try:
                 assert await asyncio.to_thread(started.wait, 2)
@@ -36,7 +37,7 @@ def test_h5_health_responds_while_vision_is_blocked(h5, monkeypatch):
                 assert health.json()['status'] == 'ready'
                 other = await asyncio.wait_for(client.post(
                     '/cs/chat/test-shop/lang',
-                    json={'visitor': 'other', 'lang': 'English'}), 0.5)
+                    json={'visitor': app.state.test_guests['other'], 'lang': 'English'}), 0.5)
                 assert other.status_code == 200
             finally:
                 release.set()
@@ -62,7 +63,7 @@ def test_userapp_guest_responds_while_vision_is_blocked(tmp_path):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                     base_url='http://test') as client:
             photo_task = asyncio.create_task(client.post(
-                '/photo', data={'owner': 'guest-abcdef'},
+                '/photo', data={'owner': (await client.post('/guest')).json()['guest']},
                 files={'file': ('p.jpg', b'photo', 'image/jpeg')}))
             try:
                 assert await asyncio.to_thread(started.wait, 2)
@@ -104,12 +105,12 @@ def test_h5_text_model_wait_allows_other_visitor_write_and_read(h5, monkeypatch)
                                     base_url='http://test') as client:
             slow = asyncio.create_task(client.post(
                 '/cs/chat/test-shop/message',
-                json={'visitor': 'slow', 'text': '请记录一个黑色型号ABC'}))
+                json={'visitor': app.state.test_guests['slow'], 'text': '请记录一个黑色型号ABC'}))
             try:
                 assert await asyncio.to_thread(started.wait, 2)
                 other = await asyncio.wait_for(client.post(
                     '/cs/chat/test-shop/lang',
-                    json={'visitor': 'other', 'lang': 'English'}), 1.5)
+                    json={'visitor': app.state.test_guests['other'], 'lang': 'English'}), 1.5)
                 assert other.status_code == 200
                 edit = await asyncio.wait_for(client.patch(
                     f'/cs/link/patch-link/note/{note_id}',
@@ -150,11 +151,11 @@ def test_h5_text_replans_when_same_visitor_language_changes(h5, monkeypatch):
                                     base_url='http://test') as client:
             slow = asyncio.create_task(client.post(
                 '/cs/chat/test-shop/message',
-                json={'visitor': 'same', 'text': '请记录一个黑色型号ABC'}))
+                json={'visitor': app.state.test_guests['same'], 'text': '请记录一个黑色型号ABC'}))
             assert await asyncio.to_thread(started.wait, 2)
             change = await asyncio.wait_for(client.post(
                 '/cs/chat/test-shop/lang',
-                json={'visitor': 'same', 'lang': 'English'}), 1.5)
+                json={'visitor': app.state.test_guests['same'], 'lang': 'English'}), 1.5)
             assert change.status_code == 200
             release.set()
             assert (await slow).status_code == 200
@@ -162,7 +163,7 @@ def test_h5_text_replans_when_same_visitor_language_changes(h5, monkeypatch):
     asyncio.run(exercise())
     assert any('English' in prompt for prompt in prompts)
     with sqlite3.connect(database) as connection:
-        assert connection.execute("SELECT lang FROM cs_customer WHERE tg_id='h5-same'").fetchone()[0] == 'English'
+        assert connection.execute("SELECT lang FROM cs_customer WHERE tg_id=(SELECT owner_id FROM guest_sessions WHERE token_hash=?)",(userapp._hash(app.state.test_guests['same']),)).fetchone()[0] == 'English'
 
 
 def test_h5_remote_catalog_wait_allows_other_write_and_reuses_result(h5, monkeypatch):
@@ -204,12 +205,12 @@ def test_h5_remote_catalog_wait_allows_other_write_and_reuses_result(h5, monkeyp
                                     base_url='http://test') as client:
             slow = asyncio.create_task(client.post(
                 '/cs/chat/test-shop/message',
-                json={'visitor': 'slow', 'text': '查询商品'}))
+                json={'visitor': app.state.test_guests['slow'], 'text': '查询商品'}))
             try:
                 assert await asyncio.to_thread(started.wait, 2)
                 other = await asyncio.wait_for(client.post(
                     '/cs/chat/test-shop/lang',
-                    json={'visitor': 'other', 'lang': 'English'}), 1.5)
+                    json={'visitor': app.state.test_guests['other'], 'lang': 'English'}), 1.5)
                 assert other.status_code == 200
             finally:
                 release.set()
@@ -233,9 +234,9 @@ def test_h5_photo_cancel_waits_for_worker_and_rolls_back(h5, monkeypatch):
         assert release.wait(5), 'test vision call was not released'
         return json.dumps([{'型号或品名': 'SAMPLE-1'}], ensure_ascii=False)
 
-    def observed_prepare(self, cust, data):
+    def observed_prepare(self, cust, data, **kwargs):
         try:
-            return original(self, cust, data)
+            return original(self, cust, data, **kwargs)
         except Exception as exc:
             errors.append(exc)
             raise
@@ -257,8 +258,9 @@ def test_h5_photo_cancel_waits_for_worker_and_rolls_back(h5, monkeypatch):
     async def exercise():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=captured, raise_app_exceptions=False),
                                     base_url='http://test') as client:
+            await client.post('/cs/chat/test-shop/mode',json={'visitor':app.state.test_guests['cancelled'],'mode':'notes'})
             task = asyncio.create_task(client.post(
-                '/cs/chat/test-shop/photo', data={'visitor': 'cancelled'},
+                '/cs/chat/test-shop/photo', data={'visitor': app.state.test_guests['cancelled']},
                 files={'file': ('p.jpg', photo, 'image/jpeg')}))
             assert await asyncio.to_thread(started.wait, 2)
             task.cancel()
@@ -313,7 +315,7 @@ def test_userapp_photo_cancel_waits_for_worker_and_rolls_back(tmp_path, monkeypa
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=captured, raise_app_exceptions=False),
                                     base_url='http://test') as client:
             task = asyncio.create_task(client.post(
-                '/photo', data={'owner': 'guest-abcdef'},
+                '/photo', data={'owner': (await client.post('/guest')).json()['guest']},
                 files={'file': ('p.jpg', b'photo', 'image/jpeg')}))
             assert await asyncio.to_thread(started.wait, 2)
             task.cancel()

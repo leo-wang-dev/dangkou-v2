@@ -184,8 +184,10 @@ def capture(bot, cust, text, note_ids=None):
 
 def create(bot,cust,values):
     received,source,basis=shop_link.origin(bot.conn,values)
-    cur=bot.conn.execute("INSERT INTO cs_note(customer_id,photo,fields_json,status,received_shop_id,source_shop_id,source_basis) VALUES(?,'',?,'draft',?,?,?)",
-                         (cust['id'],json.dumps(values,ensure_ascii=False),received,source,basis))
+    from . import note_batches
+    batch_id, _ = note_batches.prepare(bot.conn,'guest',cust['id'],[])
+    cur=bot.conn.execute("INSERT INTO cs_note(customer_id,photo,fields_json,status,received_shop_id,source_shop_id,source_basis,batch_id) VALUES(?,'',?,'draft',?,?,?,?)",
+                         (cust['id'],json.dumps(values,ensure_ascii=False),received,source,basis,batch_id))
     return bot.conn.execute('SELECT * FROM cs_note WHERE id=?',(cur.lastrowid,)).fetchone()
 
 

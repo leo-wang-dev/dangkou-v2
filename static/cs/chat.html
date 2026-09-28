@@ -20,7 +20,7 @@
   form button{border:0;border-radius:50%;width:40px;height:40px;font-size:18px;cursor:pointer;background:#1677ff;color:#fff}
   #cam,#boss{background:#fff;color:#1677ff;border:1px solid #1677ff}
   #boss{border-radius:20px;width:auto;padding:0 12px;font-size:13px}
-  #tip{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:6px 14px;border-radius:16px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9}
+  #tip{pointer-events:none;position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:6px 14px;border-radius:16px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9}
   .langbar{display:flex;gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid #eee;font-size:13px}
   .langbar button{border:1px solid #ddd;background:#fff;border-radius:14px;padding:4px 12px;cursor:pointer}
   .langbar button.on{background:#1677ff;color:#fff;border-color:#1677ff}
@@ -34,6 +34,9 @@
   .dhead button.ghost{background:#fff;color:#1677ff;border:1px solid #1677ff}
   #dempty{margin:24px 16px;padding:32px 16px;text-align:center;color:#999;background:#fff;border-radius:8px}
   #listframe{flex:1;border:0;width:100%}
+  .session-controls,#batches{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 12px;background:#fff;border-bottom:1px solid #eee;font-size:13px}
+  .session-controls button,#batches button{border:1px solid #ddd;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;color:#245b9c}
+  #batches{max-height:160px;overflow:auto;flex-shrink:0}#batches:empty{display:none}#batches label{width:100%}
 </style>
 </head>
 <body>
@@ -42,7 +45,7 @@
   <span style="align-self:center;color:#888">语言 / Language:</span>
   <button onclick="pickLang('中文')">中文</button><button onclick="pickLang('English')">English</button>
 </div>
-<div id="log"></div>
+<div class="session-controls"><span id="photo-mode">图片模式：待选择</span><button onclick="setMode('search')">查商品</button><button onclick="setMode('notes')">记笔记</button><button onclick="newSession(true)">结束当前会话</button><button onclick="manualBatch()">手动切换档口</button></div><div id="batches"></div><div id="log"></div>
 <form onsubmit="event.preventDefault();send()">
   <input id="text" type="text" placeholder="发消息，或点 📷 拍照整理采购清单" autocomplete="off">
   <button type="submit">➤</button>
@@ -59,8 +62,9 @@
 </div>
 <script>
 const TOKEN = location.pathname.split('/').pop();
-let visitor = localStorage.getItem('h5v');
-if (!visitor) { visitor = 'h5-' + Math.random().toString(36).slice(2, 12); localStorage.setItem('h5v', visitor); }
+let visitor = sessionStorage.getItem('h5v:'+TOKEN) || '';
+let photoMode = '';
+let ready;
 const log = document.getElementById('log');
 function bubble(role, text){
   const d = document.createElement('div');
@@ -72,6 +76,7 @@ function bubble(role, text){
 }
 function tip(t){ const el=document.getElementById('tip'); el.textContent=t; el.style.opacity=1; setTimeout(()=>el.style.opacity=0, 1800); }
 async function send(override){
+  await ready;
   const box = document.getElementById('text');
   const text = override || box.value.trim();
   if (!text) return;
@@ -82,9 +87,11 @@ async function send(override){
       body: JSON.stringify({text, visitor})});
     const d = await r.json();
     bubble('bot', d.reply || d.detail || '…');
+    await refreshSession();
   }catch(e){ tip('网络异常，请重试'); }
 }
 async function photo(input){
+  await ready;
   const f = input.files[0]; input.value = '';
   if (!f) return;
   bubble('me', '📷 ' + (f.name || '照片'));
@@ -94,9 +101,11 @@ async function photo(input){
     const r = await fetch(`/cs/chat/${TOKEN}/photo`, {method:'POST', body: fd});
     const d = await r.json();
     bubble('bot', d.reply || d.detail || '…');
+    await refreshSession();
   }catch(e){ tip('上传失败，请重试'); }
 }
 async function pickLang(lang){
+  await ready;
   await fetch(`/cs/chat/${TOKEN}/lang`, {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({lang, visitor})});
   document.getElementById('langbar').hidden = true;
@@ -105,6 +114,7 @@ async function pickLang(lang){
 }
 // 我的清单抽屉：后端按访客取最近 cs_link token，iframe 复用 list.html 的表格/编辑/导出能力
 async function openList(){
+  await ready;
   const drawer = document.getElementById('drawer');
   drawer.hidden = false;
   document.getElementById('dempty').hidden = true;
@@ -121,7 +131,34 @@ async function openList(){
   }catch(e){ tip('网络异常，请重试'); }
 }
 function closeList(){ document.getElementById('drawer').hidden = true; }
-(async function init(){
+async function newSession(end=false){
+  if(end&&visitor){const r=await fetch(`/cs/chat/${TOKEN}/session/end`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor})});if(!r.ok&&r.status!==410){tip('结束会话失败');return;}}
+  const r=await fetch(`/cs/chat/${TOKEN}/session`,{method:'POST'}); const d=await r.json();
+  visitor=d.visitor;sessionStorage.setItem('h5v:'+TOKEN,visitor);log.replaceChildren();closeList();await refreshSession();
+}
+async function refreshSession(){
+  const r=await fetch(`/cs/chat/${TOKEN}/session?visitor=${encodeURIComponent(visitor)}`);
+  if(r.status===410||r.status===401){tip('会话已失效，请开始新会话');return;}
+  if(!r.ok)return;const d=await r.json(); photoMode=d.photo_mode;
+  document.getElementById('photo-mode').textContent='图片模式：'+({search:'查商品',notes:'记笔记'}[photoMode]||'待选择');
+  const el=document.getElementById('batches');el.replaceChildren();
+  for(const n of d.notes||[]){if(n.batch_state!=='unassigned'&&n.batch_state!=='legacy_unassigned')continue;
+    const label=document.createElement('label'), check=document.createElement('input');check.type='checkbox';check.value=n.id;
+    label.append(check,document.createTextNode('关联待归属条目 '+n.id+' '+(n.fields['型号或品名']||'')));el.append(label);
+  }
+  for(const b of d.batches||[]){if(b.state==='unassigned')continue;
+    const btn=document.createElement('button');btn.textContent=(b.active?'当前档口：':'确认切换：')+(b.fields['档口名称']||'未命名档口');btn.onclick=()=>confirmBatch(b.id);el.append(btn);}
+}
+async function setMode(mode){await ready;const r=await fetch(`/cs/chat/${TOKEN}/mode`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,mode})});const d=await r.json();if(d.reply||d.detail)bubble('bot',d.reply||d.detail);await refreshSession();}
+async function confirmBatch(batch_id,fields=null){
+  const note_ids=Array.from(document.querySelectorAll('#batches input:checked'),x=>Number(x.value));
+  const r=await fetch(`/cs/chat/${TOKEN}/batches/confirm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,batch_id,note_ids,fields})});
+  if(!r.ok){tip((await r.json()).detail||'切换失败');return;}await refreshSession();
+}
+async function manualBatch(){const name=prompt('新档口名称（仅用于后续照片和勾选的待归属条目）');if(name)await confirmBatch(null,{'档口名称':name});}
+ready=(async function init(){
+  if(!visitor)await newSession();else await refreshSession();
+
   // 首访先选语言；老访客直接欢迎
   const first = !sessionStorage.getItem('h5lang');
   if (first) { document.getElementById('langbar').hidden = false; }

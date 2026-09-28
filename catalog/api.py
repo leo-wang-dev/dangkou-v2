@@ -106,7 +106,7 @@ def register_routes(app: FastAPI):
     import anyio
     import threading
     from contextvars import ContextVar
-    from . import db
+    from . import db, guest_sessions, note_batches
     from .request_lifecycle import drain_worker
     current_connection = ContextVar('catalog_request_connection', default=None)
     memory_lock = asyncio.Lock()
@@ -136,6 +136,9 @@ def register_routes(app: FastAPI):
 
         async def respond():
             try:
+                paths = guest_sessions.purge_shop(conn)
+                conn.commit()
+                guest_sessions.remove_shop_files(conn, paths)
                 response = await call_next(request)
                 interrupted = await wait_for_worker()
                 if interrupted or asyncio.current_task().cancelling():
@@ -143,7 +146,18 @@ def register_routes(app: FastAPI):
                 if response.status_code >= 400:
                     conn.rollback()
                 else:
+                    capability = getattr(request.state, 'guest_capability', '')
+                    capability_hash = getattr(request.state, 'guest_hash', '')
+                    if capability or capability_hash:
+                        try:
+                            guest_sessions.touch_hash(conn, capability_hash or guest_sessions.digest(capability))
+                        except HTTPException as exc:
+                            conn.rollback()
+                            from fastapi.responses import JSONResponse
+                            return JSONResponse({'detail':exc.detail},status_code=exc.status_code)
+                    paths = guest_sessions.purge_shop(conn)
                     conn.commit()
+                    guest_sessions.remove_shop_files(conn, paths)
             except BaseException:
                 await wait_for_worker()
                 conn.rollback()
@@ -160,6 +174,7 @@ def register_routes(app: FastAPI):
             async with memory_lock:
                 return await respond()
         finally:
+            guest_sessions.remove_shop_files(conn, getattr(request.state, 'created_photos', []))
             current_connection.reset(context)
             if database:
                 conn.close()
@@ -1184,7 +1199,7 @@ def register_routes(app: FastAPI):
             raise HTTPException(404, 'no photo')
         return Response(content=open(fp, 'rb').read(), media_type='image/jpeg')
 
-    def _link_conn(token):
+    def _link_conn(token, request):
         row = request_conn().execute('SELECT * FROM cs_link WHERE token=?', (token,)).fetchone()
         if row is None:
             raise HTTPException(404, '链接无效')
@@ -1193,6 +1208,11 @@ def register_routes(app: FastAPI):
             (token,)).fetchone()
         if not active:
             raise HTTPException(410, '链接已过期')
+        session = request_conn().execute('SELECT s.* FROM guest_sessions s JOIN cs_customer c ON c.tg_id=s.owner_id WHERE c.id=?',(row['customer_id'],)).fetchone()
+        if session:
+            request.state.guest_hash = session['token_hash']
+        if session and (session['state'] != 'active' or session['expires_at'] <= __import__('time').time()):
+            raise HTTPException(410,'session_expired')
         return row
 
     @app.post('/cs/chat-token')
@@ -1219,6 +1239,51 @@ def register_routes(app: FastAPI):
         _chat_conn(token)
         return FileResponse(os.path.join(os.path.dirname(__file__), '..', 'static', 'cs', 'chat.html'))
 
+    def _session(request, visitor):
+        session = guest_sessions.validate(request_conn(), visitor)
+        request.state.guest_capability = visitor
+        return session
+
+    @app.post('/cs/chat/{token}/session')
+    def cs_new_session(token: str):
+        _chat_conn(token)
+        return {'visitor':guest_sessions.issue(request_conn()), 'photo_mode':'', 'idle_seconds':guest_sessions.ttl()}
+
+    @app.post('/cs/chat/{token}/session/end')
+    def cs_end_session(token: str, body: dict):
+        _chat_conn(token)
+        guest_sessions.revoke(request_conn(), str(body.get('visitor') or ''))
+        return {'ended':True}
+
+    @app.get('/cs/chat/{token}/session')
+    def cs_session_state(token: str, request: Request, visitor: str = ''):
+        from . import cs_chat, shop_link
+        _chat_conn(token)
+        session = _session(request,visitor)
+        cust = cs_chat.lookup_visitor(request_conn(),session['owner_id'])
+        notes = request_conn().execute("SELECT * FROM cs_note WHERE customer_id=? AND status IN ('draft','confirmed') ORDER BY id",(cust['id'],)).fetchall() if cust else []
+        return {'photo_mode':session['photo_mode'], 'intent_required':bool(session['pending_photo']),
+                'batches':note_batches.listing(request_conn(),'guest',cust['id']) if cust else [],
+                'notes':[{'id':n['id'],'batch_state':note_batches.project(request_conn(),n)['batch_state'],'fields':shop_link.customer_fields(request_conn(),n)} for n in notes]}
+
+    @app.post('/cs/chat/{token}/batches/confirm')
+    def cs_confirm_batch(token: str, body: dict, request: Request):
+        from . import cs_chat
+        _chat_conn(token)
+        session = _session(request, str(body.get('visitor') or ''))
+        cust = cs_chat.lookup_visitor(request_conn(),session['owner_id'])
+        if not cust and body.get('fields'):
+            bot = cs_chat.H5Bot(request_conn(),api=None)
+            bot._processing = True
+            cust = cs_chat.ensure_visitor(bot,session['owner_id'])
+        if not cust:
+            raise HTTPException(404,'batch_not_found')
+        bid = body.get('batch_id')
+        if body.get('fields'):
+            bid = note_batches.create(request_conn(),'guest',cust['id'],body['fields'],'pending','manual')
+        note_batches.confirm(request_conn(),'guest',cust['id'],bid,body.get('note_ids') or [],'cs_note')
+        return {'confirmed':True}
+
     @app.post('/cs/chat/{token}/lang')
     async def cs_chat_lang(token: str, body: dict, request: Request):
         from . import cs_chat
@@ -1227,7 +1292,8 @@ def register_routes(app: FastAPI):
             bot = cs_chat.H5Bot(request_conn(), api=None)
             bot._processing = True
             try:
-                cust = cs_chat.ensure_visitor(bot, str(body.get('visitor') or ''))
+                session = _session(request, str(body.get('visitor') or ''))
+                cust = cs_chat.ensure_visitor(bot, session['owner_id'])
                 return {'lang': cs_chat.set_language(
                     request_conn(), cust, str(body.get('lang') or ''))}
             finally:
@@ -1243,43 +1309,91 @@ def register_routes(app: FastAPI):
         def turn():
             _chat_conn(token)
             from . import llm
+            visitor = str(body.get('visitor') or '')
+            session = _session(request, visitor)
             return cs_chat.text_turn_transaction(
-                request_conn(), str(body.get('visitor') or ''), text, llm)
+                request_conn(), session['owner_id'], text, llm, validate=lambda:guest_sessions.validate(request_conn(),visitor))
         reply = await run_request_worker(request, turn, model=True)
         return {'reply': reply}
+
+    def _process_guest_photo(request, visitor, data, mode, pending_path=''):
+        from . import cs_chat, photo_inquiry, merchant_policy
+        session = _session(request, visitor)
+        bot = cs_chat.H5Bot(request_conn(), api=None)
+        bot._processing = True
+        request.state.created_photos = [pending_path] if pending_path else []
+        bot.created_photos = request.state.created_photos
+        # All vision/catalog/policy calls precede the final writer transaction.
+        path, items, found, cards = bot._prepare_photo(None, data, mode=mode)
+        rule = merchant_policy.photo_rule(bot, data, found)
+        request_conn().execute('BEGIN IMMEDIATE')
+        current = guest_sessions.validate(request_conn(),visitor)
+        if pending_path and current['pending_photo'] != pending_path:
+            raise HTTPException(409,'pending_photo_already_processed')
+        if current['photo_mode'] != mode:
+            raise HTTPException(409,'photo_mode_changed')
+        cust = cs_chat.ensure_visitor(bot, session['owner_id'])
+        if rule:
+            reply = bot._handoff(dict(cust),'客户发送照片', '命中商家已确认的转人工条件',rule)
+        elif mode == 'search':
+            photo_inquiry.save(request_conn(),cust['id'],found)
+            reply = ('可能对应以下本店商品，请确认：\n' + '\n'.join(f'询价{i}：{p["name"]}' for i,p in enumerate(found,1))
+                     if found else '尚未匹配到本店在线商品，请补充型号或联系商家。')
+        else:
+            reply = bot._on_photo(cust,None,prepared=(path,items,[],cards), notes_only=True)
+        request_conn().execute("UPDATE guest_sessions SET pending_photo='' WHERE token_hash=?",(session['token_hash'],))
+        request_conn().execute("INSERT INTO cs_link(token,customer_id) VALUES(?,?)", (secrets.token_urlsafe(24),cust['id']))
+        return {'reply':reply,'photo_mode':mode,'batches':note_batches.listing(request_conn(),'guest',cust['id'])}
+
+    @app.post('/cs/chat/{token}/mode')
+    async def cs_photo_mode(token: str, body: dict, request: Request):
+        _chat_conn(token)
+        visitor = str(body.get('visitor') or '')
+        session = _session(request,visitor)
+        mode = body.get('mode')
+        if mode not in ('search','notes'):
+            raise HTTPException(400,'invalid_photo_mode')
+        # Mode is a short committed request state change, before slow model work.
+        request_conn().execute('UPDATE guest_sessions SET photo_mode=? WHERE token_hash=?',(mode,session['token_hash']))
+        request_conn().commit()
+        if session['pending_photo']:
+            data = open(session['pending_photo'],'rb').read()
+            return await run_request_worker(request,lambda:_process_guest_photo(request,visitor,data,mode,session['pending_photo']),model=True)
+        return {'photo_mode':mode}
 
     @app.post('/cs/chat/{token}/photo')
     async def cs_chat_photo(token: str, request: Request):
-        from . import cs_chat
+        _chat_conn(token)
         form = await request.form()
-        up = form.get('file')
         visitor = str(form.get('visitor') or '')
-        if up is None or not hasattr(up, 'read'):
-            raise HTTPException(400, '请上传 file 文件')
+        session = _session(request,visitor)
+        up = form.get('file')
+        if up is None or not hasattr(up,'read'):
+            raise HTTPException(400,'请上传 file 文件')
         data = await up.read()
         if not data:
-            raise HTTPException(400, '文件为空')
-        def turn():
-            _chat_conn(token)
-            bot = cs_chat.H5Bot(request_conn(), api=None)
-            bot._processing = True
-            try:
-                # Vision and candidate lookup are read-only. Finish them before
-                # creating the visitor row so a slow model holds no write lock.
-                prepared = bot._prepare_photo(None, data)
-                cust = cs_chat.ensure_visitor(bot, visitor)
-                return bot._on_photo(cust, None, prepared=prepared)
-            finally:
-                bot._processing = False
-        reply = await run_request_worker(request, turn, model=True)
-        return {'reply': reply}
+            raise HTTPException(400,'文件为空')
+        if not session['photo_mode']:
+            if session['pending_photo']:
+                raise HTTPException(409,'pending_photo_requires_intent')
+            from .cs_chat import H5Bot
+            bot = H5Bot(request_conn(),api=None)
+            path = os.path.join(bot.img_dir,'pending_'+secrets.token_hex(16)+'.jpg')
+            open(path,'wb').write(data)
+            request.state.created_photos = [path]
+            changed = request_conn().execute("UPDATE guest_sessions SET pending_photo=? WHERE token_hash=? AND pending_photo='' AND photo_mode='' AND state='active'",(path,session['token_hash']))
+            if not changed.rowcount:
+                raise HTTPException(409,'pending_photo_requires_intent')
+            return {'status':'intent_required','photo_mode':'','reply':'这张照片要查商品，还是记笔记？请选择模式。'}
+        return await run_request_worker(request,lambda:_process_guest_photo(request,visitor,data,session['photo_mode']),model=True)
 
     @app.get('/cs/chat/{token}/list-token')
-    def cs_chat_list_token(token: str, visitor: str = ''):
+    def cs_chat_list_token(token: str, request: Request, visitor: str = ''):
         """H5「我的清单」抽屉：返回该访客最近一条未过期 cs_link 的 token（无则空串）。"""
         from . import cs_chat
         _chat_conn(token)
-        cust = cs_chat.lookup_visitor(request_conn(), visitor)
+        session = _session(request,visitor)
+        cust = cs_chat.lookup_visitor(request_conn(), session['owner_id'])
         if cust is None:
             return {'token': ''}
         row = request_conn().execute(
@@ -1288,9 +1402,9 @@ def register_routes(app: FastAPI):
         return {'token': row['token'] if row else ''}
 
     @app.get('/cs/link/{token}')
-    def cs_link_view(token: str):
+    def cs_link_view(token: str, request: Request):
         from .shop_link import customer_fields
-        row = _link_conn(token)
+        row = _link_conn(token, request)
         notes = request_conn().execute(
             "SELECT * FROM cs_note WHERE customer_id=? AND status IN ('draft','confirmed') "
             'ORDER BY id', (row['customer_id'],)).fetchall()
@@ -1299,8 +1413,8 @@ def register_routes(app: FastAPI):
                            'fields': customer_fields(request_conn(),n)} for n in notes]}
 
     @app.get('/cs/link/{token}/note/{note_id}/photo')
-    def cs_link_photo(token: str, note_id: int):
-        link = _link_conn(token)
+    def cs_link_photo(token: str, note_id: int, request: Request):
+        link = _link_conn(token, request)
         row = request_conn().execute(
             "SELECT photo FROM cs_note WHERE id=? AND customer_id=? AND status IN ('draft','confirmed')",
             (note_id, link['customer_id'])).fetchone()
@@ -1321,7 +1435,7 @@ def register_routes(app: FastAPI):
         if not field:
             raise HTTPException(400, 'field 不能为空')
         def edit():
-            link = _link_conn(token)
+            link = _link_conn(token, request)
             row = request_conn().execute(
                 "SELECT * FROM cs_note WHERE id=? AND customer_id=? AND status IN ('draft','confirmed')",
                 (note_id, link['customer_id'])).fetchone()
@@ -1338,8 +1452,8 @@ def register_routes(app: FastAPI):
         return await run_request_worker(request, edit)
 
     @app.get('/cs/link/{token}/export.xlsx')
-    def cs_link_export(token: str):
-        row = _link_conn(token)
+    def cs_link_export(token: str, request: Request):
+        row = _link_conn(token, request)
         notes = request_conn().execute(
             "SELECT * FROM cs_note WHERE customer_id=? AND status IN ('draft','confirmed') ORDER BY id",
             (row['customer_id'],)).fetchall()

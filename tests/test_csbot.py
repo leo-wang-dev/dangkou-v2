@@ -312,13 +312,19 @@ def test_assign_different_suppliers_and_export_without_cross_customer_changes(bo
     bot._on_text(cust, '清单第3条 档口：B档口')
     bot._on_text(cust, '清单第1、2条 档口号/地址：二区10号')
     bot._on_text(cust, '清单第3条 供应商联系方式：微信 test-only')
-    reply, sheet = _export(conn, bot, cust)
-    heads = [c.value for c in sheet[1]]
-    rows = list(sheet.values)[1:]
-    assert [r[heads.index('档口名称')] for r in rows] == ['A档口', 'A档口', 'B档口']
-    assert rows[0][heads.index('档口号/地址')] == '二区10号'
-    assert rows[2][heads.index('供应商联系方式')] == '微信 test-only'
-    assert '确认状态' not in heads and '起订量' not in heads   # 两列已按需求移除
+    from catalog.cs_export import render_notes
+    from catalog.shop_link import snapshot
+    workbook = openpyxl.load_workbook(io.BytesIO(render_notes([snapshot(conn,n) for n in conn.execute("SELECT * FROM cs_note WHERE customer_id=? ORDER BY id",(cust['id'],))])))
+    rows = []
+    for sheet in workbook:
+        values = list(sheet.values)
+        header_index = next(i for i,row in enumerate(values) if row[0]=='序号')
+        heads = list(values[header_index])
+        rows.extend(dict(zip(heads,row)) for row in values[header_index+1:])
+        assert '确认状态' not in heads and '起订量' not in heads
+    assert [r['档口名称'] for r in rows] == ['A档口','A档口','B档口']
+    assert rows[0]['档口号/地址'] == '二区10号'
+    assert rows[2]['供应商联系方式'] == '微信 test-only'
     assert conn.execute("SELECT fields_json FROM cs_note WHERE customer_id='other'").fetchone()[0] == '{}'
     before = [tuple(r) for r in conn.execute('SELECT * FROM cs_note')]
     reply = bot._on_text(cust, '清单第1、99条 档口：不应保存')
@@ -343,7 +349,7 @@ def test_business_card_photo_sets_shop_info_not_note(bot, conn, cust):
                  '供应商联系方式': 'wx-123', '档口号/地址': 'F区21号'}}], ensure_ascii=False)
     receipt = _photo(bot, cust)
     assert conn.execute("SELECT COUNT(*) FROM cs_note").fetchone()[0] == 0
-    card = conn.execute("SELECT fields_json FROM cs_card_info").fetchone()
+    card = conn.execute("SELECT fields_json FROM note_batches WHERE state='pending'").fetchone()
     assert json.loads(card[0])['档口名称'] == '宏发电器'
     assert '宏发电器' in receipt
 

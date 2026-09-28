@@ -86,15 +86,9 @@ def fields_for(conn, note):
         p = profile(conn)
         if p['shop_id'] == note['source_shop_id']:
             fields.update({k:v or '待补充' for k,v in supplier_values(p).items()})
-    if note.get('customer_id'):
-        card = conn.execute("SELECT fields_json FROM cs_card_info WHERE customer_id=?",
-                            (note['customer_id'],)).fetchone()
-        if card:
-            try:
-                fields.update({k: v for k, v in json.loads(card['fields_json']).items()
-                               if str(v or '').strip() and '未拍到' not in str(v)})
-            except (TypeError, ValueError):
-                pass
+    if note.get('batch_id'):
+        from . import note_batches
+        fields = json.loads(note_batches.project(conn, note)['fields_json'])
     basis = note.get('source_basis', 'unknown')
     fields['档口归属依据'] = {'bot_context':'接待档口（供货关系待确认）','customer_confirmed':'客户确认本店',
                               'manual':'客户填写','photo':'照片信息（待确认）','unknown':'待确认'}.get(basis,'待确认')
@@ -111,7 +105,8 @@ def customer_fields(conn, note):
 
 
 def snapshot(conn, note):
-    result = dict(note)
+    from . import note_batches
+    result = note_batches.project(conn, note)
     result['fields_json'] = json.dumps(customer_fields(conn,note),ensure_ascii=False)
     return result
 
@@ -144,6 +139,10 @@ def set_field(conn, note, field, value):
                 fields.update({k:'待补充' for k in SUPPLIER_FIELDS})
             source, basis = None, 'manual'
         fields[field] = value
+    if field in SUPPLIER_FIELDS and note.get('batch_id'):
+        from . import note_batches
+        bid = note_batches.create(conn,'guest',note['customer_id'],fields,'confirmed','manual_note_edit')
+        conn.execute('UPDATE cs_note SET batch_id=? WHERE id=?',(bid,note['id']))
     conn.execute('UPDATE cs_note SET fields_json=?,source_shop_id=?,source_basis=? WHERE id=? AND customer_id=?',
                  (json.dumps(fields,ensure_ascii=False),source,basis,note['id'],note['customer_id']))
 

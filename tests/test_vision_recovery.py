@@ -12,7 +12,7 @@ def test_empty_vision_result_retries_once_before_creating_notes(env):
     row=conn.execute("SELECT fields_json FROM cs_note WHERE status='draft'").fetchone()
     fields=json.loads(row[0])
     assert fields['装箱数']=='未拍到' and '待确认' in fields['价格']
-    assert len(fields)==11
+    assert fields['图片提示']=='商品框缺失或无效，暂用整张照片'
     assert fields['档口名称']=='待补充'
 
 

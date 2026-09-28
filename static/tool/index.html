@@ -23,7 +23,7 @@
   nav{display:flex;gap:8px;padding:10px;background:#fff;border-top:1px solid #eee}
   nav button{flex:1;border:0;border-radius:8px;padding:12px 0;font-size:15px;cursor:pointer;background:#1677ff;color:#fff}
   nav button.ghost{background:#fff;color:#1677ff;border:1px solid #1677ff}
-  #tip{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:6px 14px;border-radius:16px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9;max-width:80%}
+  #tip{pointer-events:none;position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:6px 14px;border-radius:16px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9;max-width:80%}
   #drawer{position:fixed;inset:0;z-index:20}
   #drawer .mask{position:absolute;inset:0;background:rgba(0,0,0,.35)}
   #drawer aside{position:absolute;left:0;right:0;top:8%;bottom:0;background:#f5f6f8;border-radius:12px 12px 0 0;display:flex;flex-direction:column;overflow:hidden}
@@ -37,6 +37,9 @@
   .note .f{flex:1;white-space:pre-wrap;word-break:break-word}
   .note .t{color:#999;font-size:12px;margin-top:4px}
   #dempty{margin:24px 16px;padding:32px 16px;text-align:center;color:#999;background:#fff;border-radius:8px}
+  .session-controls,#batches{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 12px;background:#fff;border-bottom:1px solid #eee;font-size:13px}
+  .session-controls button,#batches button{border:1px solid #ddd;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;color:#245b9c}
+  #batches{max-height:160px;overflow:auto;flex-shrink:0}#batches:empty{display:none}#batches label{width:100%}
 </style>
 </head>
 <body>
@@ -46,7 +49,7 @@
   <div class="row"><input id="code" type="text" placeholder="6位验证码" autocomplete="one-time-code" inputmode="numeric"><button id="verifybtn" onclick="doLogin()" disabled>登录</button></div>
   <div id="loginhint">登录后清单会挂到您的账号；未登录也可直接用（游客模式）。</div>
 </div>
-<div id="log"></div>
+<div class="session-controls"><button onclick="newSession(true)">结束当前会话</button><button onclick="manualBatch()">手动切换档口</button></div><div id="batches"></div><div id="log"></div>
 <nav>
   <button onclick="document.getElementById('file').click()">📷 拍照</button>
   <button class="ghost" onclick="openList()">📋 清单</button>
@@ -63,7 +66,7 @@
   </aside>
 </div>
 <script>
-let GUEST = localStorage.getItem('ut_guest') || '';
+let GUEST = sessionStorage.getItem('ut_guest') || '';
 let TOKEN = localStorage.getItem('ut_token') || '';
 let EMAIL = localStorage.getItem('ut_email') || '';
 const log = document.getElementById('log');
@@ -87,10 +90,13 @@ function renderWho(){
   else { who.textContent = '游客模式'; btn.textContent = '登录'; }
   document.getElementById('loginbar').style.display = 'none';
 }
-function toggleLogin(){
+async function toggleLogin(){
   const bar = document.getElementById('loginbar');
   if (TOKEN) {   // 退出登录 → 回游客模式（原游客记录还在）
+    const ended = await fetch('session/end', auth({method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}));
+    if (!ended.ok) { tip('退出失败，请重试'); return; }
     TOKEN = ''; EMAIL = '';
+    await newSession();
     localStorage.removeItem('ut_token'); localStorage.removeItem('ut_email');
     renderWho(); bubble('bot', '已退出登录，回到游客模式。');
     return;
@@ -120,7 +126,7 @@ async function doLogin(){
       body: JSON.stringify({email, code, guest: TOKEN ? '' : GUEST})});
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { tip(d.detail || '登录失败'); return; }
-    TOKEN = d.token; EMAIL = d.email;
+    TOKEN = d.token; EMAIL = d.email; GUEST = ''; sessionStorage.removeItem('ut_guest');
     localStorage.setItem('ut_token', TOKEN); localStorage.setItem('ut_email', EMAIL);
     renderWho();
     bubble('bot', '登录成功，邮箱 ' + EMAIL + '；刚才游客模式下的记录已合并到您的账号。');
@@ -137,6 +143,7 @@ async function photo(input){
     const r = await fetch('photo', auth({method: 'POST', body: fd}));
     const d = await r.json().catch(() => ({}));
     bubble('bot', d.reply || d.detail || '…');
+    await refreshBatches();
   }catch(e){ tip('上传失败，请重试'); }
 }
 async function openList(){
@@ -191,6 +198,41 @@ async function exportXlsx(){
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }catch(e){ tip('网络异常，请重试'); }
 }
+async function newSession(end=false){
+  if (end && !TOKEN && GUEST) {
+    const r = await fetch('session/end', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guest:GUEST})});
+    if (!r.ok && r.status !== 410) { tip('结束会话失败'); return; }
+  }
+  if (TOKEN) { tip('请先退出登录'); return; }
+  const r = await fetch('guest',{method:'POST'}); const d = await r.json();
+  GUEST=d.guest; sessionStorage.setItem('ut_guest',GUEST);
+  document.getElementById('log').replaceChildren();
+  document.getElementById('batches').replaceChildren();
+  document.getElementById('dlist').replaceChildren(); closeList();
+}
+async function refreshBatches(){
+  const r=await fetch('notes'+q(),auth({method:'POST'}));
+  if(r.status===410){tip('会话已失效，请开始新会话');return;}
+  if(!r.ok)return;
+  const d=await r.json(); renderBatches(d);
+}
+function renderBatches(d){
+  const el=document.getElementById('batches');el.replaceChildren();
+  for(const n of d.notes||[]){if(n.batch_state!=='unassigned'&&n.batch_state!=='legacy_unassigned')continue;
+    const label=document.createElement('label'), check=document.createElement('input');check.type='checkbox';check.value=n.id;
+    label.append(check,document.createTextNode('关联待归属条目 '+n.id+' '+(n.fields['型号或品名']||'')));el.append(label);
+  }
+  for(const b of d.batches||[]){if(b.state==='unassigned')continue;
+    const btn=document.createElement('button');btn.textContent=(b.active?'当前档口：':'确认切换：')+(b.fields['档口名称']||'未命名档口');
+    btn.onclick=()=>confirmBatch(b.id);el.append(btn);
+  }
+}
+async function confirmBatch(batch_id,fields=null){
+  const note_ids=Array.from(document.querySelectorAll('#batches input:checked'),x=>Number(x.value));
+  const r=await fetch((fields?'batches':'batches/confirm')+q(),auth({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({batch_id,note_ids,fields})}));
+  if(!r.ok){tip((await r.json()).detail||'切换失败');return;} await refreshBatches();
+}
+async function manualBatch(){const name=prompt('新档口名称（仅用于后续照片和勾选的待归属条目）');if(name)await confirmBatch(null,{'档口名称':name});}
 (async function init(){
   renderWho();
   if (!GUEST) {
@@ -198,9 +240,10 @@ async function exportXlsx(){
       const r = await fetch('guest', {method: 'POST'});
       const d = await r.json();
       GUEST = d.guest;
-      localStorage.setItem('ut_guest', GUEST);
+      sessionStorage.setItem('ut_guest', GUEST);
     }catch(e){ tip('初始化失败，请刷新重试'); }
   }
+  await refreshBatches();
   bubble('bot', '您好！拍商品/名片照片，我帮您整理成清单，随时可导出 Excel。登录邮箱后清单挂账号，不登录也能用。');
 })();
 </script>

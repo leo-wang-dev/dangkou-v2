@@ -25,6 +25,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
+from . import guest_sessions, note_batches
 from . import llm as default_llm
 from .cs_export import render_notes
 from .cs_supplier import normalize as normalize_fields
@@ -32,7 +33,6 @@ from .csbot import CsBot, extract_photo_items
 from .request_lifecycle import drain_worker
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GUEST_RE = re.compile(r'guest-[0-9a-f]{6,32}\Z')
 EMAIL_RE = re.compile(r'[^\s@]+@[^\s@]+\.[^\s@]+\Z')
 CODE_TTL_MINUTES = 10
 SCHEMA = '''
@@ -101,6 +101,8 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL')
     conn.executescript(SCHEMA)
+    guest_sessions.migrate(conn)
+    note_batches.migrate(conn, "notes")
     conn.commit()
 
     app = FastAPI(title='dangkou user tool')
@@ -134,6 +136,15 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
             return await drain_worker(done)
 
         try:
+            # A separate, short cleanup transaction commits before endpoint/model work.
+            cleanup = sqlite3.connect(db_path)
+            cleanup.row_factory = sqlite3.Row
+            try:
+                paths = purge_guests(cleanup)
+                cleanup.commit()
+                remove_unreferenced(cleanup, paths)
+            finally:
+                cleanup.close()
             try:
                 response = await call_next(request)
                 interrupted = await wait_for_worker()
@@ -142,13 +153,24 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
                 if response.status_code >= 400:
                     connection.rollback()
                 else:
+                    capability = getattr(request.state, 'guest_capability', '')
+                    if capability:
+                        try:
+                            guest_sessions.touch(connection, capability)
+                        except HTTPException as exc:
+                            connection.rollback()
+                            from fastapi.responses import JSONResponse
+                            return JSONResponse({'detail': exc.detail}, status_code=exc.status_code)
+                    paths = purge_guests(connection)
                     connection.commit()
+                    remove_unreferenced(connection, paths)
                 return response
             except BaseException:
                 await wait_for_worker()
                 connection.rollback()
                 raise
         finally:
+            remove_unreferenced(connection, getattr(request.state, 'created_photos', []))
             current_connection.reset(context)
             connection.close()
 
@@ -173,9 +195,24 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
                 raise HTTPException(401, '登录已失效，请重新登录')
             return 'user', row['email']
         guest = str(guest or request.query_params.get('guest') or '').strip()
-        if GUEST_RE.fullmatch(guest):
-            return 'guest', guest
+        if guest:
+            session = guest_sessions.validate(request_conn(), guest)
+            request.state.guest_capability = guest
+            return 'guest', session['owner_id']
         raise HTTPException(401, '缺少身份：请登录，或刷新页面以游客模式使用')
+
+    def remove_unreferenced(connection, paths):
+        for path in set(paths):
+            if connection.execute('SELECT 1 FROM notes WHERE photo_path=?', (path,)).fetchone():
+                continue
+            if os.path.commonpath([os.path.abspath(path), os.path.abspath(photo_dir)]) != os.path.abspath(photo_dir):
+                continue
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+
+    purge_guests = guest_sessions.purge_central
 
     def _save_photo(data: bytes) -> str:
         fname = f'{secrets.token_hex(8)}.jpg'
@@ -201,7 +238,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
                      if k in ('档口名称', '供应商联系人', '供应商联系方式', '档口号/地址')
                      and str(v or '').strip() and '未拍到' not in str(v)}
             if clean:
-                lines.append('已记录名片信息：' + '；'.join(f'{k}={v}' for k, v in clean.items()))
+                lines.append('已识别名片，待确认切换档口：' + '；'.join(f'{k}={v}' for k, v in clean.items()))
         body = ('整理好了，已加入清单：\n' + '\n'.join(lines)
                 + '\n\n可继续拍照累积；点底部「📋 清单」查看，「⬇ Excel」随时导出。'
                 '\n照片里的价格只是记录，不是报价。')
@@ -211,7 +248,19 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
 
     @app.post('/guest')
     def new_guest():
-        return {'guest': 'guest-' + secrets.token_hex(8)}
+        return {'guest': guest_sessions.issue(request_conn()), 'photo_mode': 'notes', 'idle_seconds': guest_sessions.ttl()}
+
+    @app.post('/session/end')
+    async def end_session(request: Request):
+        body = await request.json() if request.headers.get('content-type', '').startswith('application/json') else {}
+        kind, owner = _identity(request, str(body.get('guest') or ''))
+        if kind == 'guest':
+            guest_sessions.revoke(request_conn(), request.state.guest_capability)
+            request.state.guest_capability = ''
+        else:
+            auth = request.headers.get('authorization', '')
+            request_conn().execute('DELETE FROM session_tokens WHERE token_hash=?', (_hash(auth[7:].strip() or str(request.query_params.get('token') or '')),))
+        return {'ended': True}
 
     # ---------- 拍照抽取 ----------
 
@@ -228,25 +277,47 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         def process_photo():
             kind, owner_id = _identity(request, owner)
             path = _save_photo(data)
+            request.state.created_photos = [path]
             items, cards = extract_photo_items(request.app.state.llm, data)
             cards = [c for c in cards if isinstance(c, dict)
                      and any(str(v or '').strip() for v in c.values())]
             if not items and not cards:
                 os.unlink(path)
                 return {'reply': '这张照片我没能认出可记录的信息，麻烦重拍一张近一点的～', 'added': 0}
+            _identity(request, owner)  # expiry/revocation during model work cannot resurrect data
+            batch_id, pending = note_batches.prepare(request_conn(), kind, owner_id, cards)
             start = request_conn().execute(
                 'SELECT COUNT(*) FROM notes WHERE owner_kind=? AND owner_id=?',
                 (kind, owner_id)).fetchone()[0] + 1
             for i, fields in enumerate(items, start):
                 fields = normalize_fields(fields)
                 note_photo = CsBot._crop_photo(path, i - start, fields.pop('__图框__', None))
+                request.state.created_photos.append(note_photo)
+                if note_photo == path:
+                    fields['图片提示'] = '商品框缺失或无效，暂用整张照片'
                 request_conn().execute(
-                    'INSERT INTO notes(owner_kind, owner_id, photo_path, fields_json) '
-                    'VALUES(?,?,?,?)',
-                    (kind, owner_id, note_photo, json.dumps(fields, ensure_ascii=False)))
-            return {'reply': _receipt(items, cards), 'added': len(items)}
+                    'INSERT INTO notes(owner_kind, owner_id, photo_path, fields_json, batch_id) '
+                    'VALUES(?,?,?,?,?)',
+                    (kind, owner_id, note_photo, json.dumps(fields, ensure_ascii=False),batch_id))
+            return {'reply': _receipt(items, cards), 'added': len(items), 'photo_mode':'notes',
+                    'pending_batches':[b for b in note_batches.listing(request_conn(),kind,owner_id) if b['id'] in pending]}
 
         return await run_request_worker(request, process_photo, model=True)
+
+    @app.post('/batches/confirm')
+    async def confirm_batch(request: Request, guest: str = ''):
+        kind, owner = _identity(request, guest)
+        body = await request.json()
+        note_batches.confirm(request_conn(),kind,owner,body.get('batch_id'),body.get('note_ids') or [],'notes')
+        return {'confirmed':True}
+
+    @app.post('/batches')
+    async def manual_batch(request: Request, guest: str = ''):
+        kind, owner = _identity(request, guest)
+        body = await request.json()
+        bid = note_batches.create(request_conn(),kind,owner,body.get('fields'),'pending','manual')
+        note_batches.confirm(request_conn(),kind,owner,bid,body.get('note_ids') or [],'notes')
+        return {'batch_id':bid}
 
     # ---------- 清单 / 导出 ----------
 
@@ -258,10 +329,11 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
             (kind, owner_id)).fetchall()
         notes = []
         for n in rows:
+            n = note_batches.project(request_conn(), n)
             notes.append({'id': n['id'], 'created_at': n['created_at'],
-                          'fields': json.loads(n['fields_json']),
+                          'fields': json.loads(n['fields_json']), 'batch_id':n['batch_id'], 'batch_state':n['batch_state'],
                           'photo': (f'/notes/{n["id"]}/photo' if n['photo_path'] else '')})
-        return {'notes': notes}
+        return {'notes': notes, 'batches':note_batches.listing(request_conn(),kind,owner_id)}
 
     @app.get('/notes/{note_id}/photo')
     def note_photo(note_id: int, request: Request, guest: str = ''):
@@ -282,7 +354,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         if not rows:
             raise HTTPException(409, '暂无可导出条目，请先上传照片')
         content = render_notes(
-            [{'fields_json': n['fields_json'], 'photo': n['photo_path']} for n in rows])
+            [{**note_batches.project(request_conn(), n), 'photo': n['photo_path']} for n in rows])
         fname = f'tool-list-{owner_id.split("@")[0][:16]}.xlsx'
         return Response(
             content=content,
@@ -331,10 +403,16 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
                          (row['rowid'],))
             request_conn().execute('INSERT OR IGNORE INTO users(email) VALUES(?)', (email,))
             # 合并：当前游客的记录迁到账号名下（guest 行随之清空）。
-            if GUEST_RE.fullmatch(guest):
+            if guest:
+                session = guest_sessions.revoke(request_conn(), guest, 'merged')
                 request_conn().execute(
                     "UPDATE notes SET owner_kind='user', owner_id=? WHERE owner_kind='guest' AND owner_id=?",
-                    (email, guest))
+                    (email, session['owner_id']))
+                if request_conn().execute("SELECT 1 FROM note_batches WHERE owner_kind='guest' AND owner_id=? AND active=1",(session['owner_id'],)).fetchone():
+                    request_conn().execute("UPDATE note_batches SET active=0 WHERE owner_kind='user' AND owner_id=?",(email,))
+                request_conn().execute(
+                    "UPDATE note_batches SET owner_kind='user', owner_id=? WHERE owner_kind='guest' AND owner_id=?",
+                    (email, session['owner_id']))
             token = secrets.token_urlsafe(32)
             request_conn().execute('INSERT INTO session_tokens(token_hash, email) VALUES(?,?)',
                          (_hash(token), email))

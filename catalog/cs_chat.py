@@ -82,7 +82,7 @@ class _CachedConnection:
         return result
 
 
-def text_turn_transaction(conn, visitor: str, text: str, model, attempts=3) -> str:
+def text_turn_transaction(conn, visitor: str, text: str, model, attempts=3, validate=None) -> str:
     """Plan model calls on a private snapshot; atomically replay on current data.
 
     The real connection takes its writer lock only after all model calls finish.
@@ -122,6 +122,8 @@ def text_turn_transaction(conn, visitor: str, text: str, model, attempts=3) -> s
             conn.rollback()
             continue
         try:
+            if validate:
+                validate()
             bot = H5Bot(_CachedConnection(conn, catalog_cache, replay=True), api=None,
                         llm=_CachedModel(model, model_cache, replay=True))
             bot._processing = True

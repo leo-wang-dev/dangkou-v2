@@ -15,6 +15,13 @@
     </view>
 
     <!-- 消息区 -->
+    <view class="session-controls">
+      <text>图片模式：{{ photoMode === 'search' ? '查商品' : photoMode === 'notes' ? '记笔记' : '待选择' }}</text>
+      <button @click="setMode('search')">查商品</button><button @click="setMode('notes')">记笔记</button>
+      <button @click="newSession(true)">结束当前会话</button><button @click="manualBatch">手动切换档口</button>
+      <label v-for="n in unassigned" :key="n.id"><checkbox :checked="selected.includes(n.id)" @click="toggleNote(n.id)" />关联待归属条目 {{ n.id }} {{ n.fields['型号或品名'] }}</label>
+      <button v-for="b in batches.filter(x=>x.state!=='unassigned')" :key="b.id" @click="confirmBatch(b.id)">{{ b.active ? '当前档口：' : '确认切换：' }}{{ b.fields['档口名称'] || '未命名档口' }}</button>
+    </view>
     <scroll-view class="log" scroll-y :scroll-top="tail" scroll-with-animation>
       <view v-for="(m, i) in messages" :key="i" class="msg" :class="m.role === 'me' ? 'me' : 'bot'">
         <text v-for="(seg, j) in segments(m.text)" :key="j"
@@ -54,6 +61,8 @@ import NoteTable from '../../components/note-table.vue'
 
 const token = ref('')
 const visitor = ref('')
+let ready = Promise.resolve()
+const photoMode=ref(''), batches=ref([]),unassigned=ref([]),selected=ref([])
 const input = ref('')
 const messages = ref([])
 const tail = ref(0)
@@ -89,6 +98,7 @@ function onSegment(seg) {
 }
 
 async function send(override) {
+  await ready
   const text = override || (input.value || '').trim()
   if (!text) return
   if (!override) input.value = ''
@@ -96,12 +106,14 @@ async function send(override) {
   const r = await csApi.send(token.value, text, visitor.value)
   if (r.ok) {
     bubble('bot', (r.data && r.data.reply) || '…')
+    await refreshSession()
   } else {
     tip((r.data && r.data.detail) || '网络异常，请重试')
   }
 }
 
 async function photo() {
+  await ready
   let filePath = ''
   try { filePath = await choosePhoto() } catch (e) { return }
   if (!filePath) return
@@ -110,12 +122,14 @@ async function photo() {
   const r = await csApi.uploadPhoto(token.value, visitor.value, filePath)
   if (r.ok) {
     bubble('bot', (r.data && r.data.reply) || '…')
+    await refreshSession()
   } else {
     tip((r.data && r.data.detail) || '上传失败，请重试')
   }
 }
 
 async function pickLang(lang) {
+  await ready
   await csApi.setLang(token.value, lang, visitor.value)
   langBar.value = false
   storage.set('dk_lang_done', '1')
@@ -126,6 +140,7 @@ async function pickLang(lang) {
 
 // 我的清单抽屉：按访客取最近 cs_link token，交给 note-table 渲染/编辑/导出
 async function openList() {
+  await ready
   drawer.value = true
   listEmpty.value = false
   listK.value = ''
@@ -136,6 +151,16 @@ async function openList() {
     listEmpty.value = true
   }
 }
+
+function toggleNote(id){selected.value=selected.value.includes(id)?selected.value.filter(x=>x!==id):[...selected.value,id]}
+async function refreshSession(){const r=await csApi.session(token.value,visitor.value);if(!r.ok){tip(r.status===410?'会话已失效，请开始新会话':'会话加载失败');return}photoMode.value=r.data.photo_mode;batches.value=r.data.batches||[];unassigned.value=(r.data.notes||[]).filter(n=>['unassigned','legacy_unassigned'].includes(n.batch_state))}
+async function newSession(end=false){
+  if(end&&visitor.value){const r=await csApi.endSession(token.value,visitor.value);if(!r.ok&&r.status!==410){tip('结束会话失败');return}}
+  const r=await csApi.newSession(token.value);if(!r.ok){tip('初始化失败');return}visitor.value=r.data.visitor;storage.set('h5v:'+token.value,visitor.value);messages.value=[];drawer.value=false;selected.value=[];await refreshSession()
+}
+async function setMode(mode){await ready;const r=await csApi.setMode(token.value,visitor.value,mode);if(r.data?.reply||r.data?.detail)bubble('bot',r.data.reply||r.data.detail);await refreshSession()}
+async function confirmBatch(id,fields=null){const r=await csApi.confirmBatch(token.value,visitor.value,id,selected.value,fields);if(!r.ok){tip(r.data?.detail||'切换失败');return}selected.value=[];await refreshSession()}
+function manualBatch(){uni.showModal({title:'新档口名称',editable:true,success:r=>{if(r.confirm&&r.content)confirmBatch(null,{'档口名称':r.content})}})}
 
 onLoad((options) => {
   options = options || {}
@@ -148,11 +173,8 @@ onLoad((options) => {
   }
   // #endif
   if (!token.value) token.value = 'invalid-token'
-  visitor.value = storage.get('h5v')
-  if (!visitor.value) {
-    visitor.value = 'h5-' + Math.random().toString(36).slice(2, 12)
-    storage.set('h5v', visitor.value)
-  }
+  visitor.value = storage.get('h5v:'+token.value)
+  ready = visitor.value ? refreshSession() : newSession()
   // 首访先选语言；老访客直接欢迎（旧页用 sessionStorage，小程序无此能力，改持久标记）
   if (!storage.get('dk_lang_done')) {
     langBar.value = true
@@ -163,6 +185,9 @@ onLoad((options) => {
 </script>
 
 <style scoped>
+.session-controls { display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; background:#fff; max-height:180px; overflow:auto; flex-shrink:0; font-size:13px; }
+.session-controls button { margin:0; font-size:13px; line-height:2; padding:0 10px; color:#245b9c; }
+.session-controls label { width:100%; }
 .page { display: flex; flex-direction: column; height: 100vh; background: #f5f6f8; }
 .header { background: #fff; border-bottom: 1px solid #eee; padding: 8px 12px; display: flex; gap: 8px; align-items: center; }
 .hbtn { margin: 0; border: 0; border-radius: 6px; padding: 0 12px; font-size: 13px; line-height: 2; background: #1677ff; color: #fff; }

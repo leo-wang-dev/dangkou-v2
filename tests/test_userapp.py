@@ -76,7 +76,7 @@ def test_guest_photo_creates_notes_and_receipt(client):
     assert '【1】' in body['reply'] and '直发夹板' in body['reply']
     assert '已加入清单' in body['reply']
     rows = client.app.state.conn.execute(
-        "SELECT * FROM notes WHERE owner_kind='guest' AND owner_id=?", (guest,)).fetchall()
+        "SELECT * FROM notes WHERE owner_kind='guest' AND owner_id=?", (client.app.state.conn.execute('SELECT owner_id FROM guest_sessions WHERE token_hash=?',(userapp._hash(guest),)).fetchone()[0],)).fetchall()
     assert len(rows) == 1
     fields = json.loads(rows[0]['fields_json'])
     assert fields['型号或品名'] == '直发夹板'
@@ -177,7 +177,7 @@ def test_auth_code_and_verify_merges_guest_notes(client):
                         (email,)).fetchone()[0] == 1     # 迁到账号
     assert conn.execute("SELECT COUNT(*) FROM notes WHERE owner_kind='guest' AND owner_id=?",
                         (guest,)).fetchone()[0] == 0     # guest 行清空
-    assert client.post('/notes', params={'guest': guest}).json()['notes'] == []
+    assert client.post('/notes', params={'guest': guest}).status_code == 410
     assert conn.execute("SELECT used_at FROM auth_codes WHERE code_hash=?",
                         (userapp._hash(f'{email}:{code}'),)).fetchone()[0]
 

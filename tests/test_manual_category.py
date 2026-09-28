@@ -113,8 +113,10 @@ def test_h5_chat_flow(client, monkeypatch):
     tok = client.post('/cs/chat-token', headers=_auth()).json()['chat_token']
     assert client.post('/cs/chat-token', headers=_auth()).json()['chat_token'] == tok  # 稳定
     assert client.get(f'/cs/chat/{tok}').status_code == 200
-    v = {'text': '你好', 'visitor': 'h5-test1'}
-    r = client.post(f'/cs/chat/{tok}/lang', json={'lang': 'English', 'visitor': 'h5-test1'})
+    guest = client.post(f'/cs/chat/{tok}/session').json()['visitor']
+    client.post(f'/cs/chat/{tok}/mode',json={'visitor':guest,'mode':'notes'})
+    v = {'text': '你好', 'visitor': guest}
+    r = client.post(f'/cs/chat/{tok}/lang', json={'lang': 'English', 'visitor': guest})
     assert r.json()['lang'] == 'English'
     class FakeLlm:
         def chat_text(self, system, messages, **kw):
@@ -131,17 +133,16 @@ def test_h5_chat_flow(client, monkeypatch):
     import io
     from PIL import Image
     buf = io.BytesIO(); Image.new('RGB', (10, 10), 'red').save(buf, format='JPEG')
-    r = client.post(f'/cs/chat/{tok}/photo', data={'visitor': 'h5-test1'},
+    r = client.post(f'/cs/chat/{tok}/photo', data={'visitor': guest},
                     files={'file': ('a.jpg', buf.getvalue(), 'image/jpeg')})
     assert r.status_code == 200 and '杯子' in r.json()['reply']
     # tg 渠道已随删C 拆除：内核永不写 tg* 渠道
     conn = client.app.state.conn
     assert conn.execute("SELECT COUNT(*) FROM cs_outbox WHERE channel LIKE 'tg%'").fetchone()[0] == 0
     # 我的清单抽屉：出表后按访客取最近 cs_link token；他人/未出表拿空串
-    r = client.post(f'/cs/chat/{tok}/message', json={'text': '出表', 'visitor': 'h5-test1'})
+    r = client.post(f'/cs/chat/{tok}/message', json={'text': '出表', 'visitor': guest})
     assert '我的清单' in r.json()['reply']
-    token = conn.execute("SELECT token FROM cs_link WHERE customer_id=("
-                         "SELECT id FROM cs_customer WHERE tg_id='h5-test1')").fetchone()[0]
-    r = client.get(f'/cs/chat/{tok}/list-token', params={'visitor': 'h5-test1'})
+    token = client.get(f'/cs/chat/{tok}/list-token',params={'visitor':guest}).json()['token']
+    r = client.get(f'/cs/chat/{tok}/list-token', params={'visitor': guest})
     assert r.status_code == 200 and r.json()['token'] == token
-    assert client.get(f'/cs/chat/{tok}/list-token', params={'visitor': 'someone-else'}).json()['token'] == ''
+    assert client.get(f'/cs/chat/{tok}/list-token', params={'visitor': 'someone-else'}).status_code == 401

@@ -21,6 +21,11 @@
     </view>
 
     <!-- 消息区 -->
+    <view class="session-controls">
+      <button @click="endSession">结束当前会话</button><button @click="manualBatch">手动切换档口</button>
+      <label v-for="n in unassigned" :key="n.id"><checkbox :checked="selected.includes(n.id)" @click="toggleNote(n.id)" />关联待归属条目 {{ n.id }} {{ n.fields['型号或品名'] }}</label>
+      <button v-for="b in batches.filter(x=>x.state!=='unassigned')" :key="b.id" @click="confirmBatch(b.id)">{{ b.active ? '当前档口：' : '确认切换：' }}{{ b.fields['档口名称'] || '未命名档口' }}</button>
+    </view>
     <scroll-view class="log" scroll-y :scroll-top="tail" scroll-with-animation>
       <view v-for="(m, i) in messages" :key="i" class="msg" :class="m.role === 'me' ? 'me' : 'bot'">{{ m.text }}</view>
     </scroll-view>
@@ -111,6 +116,19 @@ function noteText(n) {
     .join('\n')
 }
 
+const batches = ref([]), unassigned = ref([]), selected = ref([])
+function toggleNote(id) { selected.value = selected.value.includes(id) ? selected.value.filter(x=>x!==id) : [...selected.value,id] }
+async function refreshBatches() {
+  const r=await toolApi.notes(); if(!r.ok)return
+  batches.value=r.data.batches||[]; unassigned.value=(r.data.notes||[]).filter(n=>['unassigned','legacy_unassigned'].includes(n.batch_state))
+}
+async function confirmBatch(id,fields=null) { const r=await toolApi.confirmBatch(id,selected.value,fields); if(!r.ok){tip(r.data?.detail||'切换失败');return} selected.value=[];await refreshBatches() }
+function manualBatch() { uni.showModal({title:'新档口名称',editable:true,success:r=>{if(r.confirm&&r.content)confirmBatch(null,{'档口名称':r.content})}}) }
+async function endSession() {
+  if(token.value){tip('请先退出登录');return}
+  const r=await toolApi.endSession();if(!r.ok&&r.status!==410){tip('结束会话失败');return}
+  guest.value='';storage.remove('ut_guest');messages.value=[];notes.value=[];batches.value=[];unassigned.value=[];drawer.value=false;await init()
+}
 async function init() {
   if (!guest.value) {
     const r = await toolApi.newGuest()
@@ -121,16 +139,19 @@ async function init() {
       tip('初始化失败，请刷新重试')
     }
   }
+  await refreshBatches()
   bubble('bot', '您好！拍商品/名片照片，我帮您整理成清单，随时可导出 Excel。登录邮箱后清单挂账号，不登录也能用。')
 }
 
-function toggleLogin() {
+async function toggleLogin() {
   if (token.value) {
-    // 退出登录 → 回游客模式（原游客记录还在）
+    const ended = await toolApi.endSession()
+    if (!ended.ok) { tip('退出失败，请重试'); return }
     token.value = ''
     email.value = ''
     storage.remove('ut_token')
     storage.remove('ut_email')
+    guest.value = ''; storage.remove('ut_guest'); await init()
     loginBar.value = false
     bubble('bot', '已退出登录，回到游客模式。')
     return
@@ -157,6 +178,7 @@ async function doLogin() {
   const r = await toolApi.verify(addr, c, token.value ? '' : guest.value)
   loggingIn.value = false
   if (!r.ok) { tip((r.data && r.data.detail) || '登录失败'); return }
+  guest.value = ''; storage.remove('ut_guest')
   token.value = r.data.token
   email.value = r.data.email
   storage.set('ut_token', token.value)
@@ -174,6 +196,7 @@ async function photo() {
   const r = await toolApi.uploadPhoto(filePath)
   bubble('bot', (r.data && (r.data.reply || r.data.detail)) || '…')
   if (!r.ok && !(r.data && r.data.reply)) tip('上传失败，请重试')
+  await refreshBatches()
 }
 
 async function openList() {
@@ -207,6 +230,9 @@ onLoad(() => {
 </script>
 
 <style scoped>
+.session-controls { display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; background:#fff; max-height:180px; overflow:auto; flex-shrink:0; font-size:13px; }
+.session-controls button { margin:0; font-size:13px; line-height:2; padding:0 10px; color:#245b9c; }
+.session-controls label { width:100%; }
 .page { display: flex; flex-direction: column; height: 100vh; background: #f5f6f8; }
 .header { background: #fff; border-bottom: 1px solid #eee; padding: 8px 12px; display: flex; align-items: center; gap: 8px; }
 .who { flex: 1; font-size: 13px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

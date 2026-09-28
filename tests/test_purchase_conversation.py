@@ -87,6 +87,15 @@ def fields(c):
     return [json.loads(r[0]) for r in c.execute('SELECT fields_json FROM cs_note ORDER BY id')]
 
 
+def exported_rows(workbook):
+    result=[]
+    for sheet in workbook:
+        rows=list(sheet.values)
+        index=next(i for i,row in enumerate(rows) if row[0]=='序号')
+        result.extend(dict(zip(rows[index],row)) for row in rows[index+1:])
+    return result
+
+
 def test_text_creates_multiple_notes_and_exports(setup):
     c,b,m=setup
     m.actions=[{'op':'create','fields':{'型号或品名':'杯子','颜色':'蓝色','数量':'100个'}},
@@ -96,8 +105,9 @@ def test_text_creates_multiple_notes_and_exports(setup):
     m.actions=[]; send(b,'出表',2)
     assert len(b.documents)==1
     wb=openpyxl.load_workbook(io.BytesIO(b.documents[0][2]))
-    assert wb.active.max_row==3
-    assert '100个' in str(list(wb.active.values))
+    rows=exported_rows(wb)
+    assert len(rows)==2
+    assert rows[0]['数量']=='100个' and rows[1]['数量']=='20件'
 
 
 def test_records_quantity_even_when_question_transfers(setup):
@@ -165,7 +175,7 @@ def test_selected_photo_is_enriched_without_duplicate_and_excel_has_image(setup,
     Image.new('RGB',(20,20)).save(photo)
     send(b,'出表',3)
     wb=openpyxl.load_workbook(io.BytesIO(b.documents[0][2]))
-    assert wb.active.max_row==2 and len(wb.active._images)==1
+    assert len(exported_rows(wb))==1 and sum(len(ws._images) for ws in wb)==1
 
 
 def test_catalog_purchase_copies_product_image(setup,tmp_path,monkeypatch):
@@ -449,14 +459,13 @@ def test_export_contains_catalog_enriched_and_unmatched_purchase_rows(setup, tmp
 
     assert len(bot.documents) == 1
     workbook = openpyxl.load_workbook(io.BytesIO(bot.documents[0][2]))
-    sheet = workbook.active
-    rows = list(sheet.values)
-    headers = list(rows[0])
-    assert sheet.max_row == 3
-    assert len(sheet._images) == 1
-    assert '商品编号' not in headers and '商品类别' not in headers
-    assert 'C001' in rows[1] and '220V' in rows[1] and '100个' in rows[1]
-    assert '定制礼盒' in rows[2] and '20套' in rows[2]
+    rows = exported_rows(workbook)
+    assert len(rows) == 2
+    assert sum(len(sheet._images) for sheet in workbook) == 1
+    assert all('商品编号' not in row and '商品类别' not in row for row in rows)
+    assert 'C001' in rows[0].values() and '220V' in rows[0].values() and '100个' in rows[0].values()
+    assert '定制礼盒' in rows[1].values() and '20套' in rows[1].values()
+
 
 
 def test_export_refreshes_catalog_fields_and_enriches_a_previously_unmatched_note(setup, tmp_path, monkeypatch):
@@ -476,10 +485,11 @@ def test_export_refreshes_catalog_fields_and_enriches_a_previously_unmatched_not
 
     send(bot, '出表', uid=3)
 
-    sheet = openpyxl.load_workbook(io.BytesIO(bot.documents[-1][2])).active
-    rows = list(sheet.values)
-    assert any('C001' in row and '230V' in row and '220V' not in row for row in rows[1:])
-    assert any('FUTURE-1' in row and '110V' in row for row in rows[1:])
+    workbook = openpyxl.load_workbook(io.BytesIO(bot.documents[-1][2]))
+    rows = [list(row.values()) for row in exported_rows(workbook)]
+    assert any('C001' in row and '230V' in row and '220V' not in row for row in rows)
+    assert any('FUTURE-1' in row and '110V' in row for row in rows)
+
 
 
 def test_export_refresh_preserves_customer_edited_field(setup, tmp_path, monkeypatch):

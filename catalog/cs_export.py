@@ -2,6 +2,7 @@
 import io
 import json
 import os
+import re
 import openpyxl
 from .cs_supplier import normalize
 
@@ -28,6 +29,30 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
     if texts is None and lang and lang != '中文' and conn is not None and llm is not None:
         from . import cs_i18n
         texts = lambda values: cs_i18n.translate_texts(conn, llm, lang, values)  # noqa: E731
+    notes = list(notes)
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    groups = {}
+    for note in notes:
+        groups.setdefault(note.get('batch_id', 'legacy') if isinstance(note, dict) else 'legacy', []).append(note)
+    for group in groups.values():
+        card = group[0].get('batch_fields', {}) if isinstance(group[0], dict) else {}
+        title = re.sub(r'[\\/*?:\[\]]', '_', str(card.get('档口名称') or '待确认档口')).strip(" '")[:31] or '采购清单'
+        original, number = title, 1
+        while title.casefold() in {x.casefold() for x in wb.sheetnames}:
+            number += 1
+            suffix = f' ({number})'
+            title = original[:31-len(suffix)] + suffix
+        ws = wb.create_sheet(title)
+        _render_sheet(group, ws, card, lang, texts)
+    if not wb.worksheets:
+        wb.create_sheet('采购清单')
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _render_sheet(notes, ws, card, lang, texts):
     items = [normalize(json.loads(n['fields_json'])) for n in notes]
     # Old durable outbox snapshots may predate the public projection. Strip
     # binding metadata again at render time so retries cannot disclose it.
@@ -54,9 +79,10 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
     else:
         headers = ['序号', *keys, '商品照片']
         rows = [[str(f.get(k, '')) for k in keys] for f in items]
-    wb = openpyxl.Workbook()
-    ws = wb.active
     from openpyxl.drawing.image import Image as XlImage
+    for key, value in card.items():
+        ws.append([key, value])
+    offset = len(card)
     ws.append(headers)
     for i, values in enumerate(rows, 1):
         ws.append([i, *values])
@@ -65,7 +91,7 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
         for cell in cells:
             if cell.data_type == 'f':
                 cell.data_type = 's'
-    for r_i, n in enumerate(notes, start=2):      # 商品图嵌入（有图且装了 pillow）
+    for r_i, n in enumerate(notes, start=2 + offset):      # 商品图嵌入（有图且装了 pillow）
         if not (n['photo'] and os.path.exists(n['photo'])):
             continue
         try:
@@ -83,6 +109,3 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
     for cells in ws:
         for cell in cells:
             cell.alignment = Alignment(wrap_text=True, vertical='top')
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()

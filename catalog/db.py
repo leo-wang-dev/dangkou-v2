@@ -20,6 +20,9 @@ def init_db(conn):
     _migrate(conn)
     from . import shop_link
     shop_link.migrate(conn)
+    from . import guest_sessions, note_batches
+    guest_sessions.migrate(conn)
+    note_batches.migrate(conn, "cs_note")
     _seed_cs(conn)
     conn.commit()
 

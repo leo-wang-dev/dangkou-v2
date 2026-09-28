@@ -6,6 +6,7 @@ cs_outbox（notify* 渠道），投递由 catalog/notify.deliver（run_notificat
 进程）统一完成——本内核不负责发送。测试直调内核，不打网络。
 """
 import json
+import math
 import os
 import secrets
 import re
@@ -22,7 +23,8 @@ EXTRACT_PROMPT = (
     '品牌、英文品名、净含量要保留包装上可见原文，中文说明可附在后面，不要因为没有型号就漏掉品名。'
     '每件清晰可辨的主体商品独立成一条；同图有多个主体则分别列出。'
     '仅局部入镜、遮挡且信息不完整的背景商品只在其他中注明，不新增采购条目。'
-    '只输出JSON数组，每条使用以下商品键，所有值是字符串：'
+    '每条商品必须提供图框：[左,上,右,下]，0到1000归一化坐标，框住商品本身，与价签框独立；无法定位填null。'
+    '只输出JSON数组，除图框以外以下商品键的值是字符串：'
     '型号或品名、价格、装箱数、颜色、体积或尺寸、其他。\n若照片里是名片（或含名片）：不作为商品，单独输出一条 {"名片": {"档口名称":..,"供应商联系人":..,"供应商联系方式":..,"档口号/地址":..}}，名片上看不清的字段留空。'
     '型号或品名写可见品牌和品名；体积或尺寸保留mL/g等单位。'
     '没有拍到的字段写未拍到，看不清写模糊，不得补造数字。'
@@ -46,6 +48,7 @@ REVIEW_PHOTO_PROMPT = (
     '4.无明确数量用途的数字放其他并写含义待确认，不猜成装箱数或订单数量。'
     '只输出修正后的JSON数组，不要分析说明，不要Markdown代码块；每条保留型号或品名、价格、装箱数、颜色、体积或尺寸、其他六个字符串字段，'
     '另外保留档口名称、档口号/地址、供应商联系人、供应商联系方式四个独立字段；只有明确对应的名片或招牌才填写，商品品牌和生产厂家不得代替采购档口，缺失写待补充。'
+    '保留或校正图框：[左,上,右,下]，0到1000坐标，框住商品本身，不得用价签框代替；无法定位填null。'
     '并增加_主体和_价格完整两个布尔字段，以及_价格框：[左,上,右,下]，坐标归一化到0到1000。'
     '价格框必须包住该商品对应的整个价签（货币符号和所有数字），不是商品包装框；找不到完整价签时填null。'
     '画面边缘的价签必须检查是否还有字符被裁掉，不能缩小框规避截断。'
@@ -96,6 +99,11 @@ def extract_photo_items(llm, data):
         items = CsBot._conservative_prices(items, CsBot._parse_items(reviewed))
     # 复核回显的名片透传条目不是商品，不进清单（名片只在初抽那轮分流）。
     items = [it for it in items if '名片' not in it]
+    for item in items:
+        item.pop('__box_cleared__', None)
+        if cards:
+            for key in cs_supplier.FIELDS:
+                item.pop(key, None)
     return items, cards
 
 
@@ -160,19 +168,28 @@ class CsBot:
 
     # ---------- 拍照整理 ----------
 
-    def _prepare_photo(self, cust, data):
+    def _prepare_photo(self, cust, data, mode=None):
         """H5 上传的图片字节 → 落盘 + 抽取 + 复核 + 本店商品候选。"""
         fname = f"{cust['id'] if cust is not None else 'upload'}_{secrets.token_hex(6)}.jpg"
         path = os.path.join(self.img_dir, fname)
         open(path, 'wb').write(data)
+        if hasattr(self, 'created_photos'):
+            self.created_photos.append(path)
         items, cards = extract_photo_items(self.llm, data)
         from . import photo_inquiry
         return path, items, photo_inquiry.candidates(self.conn, items, data), cards
 
     @staticmethod
+    def _valid_product_box(box):
+        return (isinstance(box, list) and len(box) == 4
+                and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                        and math.isfinite(x) and 0 <= x <= 1000 for x in box)
+                and box[0] < box[2] and box[1] < box[3])
+
+    @staticmethod
     def _crop_photo(path: str, index: int, box) -> str:
         """一图多商品：按千分制图框裁出该商品的子图；框缺失/裁剪失败回落整图。"""
-        if not isinstance(box, list) or len(box) != 4:
+        if not CsBot._valid_product_box(box):
             return path
         try:
             from PIL import Image
@@ -190,7 +207,7 @@ class CsBot:
         except Exception:
             return path
 
-    def _on_photo(self, cust, msg, prepared=None) -> str:
+    def _on_photo(self, cust, msg, prepared=None, notes_only=False) -> str:
         if prepared is None:
             prepared = self._prepare_photo(cust, msg)
         path, items, found, cards = prepared
@@ -200,27 +217,26 @@ class CsBot:
             self._log(cust['id'], 'assistant', '(抽取失败)')
             return '这张照片我没能认出商品信息，麻烦重拍一张近一点的～'
         receipts = []
-        card_lines = []
-        for card in cards:
-            clean = {k: str(v or '').strip() for k, v in (card or {}).items()
-                     if k in ('档口名称', '供应商联系人', '供应商联系方式', '档口号/地址')
-                     and str(v or '').strip() and '未拍到' not in str(v)}
-            if clean:
-                self.conn.execute(
-                    "INSERT INTO cs_card_info(customer_id,fields_json,updated_at) VALUES(?,?,datetime('now')) "
-                    "ON CONFLICT(customer_id) DO UPDATE SET fields_json=excluded.fields_json,updated_at=datetime('now')",
-                    (cust['id'], json.dumps(clean, ensure_ascii=False)))
-                self._commit()
-                card_lines.append('已从名片记录档口信息：' + '；'.join(f'{k}={v}' for k, v in clean.items()))
+        from . import note_batches
+        profile = shop_link.profile(self.conn)
+        preset = shop_link.supplier_values(profile) if profile['shop_name'] and profile['tg_bot_id'] else None
+        if any(shop_link.origin(self.conn, item)[2] == 'photo' for item in items):
+            preset = None
+        batch_id, pending = note_batches.prepare(self.conn, 'guest', cust['id'], cards, preset=preset)
+        card_lines = ['已识别名片，待确认切换档口：' + json.dumps(c,ensure_ascii=False) for c in cards]
         start = self.conn.execute("SELECT COUNT(*) FROM cs_note WHERE customer_id=? AND status='draft'", (cust['id'],)).fetchone()[0] + 1
         for i, fields in enumerate(items, start):
             fields = cs_supplier.normalize(fields)
             received_shop, source_shop, basis = shop_link.origin(self.conn, fields)
             note_photo = self._crop_photo(path, i - start, fields.pop('__图框__', None))
+            if hasattr(self, 'created_photos'):
+                self.created_photos.append(note_photo)
+            if note_photo == path:
+                fields['图片提示'] = '商品框缺失或无效，暂用整张照片'
             cur = self.conn.execute(
-                'INSERT INTO cs_note(customer_id, photo, fields_json, status,received_shop_id,source_shop_id,source_basis) '
-                "VALUES(?,?,?,'draft',?,?,?)",
-                (cust['id'], note_photo, json.dumps(fields, ensure_ascii=False),received_shop,source_shop,basis))
+                'INSERT INTO cs_note(customer_id, photo, fields_json, status,received_shop_id,source_shop_id,source_basis,batch_id) '
+                "VALUES(?,?,?,'draft',?,?,?,?)",
+                (cust['id'], note_photo, json.dumps(fields, ensure_ascii=False),received_shop,source_shop,basis,batch_id))
             note = self.conn.execute('SELECT * FROM cs_note WHERE id=?',(cur.lastrowid,)).fetchone()
             fields = shop_link.customer_fields(self.conn,note)
             got = [f'{k}={v}' for k, v in fields.items()
@@ -231,11 +247,13 @@ class CsBot:
                 line += f'\n　没拍到/看不清：{"、".join(miss)}（可以回复我补上，比如"颜色黑色"）'
             receipts.append(line)
         if card_lines:
-            receipts.append('\n'.join(card_lines) + '\n（导出的采购清单将使用名片上的档口信息）')
+            receipts.append('\n'.join(card_lines) + '\n（确认后用于后续照片；已有待归属条目需明确选择关联）')
         if not receipts and card_lines:
             receipts = list(card_lines)
         self._log(cust['id'], 'assistant', '\n'.join(receipts))
         inquiry = '\n照片里的价格只是采购记录，不是本店确认报价。'
+        if notes_only:
+            return '整理好了，请核对：\n' + '\n'.join(receipts) + inquiry
         if found:
             inquiry += '\n可能对应以下本店商品，请先确认型号：\n' + '\n'.join(
                 f'询价{i}：{p["name"]}' + (f'（供应商：{p["supplier"]}）' if p.get('supplier') else '') for i,p in enumerate(found,1))
@@ -266,6 +284,7 @@ class CsBot:
             if isinstance(item.get('名片'), dict):
                 normalized.append({'名片': item['名片']})
                 continue
+            box_supplied = '图框' in item
             crop = item.get('图框')
             item.pop('图框', None)
             item = dict(item)
@@ -293,9 +312,10 @@ class CsBot:
                 if k not in keys and v and k != '__图框__':
                     extra = f'{k}：{v}'
                     result['其他'] = extra if result['其他'] == '未拍到' else result['其他']+'；'+extra
-            if isinstance(crop, list) and len(crop) == 4 and all(
-                    isinstance(x, (int, float)) and 0 <= x <= 1000 for x in crop):
+            if CsBot._valid_product_box(crop):
                 result['__图框__'] = crop
+            if box_supplied and not CsBot._valid_product_box(crop):
+                result['__box_cleared__'] = True
             result.update(supplier)
             normalized.append(result)
         return normalized
@@ -312,6 +332,12 @@ class CsBot:
             match = re.search(r'\d+(?:\.\d+)?', value)
             return Decimal(match[0]) if match else None
         for item in reviewed:
+            name = normalize(item.get('型号或品名', ''))
+            matching = [old for old in initial if normalize(old.get('型号或品名', '')) == name]
+            if (name and name not in ('未拍到', '模糊') and len(matching) == 1
+                    and sum(normalize(other.get('型号或品名', '')) == name for other in reviewed) == 1
+                    and '__图框__' not in item and not item.get('__box_cleared__') and CsBot._valid_product_box(matching[0].get('__图框__'))):
+                item['__图框__'] = matching[0]['__图框__']
             if '价格' not in item:      # 名片透传条目无商品字段，不参与比价
                 continue
             candidates = sorted(initial, key=lambda d:SequenceMatcher(None, normalize(d.get('型号或品名','')), normalize(item.get('型号或品名',''))).ratio(), reverse=True)

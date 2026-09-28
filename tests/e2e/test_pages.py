@@ -167,7 +167,11 @@ def test_chat_page_list_drawer(server):
     base, db_path = server
     conn = sqlite3.connect(db_path)
     conn.execute("UPDATE shop_profile SET chat_token='e2echattoken' WHERE id=1")
-    conn.execute("INSERT OR IGNORE INTO cs_customer(id,tg_id) VALUES('c3','h5-drawer1')")
+    from catalog import guest_sessions
+    conn.row_factory = sqlite3.Row
+    guest = guest_sessions.issue(conn)
+    owner = guest_sessions.validate(conn,guest)['owner_id']
+    conn.execute("INSERT OR IGNORE INTO cs_customer(id,tg_id) VALUES('c3',?)",(owner,))
     conn.execute("INSERT INTO cs_note(customer_id,photo,fields_json,status) VALUES('c3','',?,'confirmed')",
                  (json.dumps({'型号或品名': '抽屉测试杯', '价格': '9.9'}, ensure_ascii=False),))
     conn.execute("INSERT INTO cs_link(token,customer_id) VALUES('e2edrawer','c3')")
@@ -176,7 +180,7 @@ def test_chat_page_list_drawer(server):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.add_init_script("localStorage.setItem('h5v','drawer1')")   # 访客 h5-drawer1 → c3
+        page.add_init_script("sessionStorage.setItem('h5v:e2echattoken',"+json.dumps(guest)+")")   # 访客 h5-drawer1 → c3
         page.goto(f'{base}/cs/chat/e2echattoken')
         page.get_by_role('button', name='📋 我的清单').click()
         frame = page.frame_locator('#listframe')

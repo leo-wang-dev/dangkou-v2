@@ -44,7 +44,7 @@ def test_merchant_approval_to_customer_shop_and_excel(page,site):
         page.get_by_role('button',name='⬇️ 导出 Excel').click()
     from pathlib import Path
     sheet=openpyxl.load_workbook(io.BytesIO(Path(download.value.path()).read_bytes())).active
-    assert sheet.max_row==2 and len(sheet._images)==1
+    assert sheet.max_row==3 and len(sheet._images)==1
     assert '外部采购测试档口' in str(list(sheet.values)) and 'TEST-OWNER-WX' not in str(list(sheet.values))
     page.set_viewport_size({'width':390,'height':844})
     expect(page.locator('td[data-field="档口名称"]')).to_have_text('外部采购测试档口')
