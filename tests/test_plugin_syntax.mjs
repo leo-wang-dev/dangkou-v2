@@ -27,7 +27,7 @@ assert.equal(JSON.parse(calls.at(-1).options.body).changes.shop_name,'TEST SHOP'
 assert.equal(JSON.parse(calls.at(-1).options.body).changes.tg_bot_id,'12345')
 assert(tools.get('shop_contact_set').parameters.properties.shop_name)
 assert(!tools.get('catalog_import').parameters.required.includes('category'), 'Sheet import must not require a preset category')
-await tools.get('catalog_import').execute({path:'/tmp/merchant.xlsx',sourceKey:'merchant-a'})
+await tools.get('catalog_import').execute({path:'/tmp/merchant.xlsx',sourceKey:'merchant-a',phase:'template',mode:'new'})
 const importBody = JSON.parse(calls.at(-1).options.body)
 assert.equal(importBody.path, '/tmp/merchant.xlsx')
 assert.equal(importBody.source_key, 'merchant-a')

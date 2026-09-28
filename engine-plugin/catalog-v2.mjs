@@ -43,6 +43,28 @@ function finiteNumber(value, label) {
   }
 }
 
+function excelColumn(value) {
+  let number = Number(value)
+  if (!Number.isInteger(number) || number < 1 || number > 200) return String(value)
+  let label = ''
+  while (number > 0) {
+    number--
+    label = String.fromCharCode(65 + number % 26) + label
+    number = Math.floor(number / 26)
+  }
+  return label
+}
+
+function templateReviewNotice(stats) {
+  const hints = (stats?.review_hints || []).filter(h => h?.kind === 'unlabeled_image_column')
+  if (!hints.length) return ''
+  const locations = hints.map(h => `${h.source_sheet || 'Sheet'} 的 ${excelColumn(h.column)} 列`).join('、')
+  const missing = hints.some(h => !h.mapped)
+  return `⚠️ ${locations}有图片但没有文字表头。${missing
+    ? '请在模板审批卡补上“图片”字段，并将类型设为“图片”后再批准。'
+    : 'AI 已建议“图片”字段，请在模板审批卡核对字段类型为“图片”及客户可见性后再批准。'}`
+}
+
 export async function apply(ctx, _config = {}) {
   ctx.tools.register({
     name: 'catalog_import',
@@ -92,7 +114,8 @@ export async function apply(ctx, _config = {}) {
       let note
       if (r.status === 'ticketed' && r.phase === 'template') {
         const cats = ((r.stats && r.stats.categories) || []).join('、') || '新分类'
-        note = `模板识别完成：${cats}。把审批入口发给商家，请商家确认字段和客户可见性；模板审批通过后必须提醒商家再次上传同一份商品 Excel（用 templateDocId=${r.doc_id} 进入 products 阶段导入商品）。审批入口：${MANAGE}/?t=${TOKEN}`
+        const caution = templateReviewNotice(r.stats)
+        note = `模板识别完成：${cats}。${caution ? caution + '\n' : ''}把审批入口发给商家，请商家确认字段和客户可见性；模板审批通过后必须提醒商家再次上传同一份商品 Excel（用 templateDocId=${r.doc_id} 进入 products 阶段导入商品）。审批入口：${MANAGE}/?t=${TOKEN}`
       } else if (r.status === 'ticketed') {
         const s = r.stats || {}
         note = `商品解析完成：新增${s.new || 0} / 更新${s.update || 0} / 失败区域${s.failed || 0}。把审批入口发给商家核对，批准后商品才入库。审批入口：${MANAGE}/?t=${TOKEN}`
@@ -123,6 +146,7 @@ export async function apply(ctx, _config = {}) {
         const tks = await call('/tickets')
         tks.tickets.find(t => t.status === 'pending' && ['import', 'template_import', 'product_import'].includes(t.ticket_type))
         s.approveUrl = `${MANAGE}/?t=${TOKEN}`
+        if (s.phase === 'template') s.note = templateReviewNotice(s.stats)
       }
       if (s.status === 'template_approved') {
         s.nextAction = '请再次上传同一份商品 Excel，并调用 catalog_import phase=products，传 templateDocId=docId'

@@ -5,12 +5,17 @@ const tools = new Map()
 await apply({tools:{register(tool){ tools.set(tool.name, tool) }}})
 
 let calls = []
+let imageHintMapped = true
 globalThis.fetch = async (url, options = {}) => {
   calls.push({url:String(url), options})
   const path = new URL(String(url)).pathname
   let body = {}
-  if (path === '/import') body = {doc_id:7, est_sec:120}
-  else if (path === '/import/7') body = {id:7, status:'ticketed'}
+  if (path === '/import') body = {doc_id:7, status:'ticketed', phase:'template', stats:{
+    categories:['Sheet1'], review_hints:[{kind:'unlabeled_image_column', source_sheet:'Sheet1', column:2, image_count:58, mapped:imageHintMapped}],
+  }}
+  else if (path === '/import/7') body = {id:7, status:'ticketed', phase:'template', stats:{
+    review_hints:[{kind:'unlabeled_image_column', source_sheet:'Sheet1', column:2, image_count:58, mapped:imageHintMapped}],
+  }}
   else if (path === '/tickets') body = {tickets:[{id:9,status:'pending',ticket_type:'template_import'}]}
   else if (path === '/stats') body = {
     total: 2,
@@ -27,7 +32,15 @@ globalThis.fetch = async (url, options = {}) => {
 
 const imported = JSON.parse(await tools.get('catalog_import').execute({path:'/tmp/products.xlsx', sourceKey:'supplier-a', phase:'template', mode:'new'}))
 assert.equal(imported.docId, 7)
-assert.match(JSON.parse(await tools.get('catalog_check').execute({docId:7})).approveUrl, /^http/)
+assert.match(imported.note, /Sheet1.*B 列.*没有文字表头/)
+assert.match(imported.note, /核对字段类型为“图片”/)
+const checked = JSON.parse(await tools.get('catalog_check').execute({docId:7}))
+assert.match(checked.approveUrl, /^http/)
+assert.match(checked.note, /Sheet1.*B 列.*没有文字表头/)
+imageHintMapped = false
+const missingField = JSON.parse(await tools.get('catalog_import').execute({path:'/tmp/products.xlsx', phase:'template', mode:'new'}))
+assert.match(missingField.note, /补上“图片”字段/)
+assert.match(JSON.parse(await tools.get('catalog_check').execute({docId:7})).note, /补上“图片”字段/)
 assert.equal(JSON.parse(await tools.get('catalog_stats').execute({category:'cat_custom'})).total, 2)
 assert.equal(JSON.parse(await tools.get('catalog_search').execute({imagePath:'/tmp/product.jpg',topK:3})).hits[0].product_id, 'p1')
 assert.match(JSON.parse(await tools.get('catalog_quote').execute({
