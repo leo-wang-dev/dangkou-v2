@@ -1,4 +1,5 @@
 import threading
+import pytest
 from catalog import db, dynamic_import, ingest
 from catalog.storage import LocalStorage
 
@@ -53,3 +54,44 @@ def test_cross_process_slot_and_crash_recovery(tmp_path,monkeypatch):
     assert ingest.status(conn,first)['status']=='ticketed'
     assert ingest.status(conn,second)['status']=='ticketed'
     conn.close()
+
+
+@pytest.mark.parametrize('capacity',[1,2])
+def test_surviving_parser_keeps_slot_after_document_lease_expiry(tmp_path,monkeypatch,capacity):
+    monkeypatch.setenv('CATALOG_IMPORT_WORKERS',str(capacity))
+    conn=db.connect(str(tmp_path/'db'));db.init_db(conn)
+    source=tmp_path/'source.xlsx';source.write_bytes(b'x')
+    entered=threading.Event();release=threading.Event();calls=[]
+    def parser(*a,**kw):
+        calls.append(kw['doc_id']);entered.set();assert release.wait(5)
+        return {'sheets':[{'template':{'name':'test'}}]}
+    monkeypatch.setattr(dynamic_import,'build_template_payload',parser)
+    doc=ingest.start(conn,LocalStorage(str(tmp_path/'files')),str(source))
+    assert entered.wait(3)
+    try:
+        conn.execute('UPDATE import_doc SET lease_until=0');conn.commit()
+        ingest.recover(conn)
+        assert ingest.status(conn,doc)['attempt']==1
+        assert len(calls)==1
+    finally:release.set();assert ingest.join_workers(5);conn.close()
+
+
+def test_two_tenant_databases_share_actual_execution_capacity(tmp_path,monkeypatch):
+    conns=[db.connect(str(tmp_path/f'db{i}')) for i in range(2)]
+    for c in conns:db.init_db(c)
+    source=tmp_path/'source.xlsx';source.write_bytes(b'x')
+    entered=threading.Event();release=threading.Event();calls=[]
+    def parser(*a,**kw):
+        calls.append(1);entered.set();assert release.wait(5)
+        return {'sheets':[{'template':{'name':'test'}}]}
+    monkeypatch.setattr(dynamic_import,'build_template_payload',parser)
+    storage=LocalStorage(str(tmp_path/'files'))
+    ingest.start(conns[0],storage,str(source));assert entered.wait(3)
+    try:
+        doc=ingest.start(conns[1],storage,str(source))
+        assert ingest.status(conns[1],doc)['attempt']==0
+        assert len(calls)==1
+    finally:release.set();assert ingest.join_workers(5)
+    ingest.recover(conns[1]);assert ingest.join_workers(5)
+    assert ingest.status(conns[1],doc)['status']=='ticketed'
+    for c in conns:c.close()

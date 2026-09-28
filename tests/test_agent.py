@@ -11,6 +11,7 @@ def _make_fake(tmp_path, out_json, products):
     fake = tmp_path / 'claude'
     body = textwrap.dedent(f'''
         #!/bin/bash
+        if [[ "$1" == "ps" ]]; then exit 0; fi
         mkdir -p "$(dirname "{out_json}")"
         cat > "{out_json}" << 'EOF'
         {{"vendor": "测试厂", "products": {json.dumps(products, ensure_ascii=False)}}}

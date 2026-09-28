@@ -20,7 +20,7 @@ test -f .env || { echo 'Missing server .env; copy .env.example and configure it.
 python3 -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ required"'
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python scripts/preflight.py
+.venv/bin/python scripts/preflight.py --env-file .env
 umask 077
 # Stop writers before creating a consistent archive of existing data and WAL.
 # dangkou-cs ran the deleted TG poller (scripts/run_cs_bot.py); stop and retire it.

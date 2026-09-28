@@ -79,16 +79,19 @@ def test_expired_owner_cannot_finalize_after_reclaim(env, monkeypatch):
     monkeypatch.setattr(dynamic_import, 'build_template_payload', first_blocks)
     doc = ingest.start(conn, storage, source)
     assert entered.wait(5)
-    conn.execute('UPDATE import_doc SET lease_until=0 WHERE id=?', (doc,)); conn.commit()
-    assert ingest.recover(conn) == 1
-    import time
-    deadline = time.monotonic() + 5
-    while ingest.status(conn, doc)['status'] == 'parsing' and time.monotonic() < deadline:
-        time.sleep(.01)
+    # Simulate an independent business-lease winner without bypassing the host
+    # execution cap to start a second real parser. The old parser is still alive.
+    from catalog import tickets
+    conn.execute('BEGIN IMMEDIATE')
+    winner=tickets.create(conn,'template_import',None,payload(doc_id=doc),commit=False)
+    notify.push(doc_id=doc,ticket_id=winner['id'],token=winner['token'],stats={'winner':True},conn=conn,commit=False)
+    conn.execute("UPDATE import_doc SET lease_owner='winner',status='ticketed',stats_json=? WHERE id=?",(json.dumps({'winner':True}),doc))
+    conn.commit()
     release.set(); assert ingest.join_workers(timeout=5)
-    assert ingest.status(conn, doc)['attempt'] == 2
+    assert ingest.status(conn, doc)['stats']=={'winner':True}
     assert conn.execute('SELECT count(*) FROM approval_ticket').fetchone()[0] == 1
     assert conn.execute('SELECT count(*) FROM cs_outbox').fetchone()[0] == 1
+    assert conn.execute('SELECT id FROM approval_ticket').fetchone()[0] == winner['id']
 
 
 def test_owned_upload_survives_original_removal_and_notification_failure(env, monkeypatch):

@@ -68,19 +68,38 @@ def provision(c,m):
     return env,port,with_bot
 
 
+class Children(list):
+    def __init__(self,lock,parent_fd):
+        super().__init__()
+        self.lock,self.parent_fd=lock,parent_fd
+
+
 def stop(children):
+    if isinstance(children,Children) and children.parent_fd is not None:
+        os.close(children.parent_fd);children.parent_fd=None
     for p in children:
         if p.poll() is None:p.terminate()
     for p in children:
         try:p.wait(timeout=8)
         except subprocess.TimeoutExpired:p.kill();p.wait()
+    if isinstance(children,Children):children.lock.close()
 
 
 def launch(env,port,with_bot=True):
-    """每店一组档口 API 子进程（C 端 TG bot 子进程已随删C 拆除，客户入口=H5 链接）。"""
+    """Own API, import recovery/notifications, index and sweep as one tenant group."""
     import requests
-    api=subprocess.Popen([sys.executable,'-m','uvicorn','catalog.main:app','--host','127.0.0.1','--port',str(port),'--no-access-log'],cwd=PROJECT,env=env)
+    lock=open(env['CATALOG_V2_DB']+'.runtime.lock','a+')
+    try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    except BaseException:lock.close();raise
+    reader,writer=os.pipe()
+    children=Children(lock,writer)
+    prefix=[sys.executable,str(PROJECT/'scripts/run_managed_child.py'),'--parent-fd',str(reader)]
+    def spawn(args):
+        process=subprocess.Popen(prefix+args,cwd=PROJECT,env=env,pass_fds=(reader,lock.fileno()))
+        children.append(process)
+        return process
     try:
+        api=spawn(['--module','uvicorn','catalog.main:app','--host','127.0.0.1','--port',str(port),'--no-access-log'])
         session=requests.Session();session.trust_env=False
         for _ in range(60):
             if api.poll() is not None:raise RuntimeError('档口 API 启动失败')
@@ -90,8 +109,11 @@ def launch(env,port,with_bot=True):
             except requests.RequestException:pass
             time.sleep(.5)
         else:raise RuntimeError('档口 API 启动超时')
-        return [api]
-    except BaseException:stop([api]);raise
+        for script in ('run_notifications.py','rebuild_search_index.py','run_guest_sweep.py'):
+            spawn(['--script',str(PROJECT/'scripts'/script)])
+        return children
+    except BaseException:stop(children);raise
+    finally:os.close(reader)
 
 
 def main():

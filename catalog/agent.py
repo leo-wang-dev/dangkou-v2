@@ -112,6 +112,20 @@ def parse_dynamic_template(xlsx_path: str, work_dir: str, sheet: str = '') -> di
 
 
 def _run_container(prompt: str, xlsx_path: str, work_dir: str, *, out_name: str = 'products.json') -> dict:
+    from . import parser_execution
+    if parser_execution.current():
+        return _run_container_owned(prompt,xlsx_path,work_dir,out_name=out_name)
+    slot=parser_execution.acquire('direct:'+uuid.uuid4().hex)
+    if slot is None:raise RuntimeError('Parser host capacity is occupied; retry later')
+    try:
+        with slot.activate():
+            return _run_container_owned(prompt,xlsx_path,work_dir,out_name=out_name)
+    finally:slot.close()
+
+
+def _run_container_owned(prompt, xlsx_path, work_dir, *, out_name):
+    from . import parser_execution
+    slot=parser_execution.current()
     docker = shutil.which('docker')
     image = os.environ.get('CATALOG_AGENT_CONTAINER_IMAGE', '')
     if not docker or not image:
@@ -147,15 +161,20 @@ def _run_container(prompt: str, xlsx_path: str, work_dir: str, *, out_name: str 
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*',network) or network in ('host','none','bridge'):
             raise ValueError('解析网络必须是明确的专用 Docker 网络')
         command[2:2] = ['--network',network]
+    command[2:2]=['--label',parser_execution.LABEL+'='+slot.data['owner']]
+    slot.child({'kind':'docker','docker':docker,'name':container_name,'owner':slot.data['owner']})
     timed_out = False
+    completed = False
     try:
         process = subprocess.run(
             command,
             capture_output=True, text=True, timeout=config.AGENT_TIMEOUT,
-            env=env, cwd=work_dir)
+            env=env, cwd=work_dir, pass_fds=slot.fds)
+        completed=process.returncode==0
     except subprocess.TimeoutExpired:
         timed_out = True   # 超时拯救：产物已写出则收用
-        subprocess.run([docker, 'rm', '--force', container_name], capture_output=True, timeout=15, env=env)
+    finally:
+        slot.clear_child(completed=completed)
     if not timed_out and process.returncode != 0:
         raise RuntimeError('Agent 解析进程失败，请重试')
     if not os.path.exists(out_json):

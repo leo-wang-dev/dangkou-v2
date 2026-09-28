@@ -133,3 +133,9 @@ def offline_dynamic_agent(monkeypatch, request):
 
     monkeypatch.setattr(agent, 'parse_dynamic', _fake_parse_dynamic)
     monkeypatch.setattr(agent, 'parse_dynamic_template', _fake_parse_dynamic_template)
+
+
+@pytest.fixture(autouse=True)
+def isolated_parser_authority(tmp_path, monkeypatch):
+    # Every test owns one host authority; child processes inherit the same path.
+    monkeypatch.setenv('CATALOG_PARSER_STATE_DIR',str(tmp_path/'parser-host-state'))

@@ -46,9 +46,12 @@ def test_nonzero_exit_rejects_leftover_result(tmp_path, monkeypatch):
     work = tmp_path / 'work'; work.mkdir()
     monkeypatch.setattr(agent.shutil, 'which', lambda name: '/fake/docker')
     monkeypatch.setenv('CATALOG_AGENT_CONTAINER_IMAGE', 'test:fixture')
+    from catalog import parser_execution
+    # This seam represents a confirmed terminated container despite exit9.
+    monkeypatch.setattr(parser_execution,'reconcile',lambda marker,**kwargs:True)
     def run(args, **kwargs):
         (work / 'products.json').write_text('{"products": [{"model": "A"}]}')
-        return agent.subprocess.CompletedProcess(args, 9)
+        return agent.subprocess.CompletedProcess(args, 9 if args[1]=='run' else 0, stdout='')
     monkeypatch.setattr(agent.subprocess, 'run', run)
     with pytest.raises(RuntimeError, match='进程失败'):
         agent.parse_dynamic(_template(), str(source), str(work))

@@ -136,6 +136,7 @@ def test_provision_isolated_and_rules_explicit(c):
         env,port,with_bot=provision(c,hub.account(c,owner));paths.append(env['CATALOG_V2_DB'])
         assert with_bot
         assert env['MERCHANT_HUB_ENABLED']=='0'
+        assert env['CATALOG_PARSER_STATE_DIR']==__import__('os').environ['CATALOG_PARSER_STATE_DIR']
         s=db.connect(paths[-1]);policy=merchant_policy.read(s)
         assert policy['shop_name']=='测试档口' and not policy.get('price')
         assert s.execute('SELECT tg_bot_id FROM shop_profile').fetchone()[0]==owner;s.close()

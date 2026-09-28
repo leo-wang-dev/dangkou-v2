@@ -1,4 +1,4 @@
-"""Read-only deployment prerequisites. No dotenv loading, subprocesses, network or DB writes."""
+"""Read-only deployment prerequisites. Optional explicit dotenv input; no subprocesses, network or DB writes."""
 import argparse
 import os
 import shutil
@@ -7,11 +7,30 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
+def load_env(path):
+    """Read a deliberately selected dotenv file; never shell-evaluate its values."""
+    import re
+    import shlex
+    values={}
+    for number,line in enumerate(Path(path).read_text().splitlines(),1):
+        line=line.strip()
+        if not line or line.startswith('#'):continue
+        if line.startswith('export '):line=line[7:].lstrip()
+        key,sep,value=line.partition('=')
+        if not sep or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',key.strip()):
+            raise ValueError(f'Invalid dotenv assignment at line {number}')
+        try:parts=shlex.split(value,comments=True,posix=True)
+        except ValueError:raise ValueError(f'Invalid dotenv quoting at line {number}') from None
+        if len(parts)>1:raise ValueError(f'Quote dotenv whitespace at line {number}')
+        values[key.strip()]=parts[0] if parts else ''
+    os.environ.update(values)
+
+
 def missing():
     required = ['CATALOG_V2_SERVICE_TOKEN','CATALOG_V2_PUBLIC_URL',
         'BAILIAN_API_KEY','BAILIAN_BASE_URL','CATALOG_AGENT_API_KEY',
         'CATALOG_AGENT_BASE_URL','CATALOG_AGENT_MODEL','CATALOG_NOTIFY_TOKEN',
-        'CATALOG_AGENT_CONTAINER_IMAGE','CATALOG_AGENT_NETWORK',
+        'CATALOG_AGENT_CONTAINER_IMAGE','CATALOG_AGENT_NETWORK','CATALOG_PARSER_STATE_DIR',
         'CATALOG_V2_DB','CATALOG_V2_IMG','CATALOG_CS_PHOTOS','USER_APP_DB','USER_APP_PHOTOS']
     development = os.environ.get('USER_APP_ENV') == 'development' and os.environ.get('USER_APP_DEV_EMAIL_LOG') == '1'
     if not development:
@@ -39,7 +58,7 @@ def missing():
             errors.append('CATALOG_AGENT_NETWORK must match sample compose network dangkou-trial-parser')
         if agent.path.rstrip('/'):
             errors.append('CATALOG_AGENT_BASE_URL must be gateway root without /v1')
-    for name in ('CATALOG_V2_DB','USER_APP_DB','CATALOG_V2_IMG','CATALOG_CS_PHOTOS','USER_APP_PHOTOS'):
+    for name in ('CATALOG_PARSER_STATE_DIR','CATALOG_V2_DB','USER_APP_DB','CATALOG_V2_IMG','CATALOG_CS_PHOTOS','USER_APP_PHOTOS'):
         value=os.environ.get(name)
         if value and not Path(value).is_absolute():errors.append(name+' must be an absolute persistent path')
     if os.environ.get('CATALOG_V2_DB') and os.environ.get('CATALOG_V2_DB')==os.environ.get('USER_APP_DB'):
@@ -52,7 +71,9 @@ def missing():
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dry-run',action='store_true',help='Explicit read-only mode (also the default)')
-    parser.parse_args()
+    parser.add_argument('--env-file',type=Path,help='Explicit read-only dotenv input; values never executed or printed')
+    args=parser.parse_args()
+    if args.env_file:load_env(args.env_file)
     errors=missing()
     for error in errors:print('BLOCKED:',error)
     print('配置预检通过（未验证真实模型、邮件、SSH、容器及公网连通）' if not errors else '部署预检未通过（只读，未修改配置）')

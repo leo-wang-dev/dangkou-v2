@@ -9,7 +9,7 @@ import threading
 import time
 import uuid
 
-from . import db, tickets, notify
+from . import db, tickets, notify, parser_execution
 
 LEASE_SECONDS = 90
 _start_lock = threading.RLock()
@@ -37,9 +37,12 @@ def _ensure_xlsx(path):
         return str(path)
     import subprocess
     directory = tempfile.mkdtemp(prefix='converted-', dir=os.path.dirname(path) or '.')
+    slot=parser_execution.current()
+    if slot:slot.child({'kind':'conversion'})
     result = subprocess.run(['soffice', '-env:UserInstallation=file://' + directory + '/profile',
         '--headless', '--convert-to', 'xlsx', '--outdir', directory, str(path)],
-        capture_output=True, timeout=600)
+        capture_output=True, timeout=600, pass_fds=slot.fds if slot else ())
+    if slot:slot.child(None)
     converted = os.path.join(directory, Path(path).stem + '.xlsx')
     if result.returncode or not os.path.isfile(converted):
         raise RuntimeError('老 .xls 转换失败（服务器 soffice），请重试')
@@ -68,26 +71,37 @@ def _claim(conn, doc_id):
 def _launch(conn, doc_id, callback=None):
     db_file = conn.execute('PRAGMA database_list').fetchone()[2]
     with _start_lock:
-        owner = _claim(conn,doc_id)
+        slot = parser_execution.acquire((db_file or 'memory-'+str(id(conn)))+':'+str(doc_id))
+        if slot is None:
+            return False
+        try:
+            owner = _claim(conn,doc_id)
+        except BaseException:
+            slot.close();raise
         if not owner:
+            slot.close()
             return False
         if not db_file:
-            _run(conn, doc_id, callback, owner=owner)
+            _run(conn, doc_id, callback, owner=owner, slot=slot)
             return True
         def run():
-            owned = db.connect(db_file)
+            owned = None
             try:
-                _run(owned,doc_id,callback,owner=owner)
+                owned = db.connect(db_file)
+                _run(owned,doc_id,callback,owner=owner,slot=slot)
             finally:
+                slot.close()
                 try:
                     # Drain accepted jobs without a polling thread per queued upload.
-                    recover(owned)
+                    if owned is not None:recover(owned)
                 finally:
-                    owned.close()
+                    if owned is not None:owned.close()
                     _workers.discard(threading.current_thread())
         worker = threading.Thread(target=run,daemon=True,name=f'import-{doc_id}')
         _workers.add(worker)
-        worker.start()
+        try:worker.start()
+        except BaseException:
+            _workers.discard(worker);slot.close();raise
         return True
 
 
@@ -149,7 +163,19 @@ def recover(conn):
     return len(rows)
 
 
-def _run(conn, doc_id, callback=None, *, owner=None):
+def _run(conn, doc_id, callback=None, *, owner=None, slot=None):
+    if slot is None:
+        database=conn.execute('PRAGMA database_list').fetchone()[2] or 'memory-'+str(id(conn))
+        slot=parser_execution.acquire(database+':'+str(doc_id))
+    if slot is None:return
+    try:
+        with slot.activate():
+            return _run_owned(conn,doc_id,callback,owner=owner)
+    finally:
+        slot.close()
+
+
+def _run_owned(conn, doc_id, callback=None, *, owner=None):
     owner = owner or _claim(conn,doc_id)
     if not owner:
         return

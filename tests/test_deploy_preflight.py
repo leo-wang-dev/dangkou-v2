@@ -50,3 +50,24 @@ def test_bridge_config_and_network_contract():
     assert compose['networks']['parser']['name']=='dangkou-trial-parser'
     assert compose['services']['litellm']['ports']==['127.0.0.1:4000:4000']
     assert 'ANTHROPIC_API_KEY' in (ROOT/'catalog/agent.py').read_text()
+
+
+def test_safe_dotenv_loader_and_deploy_caller(tmp_path,monkeypatch):
+    module=load()
+    sample=tmp_path/'sample.env';sentinel=tmp_path/'should-not-exist'
+    sample.write_text('RESEND_FROM="Trial Sender <trial@example.test>"\nRESEND_API_KEY=placeholder\nLITERAL="$(touch '+str(sentinel)+')"\n')
+    for name in ('RESEND_FROM','RESEND_API_KEY','LITERAL'):monkeypatch.setenv(name,'before-test')
+    module.load_env(sample)
+    assert os.environ['RESEND_FROM']=='Trial Sender <trial@example.test>'
+    assert not sentinel.exists()
+    # Execute only local orchestration against hermetic SSH/rsync stubs. Remote
+    # payloads are captured, never evaluated or sent to a host.
+    fake=tmp_path/'commands';fake.mkdir();capture=tmp_path/'remote.txt'
+    for name in ('ssh','rsync','sudo','systemctl','install'):
+        content='#!/bin/sh\n'
+        content+=('/bin/cat >> "$CAPTURE"\n' if name=='ssh' else ('exit 0\n' if name=='rsync' else 'exit 99\n'))
+        p=fake/name;p.write_text(content);p.chmod(0o755)
+    (fake/'dirname').symlink_to(shutil.which('dirname'))
+    result=subprocess.run(['/bin/bash',str(ROOT/'deploy/deploy.sh')],env={**os.environ,'PATH':str(fake),'DEPLOY_HOST':'invalid.test','CAPTURE':str(capture)},capture_output=True,text=True)
+    assert result.returncode==0,result.stderr
+    assert 'scripts/preflight.py --env-file .env' in capture.read_text()
