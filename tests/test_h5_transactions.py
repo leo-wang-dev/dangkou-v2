@@ -16,6 +16,9 @@ from catalog import db, llm, merchant_policy, userapp
 from catalog.api import register_routes
 from catalog.storage import LocalStorage
 
+def valid_photo():
+    output=io.BytesIO(); Image.new('RGB',(8,8)).save(output,'JPEG'); return output.getvalue()
+
 
 @pytest.fixture()
 def h5(tmp_path, monkeypatch):
@@ -130,12 +133,14 @@ def test_userapp_failed_photo_is_not_committed_by_later_request(tmp_path, monkey
 
     monkeypatch.setattr(userapp_module, 'normalize_fields', normalize)
     monkeypatch.delenv('RESEND_API_KEY', raising=False)
+    monkeypatch.setenv('USER_APP_ENV','development')
+    monkeypatch.setenv('USER_APP_DEV_EMAIL_LOG','1')
     database = tmp_path / 'user.db'
     app = userapp.build_app(db_path=str(database), photo_dir=str(tmp_path / 'photos'),
                             codes_log=str(tmp_path / 'codes.log'), llm=Vision())
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.post('/photo', data={'owner': client.post('/guest').json()['guest']},
-                               files={'file': ('p.jpg', b'photo', 'image/jpeg')})
+                               files={'file': ('p.jpg', valid_photo(), 'image/jpeg')})
         later = client.post('/auth/code', json={'email': 'buyer@example.com'})
     assert response.status_code == 500
     assert later.status_code == 200

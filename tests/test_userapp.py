@@ -32,7 +32,9 @@ class FakeLlm:
 
 
 @pytest.fixture()
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv('USER_APP_ENV','development')
+    monkeypatch.setenv('USER_APP_DEV_EMAIL_LOG','1')
     llm = FakeLlm()
     app = userapp.build_app(db_path=str(tmp_path / 'u.db'),
                             photo_dir=str(tmp_path / 'ph'),
@@ -59,7 +61,10 @@ def _last_code(client, email):
     raise AssertionError('桩日志里没有该邮箱的验证码')
 
 
-def _upload(client, guest, data=b'fake-jpeg-bytes', token=''):
+def _upload(client, guest, data=None, token=''):
+    if data is None:
+        from PIL import Image
+        output=io.BytesIO(); Image.new('RGB',(8,8)).save(output,'JPEG'); data=output.getvalue()
     headers = {'Authorization': f'Bearer {token}'} if token else {}
     return client.post('/photo', data={'owner': guest}, files={'file': ('a.jpg', data, 'image/jpeg')},
                        headers=headers)

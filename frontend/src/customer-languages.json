@@ -2759,6 +2759,66 @@
       "vi": "Chưa rõ, cần xác nhận",
       "th": "ไม่ชัดเจน โปรดยืนยัน",
       "id": "Tidak jelas, mohon konfirmasi"
+    },
+    "otpCooldown": {
+      "zh": "请稍后再请求验证码",
+      "en": "Please wait before requesting another code",
+      "fr": "Veuillez patienter avant de demander un autre code",
+      "es": "Espera antes de solicitar otro código",
+      "pt": "Aguarde antes de pedir outro código",
+      "ru": "Подождите перед повторным запросом кода",
+      "ar": "يرجى الانتظار قبل طلب رمز آخر",
+      "de": "Bitte warten Sie, bevor Sie einen neuen Code anfordern",
+      "ja": "再送信するまでお待ちください",
+      "ko": "다른 코드를 요청하기 전에 기다려 주세요",
+      "vi": "Vui lòng đợi trước khi yêu cầu mã khác",
+      "th": "โปรดรอก่อนขอรหัสอีกครั้ง",
+      "id": "Tunggu sebelum meminta kode lagi"
+    },
+    "otpDeliveryFailed": {
+      "zh": "验证码发送失败，请稍后重试",
+      "en": "Code delivery failed. Please try again later",
+      "fr": "Échec de l’envoi du code. Réessayez plus tard",
+      "es": "No se pudo enviar el código. Inténtalo más tarde",
+      "pt": "Falha ao enviar o código. Tente mais tarde",
+      "ru": "Не удалось отправить код. Повторите позже",
+      "ar": "تعذر إرسال الرمز. حاول لاحقًا",
+      "de": "Code konnte nicht gesendet werden. Bitte später erneut versuchen",
+      "ja": "コードを送信できませんでした。後で再試行してください",
+      "ko": "코드를 보내지 못했습니다. 나중에 다시 시도하세요",
+      "vi": "Không gửi được mã. Vui lòng thử lại sau",
+      "th": "ส่งรหัสไม่สำเร็จ โปรดลองอีกครั้งภายหลัง",
+      "id": "Kode gagal dikirim. Coba lagi nanti"
+    },
+    "otpEmailSubject": {
+      "zh": "登录验证码",
+      "en": "Your sign-in code",
+      "fr": "Votre code de connexion",
+      "es": "Tu código de acceso",
+      "pt": "Seu código de acesso",
+      "ru": "Ваш код для входа",
+      "ar": "رمز تسجيل الدخول",
+      "de": "Ihr Anmeldecode",
+      "ja": "ログインコード",
+      "ko": "로그인 코드",
+      "vi": "Mã đăng nhập của bạn",
+      "th": "รหัสเข้าสู่ระบบของคุณ",
+      "id": "Kode masuk Anda"
+    },
+    "otpEmailBody": {
+      "zh": "验证码：{code}。有效期 {seconds} 秒。若非本人操作请忽略。",
+      "en": "Your code is {code}. It expires in {seconds} seconds. Ignore this email if you did not request it.",
+      "fr": "Votre code : {code}. Il expire dans {seconds} secondes. Ignorez ce message si vous ne l’avez pas demandé.",
+      "es": "Tu código es {code}. Caduca en {seconds} segundos. Ignora este correo si no lo solicitaste.",
+      "pt": "Seu código é {code}. Expira em {seconds} segundos. Ignore este e-mail se não o solicitou.",
+      "ru": "Ваш код: {code}. Срок действия: {seconds} секунд. Если вы не запрашивали код, проигнорируйте письмо.",
+      "ar": "رمزك هو {code}. تنتهي صلاحيته خلال {seconds} ثانية. تجاهل الرسالة إذا لم تطلبه.",
+      "de": "Ihr Code lautet {code}. Er läuft in {seconds} Sekunden ab. Ignorieren Sie diese E-Mail, wenn Sie ihn nicht angefordert haben.",
+      "ja": "コード：{code}。有効期限は {seconds} 秒です。心当たりがない場合は無視してください。",
+      "ko": "코드: {code}. {seconds}초 후 만료됩니다. 요청하지 않았다면 이 이메일을 무시하세요.",
+      "vi": "Mã của bạn là {code}. Hết hạn sau {seconds} giây. Bỏ qua email nếu bạn không yêu cầu.",
+      "th": "รหัสของคุณคือ {code} หมดอายุใน {seconds} วินาที หากคุณไม่ได้ขอ โปรดละเว้นอีเมลนี้",
+      "id": "Kode Anda adalah {code}. Kedaluwarsa dalam {seconds} detik. Abaikan email ini jika Anda tidak memintanya."
     }
   }
 }

@@ -2,7 +2,7 @@
 
 纯「照片 → AI 抽取 → 清单 → 导出 Excel」：不连任何档口商品库、不走客服
 persona 链路，与档口库完全隔离（独立 SQLite，独立进程独立端口）。用户体系
-= 邮箱验证码（发送暂为桩：日志 + data/userapp-codes.log，真渠道明天接）；
+= 邮箱验证码（生产要求邮件渠道；开发日志须显式启用）；
 游客 guest-<hex> 可直接用，登录时把当前游客的记录合并进账号。
 
 抽取链复用 catalog.csbot.extract_photo_items（EXTRACT_PROMPT/解析/复审/
@@ -25,7 +25,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
-from . import guest_sessions, note_batches
+from . import guest_sessions, note_batches, auth_codes
 from . import llm as default_llm
 from .cs_export import render_notes
 from . import cs_i18n
@@ -35,7 +35,6 @@ from .request_lifecycle import drain_worker
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMAIL_RE = re.compile(r'[^\s@]+@[^\s@]+\.[^\s@]+\Z')
-CODE_TTL_MINUTES = 10
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS users(
   email TEXT PRIMARY KEY,
@@ -65,27 +64,29 @@ def _hash(value: str) -> str:
 
 
 def _send_code_stub(email: str, code: str, codes_log: str):
-    """验证码发送：Resend 真渠道（受限 key 只发信）；未配 key 时回落明文日志桩。"""
+    """Production requires a configured sender; local logging is explicitly opt-in."""
     api_key = os.environ.get('RESEND_API_KEY', '')
-    sender = os.environ.get('RESEND_FROM', 'onboarding@resend.dev')
-    if api_key:
-        import requests
-        r = requests.post(
-            'https://api.resend.com/emails',
-            headers={'Authorization': f'Bearer {api_key}'},
-            json={'from': sender, 'to': [email],
-                  'subject': '你的登录验证码',
-                  'text': f'验证码：{code}\n10 分钟内有效。若非本人操作请忽略。'},
-            timeout=15)
-        if r.status_code not in (200, 201):
-            raise RuntimeError(f'resend {r.status_code}: {r.text[:200]}')
-        print(f'[userapp] auth code sent via resend -> {email}', flush=True)
+    sender = os.environ.get('RESEND_FROM', '')
+    if os.environ.get('USER_APP_ENV') == 'development' and os.environ.get('USER_APP_DEV_EMAIL_LOG') == '1':
+        os.makedirs(os.path.dirname(os.path.abspath(codes_log)), exist_ok=True)
+        fd = os.open(codes_log, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        with os.fdopen(fd, 'a', encoding='utf-8') as handle:
+            handle.write(f'{email}\t{code}\n')
         return
-    line = f'{email}\t{code}'
-    print(f'[userapp] auth code(stub) -> {line}')
-    os.makedirs(os.path.dirname(os.path.abspath(codes_log)), exist_ok=True)
-    with open(codes_log, 'a', encoding='utf-8') as fh:
-        fh.write(line + '\n')
+    if not api_key or not sender:
+        raise RuntimeError('Email sender is not configured')
+    import requests
+    language, ttl = _mail_context.get()
+    response = requests.post('https://api.resend.com/emails',
+        headers={'Authorization': f'Bearer {api_key}'},
+        json={'from': sender, 'to': [email],
+              'subject': cs_i18n.t('otpEmailSubject', language),
+              'text': cs_i18n.t('otpEmailBody', language, code=code, seconds=ttl)}, timeout=15)
+    if response.status_code not in (200, 201):
+        raise RuntimeError('Email delivery failed')
+
+
+_mail_context = ContextVar('otp_mail_context', default=('zh',600))
 
 
 def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
@@ -102,6 +103,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL')
     conn.executescript(SCHEMA)
+    auth_codes.migrate(conn)
     guest_sessions.migrate(conn)
     note_batches.migrate(conn, "notes")
     for table in ('users','guest_sessions'):
@@ -110,6 +112,8 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     conn.commit()
 
     app = FastAPI(title='dangkou user tool')
+    from .upload_limits import UploadLimitMiddleware
+    app.add_middleware(UploadLimitMiddleware)
     cs_i18n.install_errors(app)
     app.state.conn = conn
     app.state.photo_dir = photo_dir
@@ -285,14 +289,15 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
 
     @app.post('/photo')
     async def upload_photo(request: Request):
-        form = await request.form()
+        form = await request.form(max_files=1, max_fields=8)
         up = form.get('file')
         owner = str(form.get('owner') or '')
         if up is None or not hasattr(up, 'read'):
             raise HTTPException(400, '请上传 file 文件')
-        data = await up.read()
-        if not data:
-            raise HTTPException(400, '文件为空')
+        _identity(request, owner)
+        from .api import _validate_image_bytes
+        data = await up.read(int(os.environ.get('CATALOG_UPLOAD_MAX_BYTES', 20 * 1024 * 1024)) + 1)
+        _validate_image_bytes(data)
         def process_photo():
             kind, owner_id = _identity(request, owner)
             path = _save_photo(data)
@@ -388,7 +393,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
             media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             headers={'Content-Disposition': f'attachment; filename="{fname}"'})
 
-    # ---------- 邮箱验证码（发送=桩） ----------
+    # ---------- 邮箱验证码 ----------
 
     @app.post('/auth/code')
     async def auth_code(request: Request):
@@ -396,17 +401,19 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
             body = await request.json()
         except ValueError:
             raise HTTPException(400, '请求必须为 JSON 对象')
-        email = str((body or {}).get('email') or '').strip().lower()
-        if not EMAIL_RE.fullmatch(email):
+        if not isinstance(body, dict):
+            raise HTTPException(400, '请求必须为 JSON 对象')
+        email = str(body.get('email') or '').strip().lower()
+        if len(email) > 254 or not EMAIL_RE.fullmatch(email):
             raise HTTPException(400, '邮箱格式不正确')
         def send_code():
-            code = f'{secrets.randbelow(1000000):06d}'
-            request_conn().execute(
-                "INSERT INTO auth_codes(email, code_hash, expires_at) "
-                "VALUES(?,?,datetime('now', ?))",
-                (email, _hash(f'{email}:{code}'), f'+{CODE_TTL_MINUTES} minutes'))
-            _send_code_stub(email, code, codes_log)
-            return {'sent': True}   # 不回显验证码，统一“已发送”
+            context = _mail_context.set((cs_i18n.request_language(request), auth_codes.setting('USER_APP_OTP_TTL_SECONDS',600)))
+            try:
+                auth_codes.issue(request_conn(), email, lambda code, ttl: _send_code_stub(email, code, codes_log))
+            finally:
+                _mail_context.reset(context)
+            return {'sent': True}
+
         return await run_request_worker(request, send_code)
 
     @app.post('/auth/verify')
@@ -415,19 +422,13 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
             body = await request.json()
         except ValueError:
             raise HTTPException(400, '请求必须为 JSON 对象')
-        body = body or {}
+        if not isinstance(body, dict):
+            raise HTTPException(400, '请求必须为 JSON 对象')
         email = str(body.get('email') or '').strip().lower()
         code = str(body.get('code') or '').strip()
         guest = str(body.get('guest') or '').strip()
         def verify_code():
-            row = request_conn().execute(
-                "SELECT rowid FROM auth_codes WHERE email=? AND code_hash=? AND used_at IS NULL "
-                "AND datetime(expires_at)>datetime('now') ORDER BY rowid DESC LIMIT 1",
-                (email, _hash(f'{email}:{code}'))).fetchone()
-            if row is None:
-                raise HTTPException(400, '验证码错误或已过期')
-            request_conn().execute("UPDATE auth_codes SET used_at=datetime('now') WHERE rowid=?",
-                         (row['rowid'],))
+            auth_codes.consume(request_conn(), email, code)
             request_conn().execute('INSERT OR IGNORE INTO users(email) VALUES(?)', (email,))
             # 合并：当前游客的记录迁到账号名下（guest 行随之清空）。
             if guest:

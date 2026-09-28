@@ -152,7 +152,7 @@ def test_current_guest_language_merges_and_account_restores_on_another_device(tm
     email='buyer@example.test'
     with TestClient(app) as client:
         guest=client.post('/guest',headers={'X-Customer-Language':'ar'}).json()['guest']
-        app.state.conn.execute("INSERT INTO auth_codes(email,code_hash,expires_at) VALUES(?,?,datetime('now','+10 minutes'))",(email,userapp._hash(email+':123456')))
+        app.state.conn.execute("INSERT INTO auth_codes(email,code_hash,expires_at,delivery) VALUES(?,?,datetime('now','+10 minutes'),'delivered')",(email,userapp._hash(email+':123456')))
         app.state.conn.commit()
         login=client.post('/auth/verify',json={'guest':guest,'email':email,'code':'123456'}).json()
         me=client.get('/me',headers={'Authorization':'Bearer '+login['token'],'X-Customer-Language':'zh'})

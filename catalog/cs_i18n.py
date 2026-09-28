@@ -36,6 +36,10 @@ _FIXED.update({
     '这张照片要查商品，还是记笔记？请选择模式。':'photoIntentPrompt',
     '暂无可导出条目，请先上传采购照片':'emptyExport',
     '请求必须为 JSON 对象':'requestInvalid', '消息不能为空':'messageRequired',
+    'otpCooldown':'otpCooldown', 'otpDeliveryFailed':'otpDeliveryFailed',
+    '图片文件为空':'uploadError', '图片超过 20MB，请压缩后重试':'uploadError',
+    '图片格式仅支持 PNG、JPEG、WEBP、BMP、TIFF':'uploadError',
+    '图片尺寸无效或像素过大':'uploadError', '图片文件损坏或不是有效图片':'uploadError',
     '验证码错误或已过期':'codeExpired', '登录已失效，请重新登录':'guestSessionExpired',
     '缺少身份：请登录，或刷新页面以游客模式使用':'guestSessionExpired',
     'session_required':'guestSessionExpired', 'pending_batch_not_found':'missingSource', 'association_requires_unassigned_note':'sourceUnclear',
@@ -62,6 +66,7 @@ _FIXED.update({
 
 
 def fixed(text, lang='zh'):
+    if str(text) in ('otpCooldown','otpDeliveryFailed'): return t(str(text),lang)
     if normalize_language(lang)=='zh': return str(text)
     key = _FIXED.get(str(text))
     return t(key, lang) if key else str(text)

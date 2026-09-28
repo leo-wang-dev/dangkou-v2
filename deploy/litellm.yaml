@@ -1,0 +1,12 @@
+# NEW template, not recovered live configuration. No upstream/provider substitution.
+model_list:
+  - model_name: trial-parser
+    litellm_params:
+      model: os.environ/LITELLM_UPSTREAM_MODEL
+      api_base: os.environ/LITELLM_UPSTREAM_BASE_URL
+      api_key: os.environ/LITELLM_UPSTREAM_API_KEY
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+litellm_settings:
+  set_verbose: false
+  turn_off_message_logging: true

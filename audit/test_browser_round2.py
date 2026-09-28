@@ -24,7 +24,7 @@ import pytest
 from catalog import db, tickets
 
 ROOT = Path(__file__).resolve().parents[1]
-ART = Path(os.environ.get('DANGKOU_AUDIT_ARTIFACT_DIR', str(ROOT / 'audit' / 'fix-verification' / 'browser')))
+ART = Path(os.environ.get('DANGKOU_AUDIT_ARTIFACT_DIR', '/tmp/dangkou-browser-evidence'))
 TOKEN = 'round2-isolated-service-token'
 
 

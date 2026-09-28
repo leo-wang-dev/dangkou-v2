@@ -1,0 +1,15 @@
+[Unit]
+Description=Isolated trial Anthropic-compatible model bridge
+Requires=docker.service
+After=docker.service network-online.target
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/dangkou-wechat-test
+ExecStart=/usr/bin/docker compose --env-file /home/ubuntu/dangkou-wechat-test/.env -f deploy/compose.litellm.yaml up --abort-on-container-exit
+ExecStop=/usr/bin/docker compose --env-file /home/ubuntu/dangkou-wechat-test/.env -f deploy/compose.litellm.yaml down
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=40
+[Install]
+WantedBy=multi-user.target

@@ -2,7 +2,6 @@
 Description=Dangkou merchant onboarding control bot
 Wants=network-online.target dangkou-vpn.service
 After=network-online.target dangkou-vpn.service
-Conflicts=dangkou-cs-bot.service
 [Service]
 User=ubuntu
 Group=ubuntu

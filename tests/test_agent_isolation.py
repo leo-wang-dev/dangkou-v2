@@ -15,6 +15,7 @@ def test_agent_only_mounts_input_and_output_and_filters_service_secrets(tmp_path
     work=tmp_path/'work';work.mkdir()
     monkeypatch.setattr(agent.shutil,'which',lambda name:'/usr/local/bin/docker' if name=='docker' else None)
     monkeypatch.setenv('CATALOG_AGENT_CONTAINER_IMAGE','approved-parser:fixture')
+    monkeypatch.setenv('CATALOG_AGENT_NETWORK','dangkou-trial-parser')
     monkeypatch.setenv('TG_BOT_TOKEN','never-forward-this')
     monkeypatch.setenv('CATALOG_V2_SERVICE_TOKEN','never-forward-this-either')
     calls=[]
@@ -24,6 +25,7 @@ def test_agent_only_mounts_input_and_output_and_filters_service_secrets(tmp_path
     monkeypatch.setattr(agent.subprocess,'run',run)
     assert agent.parse_dynamic(_template(),str(source),str(work))['products'][0]['model']=='A'
     args,kwargs=calls[0]
+    assert args[args.index('--network')+1]=='dangkou-trial-parser'
     assert '--read-only' in args and '--cap-drop=ALL' in args
     assert sum(a=='--mount' for a in args)==2
     assert not any('never-forward' in str(v) for v in kwargs['env'].values())

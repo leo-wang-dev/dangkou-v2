@@ -30,7 +30,7 @@ def _validate_image_bytes(data: bytes) -> str:
             detected = str(image.format or '').upper()
             if detected not in _IMAGE_FORMAT_EXT:
                 raise HTTPException(400, '图片格式仅支持 PNG、JPEG、WEBP、BMP、TIFF')
-            if width <= 0 or height <= 0 or width * height > 40_000_000:
+            if width <= 0 or height <= 0 or width * height > int(os.environ.get('CATALOG_UPLOAD_MAX_PIXELS',40_000_000)):
                 raise HTTPException(400, '图片尺寸无效或像素过大')
             image.verify()
     except HTTPException:
@@ -93,6 +93,8 @@ def _push_redline_card(conn, ticket_id, token, product_id, old_text, new_text):
 
 
 def register_routes(app: FastAPI):
+    from .upload_limits import UploadLimitMiddleware
+    app.add_middleware(UploadLimitMiddleware)
     from . import cs_i18n
     cs_i18n.install_errors(app, customer_only=True)
     from .merchant_binding import register as register_merchant
@@ -480,7 +482,7 @@ def register_routes(app: FastAPI):
         _auth(request, app.state.token)
         import uuid
         from fastapi import UploadFile, File
-        form = await request.form()
+        form = await request.form(max_files=1, max_fields=8)
         up = form.get('file')
         if up is None or not hasattr(up, 'read'):
             raise HTTPException(400, '请上传 file 文件')
@@ -1413,15 +1415,14 @@ def register_routes(app: FastAPI):
     @app.post('/cs/chat/{token}/photo')
     async def cs_chat_photo(token: str, request: Request):
         _chat_conn(token)
-        form = await request.form()
+        form = await request.form(max_files=1, max_fields=8)
         visitor = str(form.get('visitor') or '')
         session = _session(request,visitor)
         up = form.get('file')
         if up is None or not hasattr(up,'read'):
             raise HTTPException(400,'请上传 file 文件')
-        data = await up.read()
-        if not data:
-            raise HTTPException(400,'文件为空')
+        data = await up.read(int(os.environ.get('CATALOG_UPLOAD_MAX_BYTES',20 * 1024 * 1024)) + 1)
+        _validate_image_bytes(data)
         if session['pending_photo']:
             raise HTTPException(409,'pending_photo_requires_resolution')
         if not session['photo_mode']:

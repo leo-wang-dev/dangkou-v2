@@ -141,6 +141,12 @@ def _run_container(prompt: str, xlsx_path: str, work_dir: str, *, out_name: str 
                '--entrypoint', 'claude', image,
                '-p', prompt, '--output-format', 'json', '--dangerously-skip-permissions',
                '--model', config.AGENT_MODEL]
+    network = os.environ.get('CATALOG_AGENT_NETWORK', '')
+    if network:
+        import re
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*',network) or network in ('host','none','bridge'):
+            raise ValueError('解析网络必须是明确的专用 Docker 网络')
+        command[2:2] = ['--network',network]
     timed_out = False
     try:
         process = subprocess.run(

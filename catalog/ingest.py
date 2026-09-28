@@ -18,9 +18,10 @@ _workers = set()
 
 def join_workers(timeout=30):
     deadline = time.monotonic() + timeout
-    for worker in list(_workers):
-        worker.join(max(0, deadline - time.monotonic()))
-    return not any(worker.is_alive() for worker in list(_workers))
+    while _workers and time.monotonic() < deadline:
+        for worker in list(_workers):
+            worker.join(max(0, deadline - time.monotonic()))
+    return not _workers
 
 
 def _sha256(path):
@@ -45,24 +46,49 @@ def _ensure_xlsx(path):
     return converted
 
 
+def _claim(conn, doc_id):
+    """A short DB-wide admission transaction precedes thread/container creation."""
+    now = time.time()
+    owner = uuid.uuid4().hex
+    conn.execute('BEGIN IMMEDIATE')
+    try:
+        active = conn.execute("SELECT count(*) FROM import_doc WHERE status='parsing' AND lease_until>?",(now,)).fetchone()[0]
+        if active >= max(1,int(os.environ.get('CATALOG_IMPORT_WORKERS','1'))):
+            conn.rollback()
+            return None
+        changed = conn.execute("UPDATE import_doc SET lease_owner=?,lease_until=?,attempt=attempt+1,progress_json=? WHERE id=? AND status='parsing' AND lease_until<=?",
+            (owner,now+LEASE_SECONDS,json.dumps({'stage':'preparing'}),doc_id,now)).rowcount
+        conn.commit()
+        return owner if changed else None
+    except BaseException:
+        conn.rollback()
+        raise
+
+
 def _launch(conn, doc_id, callback=None):
     db_file = conn.execute('PRAGMA database_list').fetchone()[2]
-    if not db_file:
-        # A private :memory: database has no independent worker connection.
-        # Keep this compatibility path synchronous; deployed file DBs use leases.
-        _run(conn, doc_id, callback)
-        return
-    def run():
-        owned = db.connect(db_file) if db_file else conn
-        try:
-            _run(owned, doc_id, callback)
-        finally:
-            if db_file:
-                owned.close()
-            _workers.discard(threading.current_thread())
-    worker = threading.Thread(target=run, daemon=True, name=f'import-{doc_id}')
-    _workers.add(worker)
-    worker.start()
+    with _start_lock:
+        owner = _claim(conn,doc_id)
+        if not owner:
+            return False
+        if not db_file:
+            _run(conn, doc_id, callback, owner=owner)
+            return True
+        def run():
+            owned = db.connect(db_file)
+            try:
+                _run(owned,doc_id,callback,owner=owner)
+            finally:
+                try:
+                    # Drain accepted jobs without a polling thread per queued upload.
+                    recover(owned)
+                finally:
+                    owned.close()
+                    _workers.discard(threading.current_thread())
+        worker = threading.Thread(target=run,daemon=True,name=f'import-{doc_id}')
+        _workers.add(worker)
+        worker.start()
+        return True
 
 
 def start(conn, storage, xlsx_path, callback=None, source_key=None,
@@ -116,19 +142,16 @@ def start(conn, storage, xlsx_path, callback=None, source_key=None,
 
 def recover(conn):
     """Restart only expired jobs; a database lease arbitrates across processes."""
-    rows = conn.execute("SELECT id FROM import_doc WHERE status='parsing' AND lease_until<=?", (time.time(),)).fetchall()
+    rows = conn.execute("SELECT id FROM import_doc WHERE status='parsing' AND lease_until<=? ORDER BY id", (time.time(),)).fetchall()
     for row in rows:
-        _launch(conn, row['id'])
+        if _launch(conn, row['id']) is False:
+            break  # Capacity is full; the existing recovery poll retries later.
     return len(rows)
 
 
-def _run(conn, doc_id, callback=None):
-    owner = uuid.uuid4().hex
-    with _start_lock:
-        changed = conn.execute("UPDATE import_doc SET lease_owner=?,lease_until=?,attempt=attempt+1,progress_json=? WHERE id=? AND status='parsing' AND lease_until<=?",
-            (owner, time.time()+LEASE_SECONDS, json.dumps({'stage': 'preparing'}), doc_id, time.time())).rowcount
-        conn.commit()
-    if not changed:
+def _run(conn, doc_id, callback=None, *, owner=None):
+    owner = owner or _claim(conn,doc_id)
+    if not owner:
         return
     row = dict(conn.execute('SELECT * FROM import_doc WHERE id=?', (doc_id,)).fetchone())
     stop = threading.Event()

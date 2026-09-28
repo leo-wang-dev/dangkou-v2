@@ -4,7 +4,7 @@
 - 仓库：`/Users/elias/code/eryuan/dangkou-v2`（分支 dangkou-v2，每特性一提交并 push origin）
 - 服务器：`sshpass -p temp123 ssh ubuntu@134.175.135.102`（连接过频锁 30-75s，等）
 - 部署目录 `~/dangkou-wechat-test`；服务 `dangkou-wechat-test-api`(:19010)/`-engine`/`-customer`/`-notifications`
-- 部署法：`tar cf - <files> | ssh 'cd dangkou-wechat-test && tar xf - && sudo systemctl restart dangkou-wechat-test-api(及涉及服务)'`
+- Server credential removed. Authorized owner must rotate the exposed credential and coordinate historical cleanup; no rotation or history rewrite performed here.
 - 引擎插件：`engine-plugin/catalog-v2.mjs`（随 api 目录部署）+ persona 在 `~/dsh-wechat-test/plugins/lib/catalog-plugin.mjs`（服务器直改）
 - 验收底线：`python3 -m pytest tests/ -q --ignore=tests/e2e` 全绿；生产 curl 验证；不 reset 生产数据
 - 纪律（老板原话）：不写死分类代码、不做关键词匹配（AI 判断）、写操作全过审批、H5 本版只做中英文

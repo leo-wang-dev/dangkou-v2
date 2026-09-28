@@ -7,7 +7,7 @@ import threading
 import httpx
 
 from catalog import userapp
-from tests.test_h5_transactions import h5
+from tests.test_h5_transactions import h5, valid_photo
 
 
 def test_h5_health_responds_while_vision_is_blocked(h5, monkeypatch):
@@ -64,7 +64,7 @@ def test_userapp_guest_responds_while_vision_is_blocked(tmp_path):
                                     base_url='http://test') as client:
             photo_task = asyncio.create_task(client.post(
                 '/photo', data={'owner': (await client.post('/guest')).json()['guest']},
-                files={'file': ('p.jpg', b'photo', 'image/jpeg')}))
+                files={'file': ('p.jpg', valid_photo(), 'image/jpeg')}))
             try:
                 assert await asyncio.to_thread(started.wait, 2)
                 guest = await asyncio.wait_for(client.post('/guest'), 0.5)
@@ -319,7 +319,7 @@ def test_userapp_photo_cancel_waits_for_worker_and_rolls_back(tmp_path, monkeypa
                                     base_url='http://test') as client:
             task = asyncio.create_task(client.post(
                 '/photo', data={'owner': (await client.post('/guest')).json()['guest']},
-                files={'file': ('p.jpg', b'photo', 'image/jpeg')}))
+                files={'file': ('p.jpg', valid_photo(), 'image/jpeg')}))
             assert await asyncio.to_thread(started.wait, 2)
             task.cancel()
             await asyncio.sleep(0.05)

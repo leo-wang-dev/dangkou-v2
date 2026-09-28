@@ -1,0 +1,19 @@
+# Version-pinned official image; review updates before deployment.
+name: dangkou-trial-bridge
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.81.9-stable
+    command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
+    ports: ["127.0.0.1:4000:4000"]
+    volumes: ["./litellm.yaml:/app/config.yaml:ro"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?required}
+      LITELLM_UPSTREAM_MODEL: ${LITELLM_UPSTREAM_MODEL:?required}
+      LITELLM_UPSTREAM_BASE_URL: ${LITELLM_UPSTREAM_BASE_URL:?required}
+      LITELLM_UPSTREAM_API_KEY: ${LITELLM_UPSTREAM_API_KEY:?required}
+    networks: [parser]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+networks:
+  parser:
+    name: dangkou-trial-parser
