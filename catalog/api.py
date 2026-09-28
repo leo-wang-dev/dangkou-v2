@@ -107,6 +107,7 @@ def register_routes(app: FastAPI):
     import threading
     from contextvars import ContextVar
     from . import db
+    from .request_lifecycle import drain_worker
     current_connection = ContextVar('catalog_request_connection', default=None)
     memory_lock = asyncio.Lock()
     model_limiter = anyio.CapacityLimiter(4)
@@ -131,14 +132,14 @@ def register_routes(app: FastAPI):
 
         async def wait_for_worker():
             done = getattr(request.state, 'database_worker_done', None)
-            if done is not None:
-                with anyio.CancelScope(shield=True):
-                    await anyio.to_thread.run_sync(done.wait)
+            return await drain_worker(done)
 
         async def respond():
             try:
                 response = await call_next(request)
-                await wait_for_worker()
+                interrupted = await wait_for_worker()
+                if interrupted or asyncio.current_task().cancelling():
+                    raise asyncio.CancelledError()
                 if response.status_code >= 400:
                     conn.rollback()
                 else:

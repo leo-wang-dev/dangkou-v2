@@ -10,6 +10,7 @@ persona 链路，与档口库完全隔离（独立 SQLite，独立进程独立�
 导出复用 cs_export.render_notes（同一列契约：无确认状态列）。
 """
 import hashlib
+import asyncio
 import json
 import os
 import re
@@ -28,6 +29,7 @@ from . import llm as default_llm
 from .cs_export import render_notes
 from .cs_supplier import normalize as normalize_fields
 from .csbot import CsBot, extract_photo_items
+from .request_lifecycle import drain_worker
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GUEST_RE = re.compile(r'guest-[0-9a-f]{6,32}\Z')
@@ -129,14 +131,14 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
 
         async def wait_for_worker():
             done = getattr(request.state, 'database_worker_done', None)
-            if done is not None:
-                with anyio.CancelScope(shield=True):
-                    await anyio.to_thread.run_sync(done.wait)
+            return await drain_worker(done)
 
         try:
             try:
                 response = await call_next(request)
-                await wait_for_worker()
+                interrupted = await wait_for_worker()
+                if interrupted or asyncio.current_task().cancelling():
+                    raise asyncio.CancelledError()
                 if response.status_code >= 400:
                     connection.rollback()
                 else:

@@ -263,6 +263,9 @@ def test_h5_photo_cancel_waits_for_worker_and_rolls_back(h5, monkeypatch):
             assert await asyncio.to_thread(started.wait, 2)
             task.cancel()
             await asyncio.sleep(0.05)
+            task.cancel()
+            await asyncio.sleep(0.05)
+            assert not captured.scope['state']['database_worker_done'].is_set()
             release.set()
             try:
                 await task
@@ -315,6 +318,9 @@ def test_userapp_photo_cancel_waits_for_worker_and_rolls_back(tmp_path, monkeypa
             assert await asyncio.to_thread(started.wait, 2)
             task.cancel()
             await asyncio.sleep(0.05)
+            task.cancel()
+            await asyncio.sleep(0.05)
+            assert not captured.scope['state']['database_worker_done'].is_set()
             release.set()
             try:
                 await task
