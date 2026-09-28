@@ -103,10 +103,12 @@ def register_routes(app: FastAPI):
         allow_methods=['GET', 'POST', 'PATCH', 'OPTIONS'], allow_headers=['*'],
         expose_headers=['Content-Disposition'])
     import asyncio
+    import anyio
     from contextvars import ContextVar
     from . import db
     current_connection = ContextVar('catalog_request_connection', default=None)
     memory_lock = asyncio.Lock()
+    model_limiter = anyio.CapacityLimiter(4)
 
     def request_conn():
         return current_connection.get() or app.state.conn
@@ -122,6 +124,8 @@ def register_routes(app: FastAPI):
                 response = await call_next(request)
                 if response.status_code >= 400:
                     conn.rollback()
+                else:
+                    conn.commit()
             except Exception:
                 conn.rollback()
                 raise
@@ -1188,19 +1192,21 @@ def register_routes(app: FastAPI):
         return {'lang': cs_chat.set_language(request_conn(), cust, str(body.get('lang') or ''))}
 
     @app.post('/cs/chat/{token}/message')
-    def cs_chat_message(token: str, body: dict, request: Request):
+    async def cs_chat_message(token: str, body: dict, request: Request):
         from . import cs_chat
         _chat_conn(token)
         text = str(body.get('text') or '').strip()[:2000]
         if not text:
             raise HTTPException(400, '消息不能为空')
-        bot = cs_chat.H5Bot(request_conn(), api=None)
-        cust = cs_chat.ensure_visitor(bot, str(body.get('visitor') or ''))
-        bot._processing = True
-        try:
-            reply = bot._text_turn(cust, text)
-        finally:
-            bot._processing = False
+        def turn():
+            bot = cs_chat.H5Bot(request_conn(), api=None)
+            bot._processing = True
+            try:
+                cust = cs_chat.ensure_visitor(bot, str(body.get('visitor') or ''))
+                return bot._text_turn(cust, text)
+            finally:
+                bot._processing = False
+        reply = await anyio.to_thread.run_sync(turn, limiter=model_limiter)
         return {'reply': reply}
 
     @app.post('/cs/chat/{token}/photo')
@@ -1215,14 +1221,18 @@ def register_routes(app: FastAPI):
         data = await up.read()
         if not data:
             raise HTTPException(400, '文件为空')
-        bot = cs_chat.H5Bot(request_conn(), api=None)
-        cust = cs_chat.ensure_visitor(bot, visitor)
-        bot._processing = True
-        try:
-            prepared = bot._prepare_photo(cust, data)
-            reply = bot._on_photo(cust, None, prepared=prepared)
-        finally:
-            bot._processing = False
+        def turn():
+            bot = cs_chat.H5Bot(request_conn(), api=None)
+            bot._processing = True
+            try:
+                # Vision and candidate lookup are read-only. Finish them before
+                # creating the visitor row so a slow model holds no write lock.
+                prepared = bot._prepare_photo(None, data)
+                cust = cs_chat.ensure_visitor(bot, visitor)
+                return bot._on_photo(cust, None, prepared=prepared)
+            finally:
+                bot._processing = False
+        reply = await anyio.to_thread.run_sync(turn, limiter=model_limiter)
         return {'reply': reply}
 
     @app.get('/cs/chat/{token}/list-token')

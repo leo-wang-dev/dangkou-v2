@@ -162,7 +162,7 @@ class CsBot:
 
     def _prepare_photo(self, cust, data):
         """H5 上传的图片字节 → 落盘 + 抽取 + 复核 + 本店商品候选。"""
-        fname = f"{cust['id']}_{secrets.token_hex(6)}.jpg"
+        fname = f"{cust['id'] if cust is not None else 'upload'}_{secrets.token_hex(6)}.jpg"
         path = os.path.join(self.img_dir, fname)
         open(path, 'wb').write(data)
         items, cards = extract_photo_items(self.llm, data)

@@ -15,6 +15,9 @@ import os
 import re
 import secrets
 import sqlite3
+from contextvars import ContextVar
+
+import anyio
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -102,6 +105,31 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     app.state.photo_dir = photo_dir
     app.state.codes_log = codes_log
     app.state.llm = llm or default_llm
+    current_connection = ContextVar('userapp_request_connection', default=None)
+    model_limiter = anyio.CapacityLimiter(4)
+
+    def request_conn():
+        return current_connection.get() or conn
+
+    @app.middleware('http')
+    async def database_request(request, call_next):
+        connection = sqlite3.connect(db_path, check_same_thread=False, timeout=5)
+        connection.row_factory = sqlite3.Row
+        context = current_connection.set(connection)
+        try:
+            try:
+                response = await call_next(request)
+                if response.status_code >= 400:
+                    connection.rollback()
+                else:
+                    connection.commit()
+                return response
+            except Exception:
+                connection.rollback()
+                raise
+        finally:
+            current_connection.reset(context)
+            connection.close()
 
     # C端无 Cookie（身份=游客参数/链接token），放开跨域供 uni-app H5 开发期
     # 直连与调试工具使用；同源部署的旧页行为不变。非浏览器端（小程序）无 CORS 概念。
@@ -117,7 +145,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         token = auth[7:].strip() if auth.lower().startswith('bearer ') else ''
         token = token or str(request.query_params.get('token') or '')
         if token:
-            row = conn.execute(
+            row = request_conn().execute(
                 'SELECT email FROM session_tokens WHERE token_hash=?',
                 (_hash(token),)).fetchone()
             if row is None:
@@ -176,33 +204,35 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         data = await up.read()
         if not data:
             raise HTTPException(400, '文件为空')
-        kind, owner_id = _identity(request, owner)
-        path = _save_photo(data)
-        items, cards = extract_photo_items(request.app.state.llm, data)
-        cards = [c for c in cards if isinstance(c, dict)
-                 and any(str(v or '').strip() for v in c.values())]
-        if not items and not cards:
-            os.unlink(path)
-            return {'reply': '这张照片我没能认出可记录的信息，麻烦重拍一张近一点的～', 'added': 0}
-        start = conn.execute(
-            'SELECT COUNT(*) FROM notes WHERE owner_kind=? AND owner_id=?',
-            (kind, owner_id)).fetchone()[0] + 1
-        for i, fields in enumerate(items, start):
-            fields = normalize_fields(fields)
-            note_photo = CsBot._crop_photo(path, i - start, fields.pop('__图框__', None))
-            conn.execute(
-                'INSERT INTO notes(owner_kind, owner_id, photo_path, fields_json) '
-                'VALUES(?,?,?,?)',
-                (kind, owner_id, note_photo, json.dumps(fields, ensure_ascii=False)))
-        conn.commit()
-        return {'reply': _receipt(items, cards), 'added': len(items)}
+        def process_photo():
+            kind, owner_id = _identity(request, owner)
+            path = _save_photo(data)
+            items, cards = extract_photo_items(request.app.state.llm, data)
+            cards = [c for c in cards if isinstance(c, dict)
+                     and any(str(v or '').strip() for v in c.values())]
+            if not items and not cards:
+                os.unlink(path)
+                return {'reply': '这张照片我没能认出可记录的信息，麻烦重拍一张近一点的～', 'added': 0}
+            start = request_conn().execute(
+                'SELECT COUNT(*) FROM notes WHERE owner_kind=? AND owner_id=?',
+                (kind, owner_id)).fetchone()[0] + 1
+            for i, fields in enumerate(items, start):
+                fields = normalize_fields(fields)
+                note_photo = CsBot._crop_photo(path, i - start, fields.pop('__图框__', None))
+                request_conn().execute(
+                    'INSERT INTO notes(owner_kind, owner_id, photo_path, fields_json) '
+                    'VALUES(?,?,?,?)',
+                    (kind, owner_id, note_photo, json.dumps(fields, ensure_ascii=False)))
+            return {'reply': _receipt(items, cards), 'added': len(items)}
+
+        return await anyio.to_thread.run_sync(process_photo, limiter=model_limiter)
 
     # ---------- 清单 / 导出 ----------
 
     @app.post('/notes')
     def list_notes(request: Request, guest: str = ''):
         kind, owner_id = _identity(request, guest)
-        rows = conn.execute(
+        rows = request_conn().execute(
             'SELECT * FROM notes WHERE owner_kind=? AND owner_id=? ORDER BY id',
             (kind, owner_id)).fetchall()
         notes = []
@@ -215,7 +245,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     @app.get('/notes/{note_id}/photo')
     def note_photo(note_id: int, request: Request, guest: str = ''):
         kind, owner_id = _identity(request, guest)
-        row = conn.execute('SELECT photo_path FROM notes WHERE id=? AND owner_kind=? AND owner_id=?',
+        row = request_conn().execute('SELECT photo_path FROM notes WHERE id=? AND owner_kind=? AND owner_id=?',
                            (note_id, kind, owner_id)).fetchone()
         if row is None or not row['photo_path'] or not os.path.isfile(row['photo_path']):
             raise HTTPException(404, 'no photo')
@@ -225,7 +255,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     @app.get('/export.xlsx')
     def export_xlsx(request: Request, guest: str = ''):
         kind, owner_id = _identity(request, guest)
-        rows = conn.execute(
+        rows = request_conn().execute(
             'SELECT * FROM notes WHERE owner_kind=? AND owner_id=? ORDER BY id',
             (kind, owner_id)).fetchall()
         if not rows:
@@ -250,11 +280,10 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         if not EMAIL_RE.fullmatch(email):
             raise HTTPException(400, '邮箱格式不正确')
         code = f'{secrets.randbelow(1000000):06d}'
-        conn.execute(
+        request_conn().execute(
             "INSERT INTO auth_codes(email, code_hash, expires_at) "
             "VALUES(?,?,datetime('now', ?))",
             (email, _hash(f'{email}:{code}'), f'+{CODE_TTL_MINUTES} minutes'))
-        conn.commit()
         _send_code_stub(email, code, codes_log)
         return {'sent': True}   # 不回显验证码，统一“已发送”
 
@@ -268,24 +297,23 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         email = str(body.get('email') or '').strip().lower()
         code = str(body.get('code') or '').strip()
         guest = str(body.get('guest') or '').strip()
-        row = conn.execute(
+        row = request_conn().execute(
             "SELECT rowid FROM auth_codes WHERE email=? AND code_hash=? AND used_at IS NULL "
             "AND datetime(expires_at)>datetime('now') ORDER BY rowid DESC LIMIT 1",
             (email, _hash(f'{email}:{code}'))).fetchone()
         if row is None:
             raise HTTPException(400, '验证码错误或已过期')
-        conn.execute("UPDATE auth_codes SET used_at=datetime('now') WHERE rowid=?",
+        request_conn().execute("UPDATE auth_codes SET used_at=datetime('now') WHERE rowid=?",
                      (row['rowid'],))
-        conn.execute('INSERT OR IGNORE INTO users(email) VALUES(?)', (email,))
+        request_conn().execute('INSERT OR IGNORE INTO users(email) VALUES(?)', (email,))
         # 合并：当前游客的记录迁到账号名下（guest 行随之清空）。
         if GUEST_RE.fullmatch(guest):
-            conn.execute(
+            request_conn().execute(
                 "UPDATE notes SET owner_kind='user', owner_id=? WHERE owner_kind='guest' AND owner_id=?",
                 (email, guest))
         token = secrets.token_urlsafe(32)
-        conn.execute('INSERT INTO session_tokens(token_hash, email) VALUES(?,?)',
+        request_conn().execute('INSERT INTO session_tokens(token_hash, email) VALUES(?,?)',
                      (_hash(token), email))
-        conn.commit()
         return {'token': token, 'email': email}
 
     @app.get('/me')
