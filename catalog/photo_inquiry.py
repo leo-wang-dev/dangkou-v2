@@ -32,7 +32,7 @@ def local_candidates(conn, fields, photo):
     for value in customer_catalog.local_catalog(conn)['products']:
         name = str(value.get('name') or '')
         if name and any(re.search(r'(?<![A-Za-z0-9_-])'+re.escape(name)+r'(?![A-Za-z0-9_-])', n, re.I) for n in names):
-            found.append({'category': value['_category'], 'product_id': value['id'], 'name': name})
+            found.append({'category': value['_category'], 'product_id': value['id'], 'name': name, 'supplier':value.get('supplier','')})
     # Image similarity supplies candidates, never proof that two products are identical.
     if not found and config.BAILIAN_API_KEY and conn.execute('SELECT 1 FROM embedding LIMIT 1').fetchone():
         try:
@@ -43,7 +43,7 @@ def local_candidates(conn, fields, photo):
                     continue
                 p = product(conn, hit['category'], hit['product_id'])
                 if p and p['cs_visible']:
-                    found.append({'category':hit['category'], 'product_id':p['id'], 'name':p['name']})
+                    found.append({'category':hit['category'], 'product_id':p['id'], 'name':p['name'], 'supplier':p.get('supplier','')})
         except Exception:
             # Photo bookkeeping remains usable when the retrieval provider is unavailable.
             return []

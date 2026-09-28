@@ -7,6 +7,7 @@ parse_ctn_spec 箱规解析沿用 v2.2。
 import json
 import math
 import re
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -41,6 +42,10 @@ def parse_ctn_spec(text) -> dict:
     m = re.search(r'QTY[：:]?\s*' + _NUM + r'\s*PCS', s, re.I)
     if m:
         out['pcs'] = int(float(m.group(1)))
+    if 'pcs' not in out:
+        count = re.fullmatch(r'\s*(?:(?:装箱数|每箱|QTY)[：:]?\s*)?' + _NUM + r'\s*(?:(?:PCS|件|个|台)(?:\s*/\s*(?:CTN|箱))?)?\s*', s, re.I)
+        if count and float(count[1]).is_integer() and float(count[1]) > 0:
+            out['pcs'] = int(float(count[1]))
     m = re.search(r'N\.?\s*W\.?[：:]?\s*' + _NUM + r'\s*KGS?', s, re.I)
     if m:
         out['nw'] = float(m.group(1))
@@ -127,15 +132,24 @@ def _dynamic_extractor(conn, category_key):
             value = data.get(key) if key else None
             return str(value) if value not in (None, '') else ''
         ctn_text = val(qmap.get('ctn_field'))
+        ctn = parse_ctn_spec(ctn_text) if ctn_text else {}
+        if qmap.get('pcs_field'):
+            ctn.update({k: v for k, v in parse_ctn_spec(val(qmap['pcs_field'])).items() if k == 'pcs'})
+        for name in ('gw', 'nw'):
+            match = re.fullmatch(r'\s*' + _NUM + r'\s*(?:KGS?|千克|公斤)?\s*', val(qmap.get(name + '_field')), re.I)
+            if match:
+                ctn[name] = float(match[1])
+        if qmap.get('dims_field'):
+            ctn.update({k: v for k, v in parse_ctn_spec(val(qmap['dims_field'])).items() if k in {'dims', 'meas'}})
         return {'item': val(qmap['model_field']),
                 'desc': ' / '.join(v for v in (val(f['key']) for f in desc_fields) if v),
                 'color': val(qmap.get('color_field')),
                 'price': val(qmap['price_field']),
-                'ctn': parse_ctn_spec(ctn_text) if ctn_text else {}}
+                'ctn': ctn}
     return extract
 
 
-def generate_generic(conn, storage, items, price_adjustment_pct, out_path, deposit_pct: float = 30):
+def generate_generic(conn, storage, items, price_adjustment_pct, out_path, deposit_pct: float = 30, *, details: list | None = None):
     """纯代码生成报价单：行1=列头，行2起=数据（嵌图），末三行 TOTAL/DEPOSIT/BALANCE（写值）。"""
     if not math.isfinite(price_adjustment_pct) or price_adjustment_pct < -100:
         raise ValueError('价格调整百分比无效')
@@ -175,21 +189,32 @@ def generate_generic(conn, storage, items, price_adjustment_pct, out_path, depos
     # 数字格式约定：物流列纯数字（0/0.0/0.000），钱只在 E 单价 / G 小计 / 合计 / 定金 / 尾款
     _FMT = {5: '0.00', 7: '0.00', 8: '0', 9: '0', 10: '0.0', 11: '0.0',
             12: 'General', 13: '0.0', 14: '0.000'}
-    sums = {'amount': 0, 'ctns': 0, 'gw': 0.0, 'cbm': 0.0}
+    sums = {'amount': Decimal('0'), 'ctns': 0, 'gw': 0.0, 'cbm': 0.0}
     DATA_START = 2
 
     for i, (extract, p, qty) in enumerate(prows):
         r = DATA_START + i
         ws.row_dimensions[r].height = _DATA_ROW_H
         row = extract(p)
-        base = float(str(row['price'] or '0').replace('¥', '').replace(',', '')) or 0
-        unit = round(base * (1 + price_adjustment_pct / 100))
+        try:
+            base = Decimal(str(row['price'] or '0').replace('¥', '').replace(',', ''))
+            if not base.is_finite() or base < 0:
+                raise ValueError('商品价格必须为有效非负金额')
+            unit = (base * (1 + Decimal(str(price_adjustment_pct)) / 100)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        except InvalidOperation as exc:
+            raise ValueError('商品价格格式无效') from exc
+        requested_qty = qty
         ctn = row['ctn']
         pcs, gw, nw = ctn.get('pcs'), ctn.get('gw'), ctn.get('nw')
         meas, dims = ctn.get('meas'), ctn.get('dims')
         ctns = _ceil_div(qty, pcs) if pcs else None
         if ctns is not None:
             qty = pcs * ctns          # 整箱口径：QUANTITY = 每箱数×箱数（100台/60箱装→2箱=120台）
+        if details is not None:
+            details.append({'category': p['category_key'], 'product_id': p['id'],
+                            'supplier': p['supplier'], 'model': row['item'],
+                            'requested_quantity': requested_qty, 'quoted_quantity': qty,
+                            'pcs_per_carton': pcs, 'unit_price': float(unit), 'amount': float(unit * qty)})
         tgw = round(ctns * gw, 2) if (ctns is not None and gw) else None
         tcbm = round(ctns * (dims[0] * dims[1] * dims[2]) / 1e6, 3) \
             if (ctns is not None and dims) else None
@@ -226,7 +251,7 @@ def generate_generic(conn, storage, items, price_adjustment_pct, out_path, depos
     for r, label in ((T, 'TOTAL'), (T + 1, 'DEPOSIT'), (T + 2, 'BALANCE')):
         cell = ws.cell(r, 1, label)
         cell.font = Font(bold=True)
-    deposit = round(sums['amount'] * deposit_pct / 100, 2)
+    deposit = (sums['amount'] * Decimal(str(deposit_pct)) / 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     ws.cell(T, 7, sums['amount']).number_format = '0.00'
     ws.cell(T, 9, sums['ctns']).number_format = '0'
     ws.cell(T, 13, round(sums['gw'], 2)).number_format = '0.0'

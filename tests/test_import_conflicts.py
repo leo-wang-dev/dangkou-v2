@@ -1,7 +1,7 @@
 """Different pending imports must not overwrite a newer approved source snapshot.
 
 动态分类版：同一来源的两张在途导入工单，先批的生效、后批的因商品数据已变化被拒；
-外部改动让过期工单不能落库；不同来源互不影响。
+外部改动让过期工单不能落库；文件名不能成为商品身份；同分类重传仍需检查已有商品。
 """
 import json
 import sqlite3
@@ -85,10 +85,12 @@ def test_external_edit_blocks_stale_update_and_allows_rejection(setup):
     tickets.decide(conn, pending['id'], pending['token'], False)
 
 
-def test_independent_sources_and_reimport_after_conflict(setup):
+def test_renamed_sources_conflict_then_reimport_without_duplicates(setup):
     conn, new = setup[0], setup[1]
     a, b = new('a'), new('b')
-    approve(conn, a); approve(conn, b)
-    assert _count(conn) == 8                   # 不同来源各自成行，互不合并
-    tk = new('a'); approve(conn, tk)            # 同源重导：无变化不重复建行
-    assert _count(conn) == 8
+    approve(conn, a)
+    with pytest.raises(tickets.TicketConflict):
+        approve(conn, b)
+    assert _count(conn) == 4
+    tk = new('b'); approve(conn, tk)
+    assert _count(conn) == 4

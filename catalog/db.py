@@ -49,6 +49,10 @@ def _migrate(conn):
     cat_cols = {r[1] for r in conn.execute('PRAGMA table_info(category_template)')}
     if cat_cols and 'supplier' not in cat_cols:
         conn.execute("ALTER TABLE category_template ADD COLUMN supplier TEXT NOT NULL DEFAULT ''")
+    product_cols = {r[1] for r in conn.execute('PRAGMA table_info(product_dynamic)')}
+    if product_cols and 'supplier' not in product_cols:
+        conn.execute("ALTER TABLE product_dynamic ADD COLUMN supplier TEXT NOT NULL DEFAULT ''")
+        conn.execute("UPDATE product_dynamic SET supplier=COALESCE((SELECT supplier FROM category_template WHERE key=category_key),'')")
     shop_cols = {r[1] for r in conn.execute('PRAGMA table_info(shop_profile)')}
     for field in ('address', 'business_hours', 'shipping_info', 'faq'):
         if field not in shop_cols:

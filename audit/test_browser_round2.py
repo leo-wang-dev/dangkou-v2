@@ -180,7 +180,7 @@ def submit(page):
 
 
 def new_import(site, image=False):
-    from catalog.dynamic_import import _source_snapshot
+    from catalog.dynamic_import import _source_snapshot, _source_rows
     drafts = [{'data': {'model': 'IMPORT-A', 'price': '12'}, 'images': [], 'image_main': ''},
               {'data': {'model': 'IMPORT-B', 'price': '13'}, 'images': [], 'image_main': ''}]
     if image:
@@ -198,7 +198,7 @@ def new_import(site, image=False):
                                 'storage': 'dynamic', 'source_sheet': NAME_B},
                    'template_action': 'reuse', 'expected_version': 1, 'title': NAME_B,
                    'header_row': 1, 'image_count': 1 if image else 0,
-                   'source_sheet': NAME_B, 'source_snapshot': _source_snapshot([]),
+                   'source_sheet': NAME_B, 'source_snapshot': _source_snapshot(_source_rows(site['conn'], CAT_B, 'browser-import', NAME_B)),
                    'drafts': {'new': drafts, 'update': [], 'delist': []}}]}
     return tickets.create(site['conn'], 'template_import', None, payload)
 

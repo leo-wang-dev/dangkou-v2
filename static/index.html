@@ -321,12 +321,13 @@ function renderTemplateImport(tid, payload, box){
         <th style="text-align:left;padding:7px">表头字段</th><th>类型</th><th>客户可见</th><th></th></tr></thead><tbody>
         ${(tpl.fields||[]).map(field=>`<tr data-template-field="${esc(field.key)}">
           <td style="padding:7px"><input data-field-label value="${esc(field.label)}" aria-label="${esc(field.label)}字段名称"></td>
-          <td style="padding:7px" class="muted">${TYPE_LABELS[field.type]||field.type}</td>
+          <td style="padding:7px"><select data-template-type>${selectOptions(Object.entries(TYPE_LABELS),field.type)}</select></td>
           <td style="padding:7px"><select data-template-visibility="${esc(field.key)}" data-field-label-name="${esc(field.label)}">${selectOptions([['public','公开'],['internal','内部']],field.visibility)}</select></td>
+          <td><button class="btn d s" onclick="this.closest('tr').remove()">✕</button></td>
         </tr>`).join('')}
       </tbody></table></div>
       ${productPhase?'':'<div class="row" style="margin-top:8px"><button class="btn o s" onclick="addTemplateField(this)">＋ 添加表头字段</button><span class="muted">漏识别的列在这里补：填字段名、选好可见性，批准后生效（商品数据里该列的值需要重新导入一次才有）</span></div>'}
-      <p class="muted">字段类型和用途由系统根据表头自动识别；这里仅确认字段名称和客户是否可见。成本、价格、备注和序号默认设为内部字段，客户 Bot 不会返回金额字段。</p>`}
+      <p class="muted">字段类型、删除和客户可见性可在此编辑；图片类型会用于导入商品图片。成本、价格、备注和序号默认设为内部字段，客户 Bot 不会返回金额字段。</p>`}
       <div class="row"><span class="tag new">新增 ${counts.new?.length||0}</span><span class="tag upd">更新 ${counts.update?.length||0}</span><span class="tag del">疑似下架 ${counts.delist?.length||0}</span></div>
       <div style="margin-top:10px">
         ${(counts.new||[]).map((row,index)=>templateRowHtml(tid,tpl,row,row._rid||('n'+index),'新增')).join('')}
@@ -343,7 +344,7 @@ function templateRowHtml(tid,tpl,row,key,state){
   const values=row.data||{};
   return `<div class="draft" id="row-${tid}-${esc(key)}">
     ${imgs.length?`<div class="imgwrap"><img class="p" src="${imgs[0]}" onclick='lbGallery(${JSON.stringify(imgs)})'>${imgs.length>1?`<span class="badge">${imgs.length}图</span>`:''}</div>`:''}
-    <div class="f"><span class="tag ${state==='新增'?'new':state==='更新'?'upd':'del'}">${state}</span>
+    <div class="f"><div class="kv"><b>供应商</b>：${esc(row.supplier||tpl.supplier||'未填')}</div><span class="tag ${state==='新增'?'new':state==='更新'?'upd':'del'}">${state}</span>
       ${(tpl.fields||[]).filter(field=>field.role!=='image'&&values[field.key]!==''&&values[field.key]!=null).map(field=>`<div class="kv"><b>${esc(field.label)}</b>：${esc(values[field.key])}</div>`).join('')}
     </div><div style="display:flex;flex-direction:column;gap:6px;flex:none">
       ${state!=='疑似下架'?`<button class="btn o s" onclick="editTemplateDraft(${tid},'${esc(key)}')">编辑</button>`:''}
@@ -355,6 +356,7 @@ function addTemplateField(btn){
   const tr=document.createElement('tr');
   tr.dataset.templateField=key;
   tr.innerHTML=`<td style="padding:7px"><input data-field-label value="" placeholder="字段名称，如：型号"></td>
+    <td style="padding:7px"><select data-template-type>${selectOptions(Object.entries(TYPE_LABELS),'text')}</select></td>
     <td style="padding:7px"><select data-template-visibility="${key}" data-field-label-name="">${selectOptions([['public','公开'],['internal','内部']],'public')}</select></td>
     <td style="padding:7px"><button class="btn d s" onclick="this.closest('tr').remove()">✕</button></td>`;
   tbody.appendChild(tr);
@@ -369,7 +371,9 @@ function collectTemplateDecisions(tid){
     const fields=[...section.querySelectorAll('tr[data-template-field]')].map(row=>{
       const fkey=row.dataset.templateField;
       const base=(original.fields||[]).find(f=>f.key===fkey)||{key:fkey};
-      return {...base, key:fkey, label:row.querySelector('[data-field-label]').value.trim(),
+      const type=row.querySelector('[data-template-type]').value;
+      const role=type==='image'?'image':base.role==='image'?'spec':(base.role||'spec');
+      return {...base, key:fkey, type, role, label:row.querySelector('[data-field-label]').value.trim(),
         visibility:row.querySelector('[data-template-visibility]').value};
     }).filter(f=>f.label!=='');
     result[key]={...original,name:section.querySelector('[data-template-name]').value.trim(),fields};
@@ -448,12 +452,12 @@ function closeForm(){ document.getElementById('modal').style.display='none'; for
 async function editTemplateDraft(tid, key){
   const item=dynamicImportRows[tid]?.[key];
   if(!item) return;
-  const fields=formFields(item.tpl.fields).map(field=>({...field,col:field.key}));
+  const fields=[...formFields(item.tpl.fields).map(field=>({...field,col:field.key})),{col:'__supplier',label:'供应商',role:'spec'}];
   const row=item.row, srcImgs=(row._imgs||[]).map(manageAssetUrl), srcRels=row.images||[];
   formCtx={mode:'template-draft',tid,key,cat:item.tpl.key,fields,
     images:srcImgs.map((url,index)=>({rel:srcRels[index]||null,url}))};
   document.getElementById('modalBox').innerHTML=
-    formHtml('编辑导入商品',row.data||{},fields).replace('{{FORM_NOTE}}','修改会保存到本工单，通过整单后才生效。');
+    formHtml('编辑导入商品',{...row.data,__supplier:row.supplier||item.tpl.supplier||''},fields).replace('{{FORM_NOTE}}','修改会保存到本工单，通过整单后才生效。');
   document.getElementById('modal').style.display='flex';
 }
 
@@ -571,7 +575,7 @@ async function loadCats(){
   supBtn.hidden = !cur.cat;
   if (cur.cat) {
     const sup = CAT_META[cur.cat]?.supplier || '';
-    supBtn.textContent = sup ? `🏷️ ${sup}` : '🏷️ 设供应商';
+    supBtn.textContent = sup ? `🏷️ 默认供应商：${sup}` : '🏷️ 设默认供应商';
   }
   if(!cur.cat){
     document.getElementById('download-template').textContent = '下载分类模板';
@@ -605,6 +609,15 @@ async function toggleCategoryVisible(){
       {method:'PATCH', body:JSON.stringify({visible:target})});
     loadCats();
   }catch(e){ alert('设置失败：'+e.message); }
+}
+async function setSupplier(){
+  if(!cur.cat) return;
+  const supplier=prompt('分类导入默认供应商（商品可单独编辑；空字符串清除）：',CAT_META[cur.cat]?.supplier||'');
+  if(supplier===null) return;
+  try {
+    await api('/categories/'+encodeURIComponent(cur.cat),{method:'PATCH',body:JSON.stringify({supplier:supplier.trim()})});
+    await loadCats();
+  } catch(e) { alert('设置失败：'+e.message); }
 }
 async function renameCat(){
   if(!cur.cat) return;
@@ -641,7 +654,7 @@ function renderProducts(){
           :'<div class="noimg">无图</div>'}
         <div class="pinfo">
           <div class="ptitle">${esc(str(p[first.label]))||'（无型号）'}</div>
-          <div class="psub muted">${p['内部货号']??''} · ${p['状态']??''}</div>
+          <div class="psub muted">${esc(p['supplier']||'未填供应商')} · ${p['内部货号']??''} · ${p['状态']??''}</div>
           <div class="pbtns">
             <button class="btn ${visible?'p':'d'} s" onclick="toggleProductVisible('${p['id']}',${visible})"
               title="控制这款商品是否对客户可见">${visible?'👁 客户可见':'🚫 客户不可见'}</button>

@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS category_template_version (
   PRIMARY KEY(category_key, version)
 );
 CREATE TABLE IF NOT EXISTS product_dynamic (
+  supplier TEXT NOT NULL DEFAULT '',
   id TEXT PRIMARY KEY,
   category_key TEXT NOT NULL,
   inner_code TEXT UNIQUE NOT NULL,

@@ -37,7 +37,7 @@ def test_image_retrieval_candidates_never_expose_cost(env,monkeypatch):
     monkeypatch.setattr(search,'embed_image',lambda _: [1])
     monkeypatch.setattr(search,'query',lambda *a,**k:[{'category':'audit_cat','product_id':'p1','score':0.91,'fields':{'价格':'7.35'}}])
     found=photo_inquiry.candidates(conn,[{'型号或品名':'sample'}],b'photo')
-    assert found==[{'category':'audit_cat','product_id':'p1','name':'MODEL-1'}]
+    assert found==[{'category':'audit_cat','product_id':'p1','name':'MODEL-1','supplier':''}]
 
 
 def test_low_similarity_image_does_not_suggest_unrelated_product(env,monkeypatch):
@@ -69,7 +69,7 @@ def test_sheet_defined_product_can_be_matched_and_selected_from_photo_text(env):
     conn.commit()
 
     found = photo_inquiry.local_candidates(conn, [{'型号或品名': '戴森 HD15 吹风机'}], b'photo')
-    assert found == [{'category': 'cat_hairdryer', 'product_id': 'dryer-1', 'name': 'HD15'}]
+    assert found == [{'category': 'cat_hairdryer', 'product_id': 'dryer-1', 'name': 'HD15', 'supplier': ''}]
     photo_inquiry.save(conn, 'a', found); conn.commit()
     selected = photo_inquiry.selection(conn, 'a', 1)
     assert selected['id'] == 'dryer-1' and selected['specs']['颜色'] == '玫红色'

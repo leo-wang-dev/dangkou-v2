@@ -128,7 +128,7 @@ def _dynamic_product_snapshot(row) -> str:
         return ''
     value = {key: row.get(key) for key in (
         'id', 'inner_code', 'data', 'status', 'images', 'source_doc', 'source_key',
-        'source_sheet', 'source_row', 'row_fingerprint', 'cs_visible')}
+        'source_sheet', 'source_row', 'row_fingerprint', 'cs_visible', 'supplier')}
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
@@ -162,6 +162,7 @@ def _apply_dynamic_mutate(conn, payload, category):
     if action == 'create':
         product_id = secrets.token_hex(8)
         row = {'id': product_id, 'inner_code': inner_code.gen(), 'data': data_changes,
+               'supplier': changes.get('supplier', template.get('supplier', '')),
                'images': payload.get('images') or [],
                'cs_visible': int(str(visible_change or '0')), 'status': 'approved'}
         outcome = dynamic_catalog.upsert_approved_products(conn, category, [row])
@@ -174,6 +175,7 @@ def _apply_dynamic_mutate(conn, payload, category):
     if 'images' in payload:
         conn.execute('DELETE FROM embedding WHERE product_id=?', (current['id'],))
     row = {**current, 'data': data, 'images': images,
+           'supplier': changes.get('supplier', current.get('supplier', '')),
            'cs_visible': int(str(visible_change)) if visible_change is not None else current['cs_visible']}
     outcome = dynamic_catalog.upsert_approved_products(
         conn, category, [row], source_key=current['source_key'],
@@ -205,6 +207,8 @@ def save_draft_edit(conn, ticket_id, token, row_key, edits):
                         continue
                     changes = dict(edits)
                     images = changes.pop('__images', None)
+                    if '__supplier' in changes:
+                        draft['supplier'] = str(changes.pop('__supplier') or '').strip()[:40]
                     draft['data'] = {**draft.get('data', {}),
                                      **{name: value for name, value in changes.items() if name in allowed}}
                     if images is not None:

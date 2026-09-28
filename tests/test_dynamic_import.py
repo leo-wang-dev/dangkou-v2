@@ -85,7 +85,7 @@ def test_stale_template_approval_cannot_overwrite_new_version(conn, tmp_path):
         tickets.decide(conn, second['id'], second['token'], True)
 
 
-def test_reimport_marks_changed_rows_and_suspected_delists(conn, tmp_path):
+def test_reimport_adds_variant_and_never_delists_missing_rows(conn, tmp_path):
     from openpyxl import load_workbook
     from catalog import dynamic_catalog
     from catalog.dynamic_import import build_ticket_payload
@@ -106,12 +106,16 @@ def test_reimport_marks_changed_rows_and_suspected_delists(conn, tmp_path):
     wb.save(path)
     second = build_ticket_payload(conn, path, tmp_path / 'second', source_key='vendor-a')
     drafts = second['sheets'][0]['drafts']
-    assert len(drafts['update']) >= 1
-    assert len(drafts['delist']) >= 1
+    assert len(drafts['new']) == 1
+    assert drafts['update'] == []
+    assert drafts['delist'] == []
+    ticket = tickets.create(conn, 'template_import', None, second)
+    tickets.decide(conn, ticket['id'], ticket['token'], True)
+    assert next(p for p in dynamic_catalog.list_products(conn, category) if p['id'] == 'obsolete')['status'] == 'approved'
 
 
-def test_reimport_same_model_updates_specs_without_duplicate(conn, tmp_path):
-    """同一来源、同一型号重导时更新规格并保留原商品 ID。"""
+def test_reimport_same_model_keeps_distinct_specs(conn, tmp_path):
+    """同型号不同颜色/功率是独立款式；原商品保留。"""
     from openpyxl import Workbook, load_workbook
     from catalog import dynamic_catalog
     from catalog.dynamic_import import build_ticket_payload
@@ -133,18 +137,20 @@ def test_reimport_same_model_updates_specs_without_duplicate(conn, tmp_path):
     wb = load_workbook(path); ws = wb['吹风机']
     ws['C2'] = '蓝色'; ws['D2'] = '1800W'; ws['E2'] = '新规格'; wb.save(path)
     second_payload = build_ticket_payload(conn, path, tmp_path / 'second', source_key='vendor-001')
-    assert len(second_payload['sheets'][0]['drafts']['new']) == 0
-    assert len(second_payload['sheets'][0]['drafts']['update']) == 1
+    assert len(second_payload['sheets'][0]['drafts']['new']) == 1
+    assert len(second_payload['sheets'][0]['drafts']['update']) == 0
     second = tickets.create(conn, 'template_import', None, second_payload)
     result = tickets.decide(conn, second['id'], second['token'], True)
     after = dynamic_catalog.list_products(conn, category)
-    assert result['created'] == 0 and result['updated'] == 1
-    assert len(after) == 1 and after[0]['id'] == product_id
+    assert result['created'] == 1 and result['updated'] == 0
+    assert len(after) == 2
+    assert next(p for p in after if p['id'] == product_id)['data'] == before[0]['data']
+    new = next(p for p in after if p['id'] != product_id)
     fields = dynamic_catalog.get_template(conn, category)['fields']
     by_label = {field['label']: field['key'] for field in fields}
-    assert after[0]['data'][by_label['颜色']] == '蓝色'
-    assert after[0]['data'][by_label['功率']] == '1800W'
-    assert after[0]['data'][by_label['备注']] == '新规格'
+    assert new['data'][by_label['颜色']] == '蓝色'
+    assert new['data'][by_label['功率']] == '1800W'
+    assert new['data'][by_label['备注']] == '新规格'
 
 
 def test_pending_reimport_cannot_overwrite_a_newer_product_edit_or_delist(conn, tmp_path):
@@ -371,7 +377,7 @@ def test_dynamic_reimport_update_row_can_be_edited_before_approval(conn, tmp_pat
     first_payload = build_ticket_payload(conn, path, tmp_path / 'first', source_key='vendor-a')
     first = tickets.create(conn, 'template_import', None, first_payload)
     tickets.decide(conn, first['id'], first['token'], True)
-    workbook = load_workbook(path); workbook['吹风机']['C3'] = '表格新红色'; workbook.save(path)
+    workbook = load_workbook(path); workbook['吹风机']['E3'] = 36; workbook.save(path)
     payload = build_ticket_payload(conn, path, tmp_path / 'second', source_key='vendor-a')
     old, incoming = payload['sheets'][0]['drafts']['update'][0]
     color_key = next(field['key'] for field in payload['sheets'][0]['template']['fields'] if field['label'] == '颜色')

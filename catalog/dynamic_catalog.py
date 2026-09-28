@@ -31,7 +31,7 @@ def _field(value: dict) -> dict:
         raise ValueError('字段名称不能为空')
     field_type = value.get('type', 'text')
     visibility = value.get('visibility', 'public')
-    role = value.get('role', 'spec')
+    role = 'image' if field_type == 'image' else value.get('role', 'spec')
     if field_type not in FIELD_TYPES:
         raise ValueError(f'字段类型不支持：{field_type}')
     if visibility not in VISIBILITIES:
@@ -58,6 +58,7 @@ def validate_template(draft: dict) -> dict:
     if len(keys) != len(set(keys)):
         raise ValueError('字段 key 不能重复')
     return {'key': key, 'name': name, 'fields': fields,
+            **({'supplier': str(draft['supplier'] or '').strip()[:40]} if 'supplier' in draft else {}),
             'source_sheet': str(draft.get('source_sheet') or ''),
             'storage': str(draft.get('storage') or 'dynamic')}
 
@@ -100,7 +101,8 @@ def template_versions(conn, key: str) -> list[dict]:
     return values
 
 
-QUOTE_MAP_FIELDS = ('model_field', 'price_field', 'ctn_field', 'color_field')
+QUOTE_MAP_FIELDS = ('model_field', 'price_field', 'ctn_field', 'color_field',
+                    'pcs_field', 'gw_field', 'nw_field', 'dims_field')
 
 
 def suggest_quote_map(fields: list[dict]) -> dict:
@@ -126,7 +128,11 @@ def suggest_quote_map(fields: list[dict]) -> dict:
     mapping = {
         'model_field': model,
         'price_field': price,
-        'ctn_field': by_label_unique('箱规', '装箱'),
+        'ctn_field': by_label_unique('箱规'),
+        'pcs_field': by_label_unique('装箱数', '每箱', 'pcs/ctn'),
+        'gw_field': by_label_unique('毛重', 'g.w', 'gross weight'),
+        'nw_field': by_label_unique('净重', 'n.w', 'net weight'),
+        'dims_field': by_label_unique('尺寸', 'meas'),
         'color_field': by_label_unique('颜色', 'colour', 'color'),
     }
     return {name: key for name, key in mapping.items() if key}
@@ -179,18 +185,19 @@ def rename_template(conn, key: str, name: str) -> dict:
 
 def approve_template(conn, draft: dict, expected_version: int | None = None) -> dict:
     value = validate_template(draft)
-    current = conn.execute('SELECT version FROM category_template WHERE key=?', (value['key'],)).fetchone()
+    current = conn.execute('SELECT version,supplier FROM category_template WHERE key=?', (value['key'],)).fetchone()
     if current:
         if expected_version is None or current['version'] != expected_version:
             raise ValueError('此工单已过期（分类模板已更新），请直接驳回；如需入库请重新发送 Excel')
         version = current['version'] + 1
+        value.setdefault('supplier', current['supplier'])
         previous = _loads(conn.execute('SELECT quote_map_json FROM category_template WHERE key=?',
                                        (value['key'],)).fetchone()['quote_map_json'] or '{}', {})
         # 表头变了重推映射：保留仍然存在的显式绑定，缺的重新推荐。
         field_keys = {field['key'] for field in value['fields']}
         quote_map = {**suggest_quote_map(value['fields']),
                      **{name: key for name, key in previous.items() if key in field_keys}}
-        conn.execute("UPDATE category_template SET name=?,supplier=COALESCE(NULLIF(?,''),supplier),version=?,"
+        conn.execute("UPDATE category_template SET name=?,supplier=?,version=?,"
                      "fields_json=?,status='approved',"
                      "storage=?,source_sheet=?,quote_map_json=?,updated_at=datetime('now') WHERE key=?",
                      (value['name'], str(value.get('supplier') or '')[:40], version,
@@ -225,22 +232,24 @@ def upsert_approved_products(conn, category_key: str, rows: list[dict], *,
         product_id = str(raw.get('id') or secrets.token_hex(8))
         data = {key: '' if value is None else str(value) for key, value in (raw.get('data') or {}).items()
                 if key in allowed}
+        previous = conn.execute('SELECT supplier FROM product_dynamic WHERE id=?', (product_id,)).fetchone()
+        supplier = str(raw.get('supplier', previous['supplier'] if previous else template.get('supplier', '')) or '').strip()[:40]
         images = [str(value) for value in (raw.get('images') or []) if value]
-        values = (category_key, str(raw.get('inner_code') or inner_code.gen()),
+        values = (category_key, supplier, str(raw.get('inner_code') or inner_code.gen()),
                   json.dumps(data, ensure_ascii=False), str(raw.get('status') or 'approved'),
                   images[0] if images else '', json.dumps(images, ensure_ascii=False), source_doc,
                   source_key, source_sheet, raw.get('source_row'), str(raw.get('row_fingerprint') or ''),
                   1 if raw.get('cs_visible') else 0)
         exists = conn.execute('SELECT 1 FROM product_dynamic WHERE id=?', (product_id,)).fetchone()
         if exists:
-            conn.execute('UPDATE product_dynamic SET category_key=?,inner_code=?,data_json=?,status=?,image_main=?,'
+            conn.execute('UPDATE product_dynamic SET category_key=?,supplier=?,inner_code=?,data_json=?,status=?,image_main=?,'
                          'images_json=?,source_doc=?,source_key=?,source_sheet=?,source_row=?,row_fingerprint=?,'
                          'cs_visible=?,updated_at=datetime(\'now\') WHERE id=?', (*values, product_id))
             updated += 1
         else:
-            conn.execute('INSERT INTO product_dynamic(id,category_key,inner_code,data_json,status,image_main,images_json,'
+            conn.execute('INSERT INTO product_dynamic(id,category_key,supplier,inner_code,data_json,status,image_main,images_json,'
                          'source_doc,source_key,source_sheet,source_row,row_fingerprint,cs_visible) '
-                         'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)', (product_id, *values))
+                         'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (product_id, *values))
             created += 1
     return {'created': created, 'updated': updated}
 
@@ -252,7 +261,8 @@ def list_products(conn, category_key: str, *, public_only: bool = False) -> list
                         ' ORDER BY COALESCE(source_row,2147483647),created_at,id',
                         (category_key,)).fetchall()
     fields = template['fields']
-    model_keys = [field['key'] for field in fields if field['role'] == 'model']
+    model_keys = [field['key'] for field in fields if field['role'] == 'model'
+                  and (not public_only or field['visibility'] == 'public')]
     result = []
     for row in rows:
         data = _loads(row['data_json'], {})
@@ -269,10 +279,12 @@ def list_products(conn, category_key: str, *, public_only: bool = False) -> list
                 name = '商品'
             category_name = template['name'] if price_policy.public_spec_allowed('分类', template['name']) else '商品'
             result.append({'id': row['id'], '_category': category_key, 'category_name': category_name,
+                           'supplier': row['supplier'] or template.get('supplier', ''),
                            'name': name, 'specs': specs, 'image_main': row['image_main'],
                            'images': images, 'cs_visible': 1, 'status': 'approved'})
         else:
             result.append({'id': row['id'], 'category_key': category_key, 'category_name': template['name'],
+                           'supplier': row['supplier'] or template.get('supplier', ''),
                            'inner_code': row['inner_code'], 'data': data, 'status': row['status'],
                            'image_main': row['image_main'], 'images': images, 'source_doc': row['source_doc'],
                            'source_key': row['source_key'], 'source_sheet': row['source_sheet'],

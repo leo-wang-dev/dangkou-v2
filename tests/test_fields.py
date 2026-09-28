@@ -144,4 +144,4 @@ def test_full_catalog_quote_end_to_end(client):
     assert ws.cell(2 + n - 1, 1).value                       # 最后一行有数据（行2起）
     T = next(rr for rr in range(2 + n, 2 + n + 12)
              if ws.cell(rr, 1).value == 'TOTAL')
-    assert ws.cell(T, 7).value == sum(round((10 + i) * 1.03) * 40 for i in range(n))  # 合计=值（10台→整箱40）
+    assert ws.cell(T, 7).value == 1359.60  # 合计=值（10台→整箱40）

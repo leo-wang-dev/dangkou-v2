@@ -166,14 +166,14 @@ def test_full_fields_three_items(tmp_path):
         {'category': 'test_dims', 'product_id': 'c0', 'quantity': 80},   # 40/箱 → 2箱（无重量）
     ], 3, out, deposit_pct=20)
     ws = openpyxl.load_workbook(out).active
-    # 行2：r0（40/箱 毛重17.7 净重16.9 38.5*37.5*42.5，+3% 单价 round(10*1.03)=10）
+    # 行2：r0（40/箱 毛重17.7 净重16.9 38.5*37.5*42.5，+3% 单价10.30）
     r = 2
     assert ws.cell(r, 1).value == 'M0'
     assert ws.cell(r, 3).value == '描述0'
     assert ws.cell(r, 4).value == '黑色'
-    assert ws.cell(r, 5).value == 10                       # E 价格
+    assert ws.cell(r, 5).value == 10.30                    # E 价格
     assert ws.cell(r, 6).value == 120                      # F 数量=整箱(40×3)
-    assert ws.cell(r, 7).value == 1200                     # G 小计=值（10×120整箱）
+    assert ws.cell(r, 7).value == 1236                     # G 小计=值（10.30×120整箱）
     assert ws.cell(r, 8).value == 40                       # H 每箱
     assert ws.cell(r, 9).value == 3                        # I 箱数 ⌈100/40⌉
     assert ws.cell(r, 10).value == 17.7                    # J 毛重
@@ -189,7 +189,7 @@ def test_full_fields_three_items(tmp_path):
     r = 4
     assert ws.cell(r, 3).value in (None, '')               # C 描述空
     assert ws.cell(r, 4).value in (None, '')               # D 颜色空
-    assert ws.cell(r, 5).value == 22                       # round(21.5*1.03)
+    assert ws.cell(r, 5).value == 22.15                    # decimal half up
     assert ws.cell(r, 8).value == 40                       # 装箱数
     assert ws.cell(r, 9).value == 2                        # ⌈80/40⌉
     assert ws.cell(r, 10).value is None and ws.cell(r, 11).value is None  # 无重量
@@ -198,15 +198,15 @@ def test_full_fields_three_items(tmp_path):
     assert ws.cell(r, 14).value == round(2 * (60 * 40 * 40) / 1e6, 3)
     # 合计：3款 → TOTAL 行=2+3=5，之后 DEPOSIT/BALANCE
     assert ws.cell(5, 1).value == 'TOTAL'
-    assert ws.cell(5, 7).value == 3860                   # 1200+900+1760
+    assert ws.cell(5, 7).value == 3935                   # 1236+927+1772
     assert ws.cell(5, 9).value == 6                      # 3+1+2箱
     assert ws.cell(5, 13).value == 72.1                  # 53.1+19.0
     assert ws.cell(5, 14).value == round(round(3 * (38.5 * 37.5 * 42.5) / 1e6, 3) + 0.091 + 0.192, 3)
-    # 定金 20%：总额 3860 → 772；尾款差额（写值不写公式）
+    # 定金 20%：总额3935 → 787；尾款差额（写值不写公式）
     assert ws.cell(6, 1).value == 'DEPOSIT'
-    assert ws.cell(6, 7).value == round(3860 * 0.2, 2)
+    assert ws.cell(6, 7).value == round(3935 * 0.2, 2)
     assert ws.cell(7, 1).value == 'BALANCE'
-    assert ws.cell(7, 7).value == 3860 - round(3860 * 0.2, 2)
+    assert ws.cell(7, 7).value == 3935 - round(3935 * 0.2, 2)
     for r_ in (5, 6, 7):
         assert isinstance(ws.cell(r_, 7).value, (int, float))   # 值不是 '=SUM(...)'
     assert ws.max_row == 7
@@ -240,16 +240,16 @@ def test_multi_item_quote_with_adjustment(tmp_path):
     assert ws.cell(1, 6).value == 'QUANTITY'
     assert ws.cell(1, 7).value == 'TOTAL AMOUNT'
     assert ws.cell(2, 1).value == '8226'          # ITEM NO.
-    assert ws.cell(2, 5).value == 22              # 21.5*1.03=22.145 round=22
+    assert ws.cell(2, 5).value == 22.15           # 21.5*1.03=22.145 → 22.15
     assert ws.cell(2, 6).value == 120             # QUANTITY=整箱(40×3)
-    assert ws.cell(2, 7).value == 22 * 120        # G 小计=值（整箱120）
+    assert ws.cell(2, 7).value == 22.15 * 120        # G 小计=值（整箱120）
     assert ws.cell(3, 1).value == '8227'
-    assert ws.cell(3, 5).value == 31              # 30*1.03=30.9 round=31
+    assert ws.cell(3, 5).value == 30.90           # 30*1.03=30.90
     assert ws.cell(3, 6).value == 500
-    assert ws.cell(3, 7).value == 31 * 500
+    assert ws.cell(3, 7).value == 30.90 * 500
     # 合计：k=2 → TOTAL 在 2+2=4
     assert ws.cell(4, 1).value == 'TOTAL'
-    total = 22 * 120 + 31 * 500
+    total = 22.15 * 120 + 30.90 * 500
     assert ws.cell(4, 7).value == total
     assert ws.cell(5, 7).value == round(total * 0.3, 2)  # 默认定金30%
     assert ws.cell(6, 7).value == total - round(total * 0.3, 2)
@@ -297,14 +297,14 @@ def test_deposit_default_and_edges(tmp_path):
 
 
 def test_discount_negative_adjustment(tmp_path):
-    """折扣场景：出厂价下浮 5%（单价=round(base×0.95)，与生产同款公式）。"""
+    """折扣场景：出厂价下浮 5%（单价保留两位小数）。"""
     conn, st = _mkdb(tmp_path, n=1, dims_only=False)
     out = str(tmp_path / 'qdisc.xlsx')
     quote.generate_generic(conn, st, [{'category': 'test_cat', 'product_id': 'r0',
                                        'quantity': 100}], -5, out)
     ws = openpyxl.load_workbook(out).active
-    assert ws.cell(2, 5).value == round(10 * (1 + (-5) / 100))
-    assert ws.cell(2, 7).value == round(10 * 0.95) * 120   # 整箱
+    assert ws.cell(2, 5).value == 9.50
+    assert ws.cell(2, 7).value == 9.50 * 120   # 整箱
 
 
 def test_discount_plus_custom_deposit_combo(tmp_path):
@@ -316,11 +316,11 @@ def test_discount_plus_custom_deposit_combo(tmp_path):
         {'category': 'test_cat', 'product_id': 'r1', 'quantity': 60},
     ], -5, out, deposit_pct=20)
     ws = openpyxl.load_workbook(out).active
-    u0, u1 = round(10 * 0.95), round(15 * 0.95)
+    u0, u1 = 9.50, 14.25
     assert ws.cell(2, 5).value == u0
     assert ws.cell(3, 5).value == u1
     T = 4                                                    # 2+2
-    total = round(10 * 0.95) * 120 + round(15 * 0.95) * 60   # 100→整箱120；60恰一箱
+    total = 9.50 * 120 + 14.25 * 60   # 100→整箱120；60恰一箱
     assert ws.cell(T, 7).value == total
     assert ws.cell(T + 1, 7).value == round(total * 0.2, 2)   # 定金20%
     assert ws.cell(T + 2, 7).value == total - round(total * 0.2, 2)
@@ -394,3 +394,50 @@ def test_sample_xlsx_structure_in_tmp():
         conn.close()
         os.remove(db_path)     # 只留 xlsx 样例
         shutil.rmtree(st_dir, ignore_errors=True)
+
+@pytest.mark.parametrize('deposit', [0, 100])
+def test_decimal_quote_carton_and_deposit_boundaries(tmp_path, deposit):
+    conn, st = _mkdb(tmp_path, n=1, dims_only=False)
+    conn.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.price','65','$.ctn','40件/箱') WHERE id='r0'")
+    out = str(tmp_path / 'decimal.xlsx')
+    quote.generate_generic(conn, st, [{'category':'test_cat', 'product_id':'r0', 'quantity':50}], 3, out, deposit_pct=deposit)
+    ws = openpyxl.load_workbook(out).active
+    assert ws['E2'].value == 66.95
+    assert ws['F2'].value == 80
+    assert ws['G2'].value == 5356
+    assert ws['G4'].value == (5356 if deposit else 0)
+    assert ws['G5'].value == (0 if deposit else 5356)
+
+@pytest.mark.parametrize('text', ['40', '40 PCS/CTN', '40件/箱', '装箱数：40', '40pcs'])
+def test_common_carton_counts(text):
+    assert quote.parse_ctn_spec(text)['pcs'] == 40
+
+
+def test_separate_carton_weight_dimensions_mapping(tmp_path):
+    from catalog import dynamic_catalog as dc
+    conn, st = _mkdb(tmp_path, n=1, dims_only=False)
+    tpl = dc.get_template(conn, 'test_cat')
+    for key, label in [('pcs','每箱数量'),('gross','毛重'),('net','净重'),('dimensions','包装尺寸')]:
+        tpl['fields'].append({'key':key,'label':label,'type':'text','role':'spec'})
+    dc.approve_template(conn,tpl,expected_version=1)
+    dc.set_quote_map(conn,'test_cat',{'model_field':'model','price_field':'price','pcs_field':'pcs','gw_field':'gross','nw_field':'net','dims_field':'dimensions'})
+    conn.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.pcs','40','$.gross','12.5kg','$.net','11kg','$.dimensions','60*40*30') WHERE id='r0'")
+    out = str(tmp_path / 'separate.xlsx')
+    details = []
+    quote.generate_generic(conn,st,[{'category':'test_cat','product_id':'r0','quantity':50}],0,out,details=details)
+    ws = openpyxl.load_workbook(out).active
+    assert [ws.cell(2,c).value for c in (8,9,10,11,12,13,14)] == [40,2,12.5,11,'60*40*30',25,0.144]
+    assert details[0]['quoted_quantity'] == 80
+
+
+def test_negative_adjustment_floor_and_decimal_half_up(tmp_path):
+    conn, st = _mkdb(tmp_path, n=1, dims_only=False)
+    items = [{'category':'test_cat','product_id':'r0','quantity':1}]
+    out = str(tmp_path / 'boundary.xlsx')
+    quote.generate_generic(conn, st, items, -100, out)
+    assert openpyxl.load_workbook(out).active['G2'].value == 0
+    with pytest.raises(ValueError, match='价格调整'):
+        quote.generate_generic(conn, st, items, -100.01, out)
+    conn.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.price','1.005') WHERE id='r0'")
+    quote.generate_generic(conn, st, items, 0, out)
+    assert openpyxl.load_workbook(out).active['E2'].value == 1.01

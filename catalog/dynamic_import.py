@@ -22,32 +22,48 @@ def _field_signature(fields: list[dict]) -> list[tuple]:
 
 
 def _source_rows(conn, category_key: str, source_key: str, source_sheet: str) -> list[dict]:
-    return [row for row in dynamic_catalog.list_products(conn, category_key)
-            if row['source_key'] == source_key and row['source_sheet'] == source_sheet
-            ]
+    # Identity spans reuploaded filenames; snapshot this same scope at approval.
+    return dynamic_catalog.list_products(conn, category_key)
 
 
 def _source_snapshot(rows: list[dict]) -> str:
     values = [{key: row.get(key) for key in (
         'id', 'inner_code', 'data', 'status', 'images', 'source_row',
-        'row_fingerprint', 'cs_visible')} for row in sorted(rows, key=lambda value: value['id'])]
+        'row_fingerprint', 'cs_visible', 'supplier')} for row in sorted(rows, key=lambda value: value['id'])]
     return hashlib.sha256(json.dumps(values, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
 def _model_identity(row: dict, model_keys: list[str]):
     data = row.get('data') or {}
     values = tuple(str(data.get(key) or '').strip().casefold() for key in model_keys)
-    return values if any(values) else None
+    return (row.get('supplier', ''), *values) if any(values) else None
 
 
-def _classify_rows(existing: list[dict], incoming: list[dict], model_keys: list[str]) -> dict:
+def _classify_rows(existing: list[dict], incoming: list[dict], model_keys: list[str], variant_keys=None) -> dict:
     unused = list(existing)
+    variant_keys = list(variant_keys) if variant_keys is not None else sorted(
+        set().union(*(row.get('data', {}).keys() for row in incoming))
+        - set(model_keys) - {'price', 'cost', 'stock', 'note'})
+    seen = set()
+    for index, row in enumerate(incoming):
+        identity = _model_identity(row, model_keys)
+        if identity:
+            signature = (identity, tuple(str(row.get('data', {}).get(key) or '').strip() for key in variant_keys))
+            if signature in seen:
+                raise ValueError(f"供应商 {row.get('supplier', '')} 型号 {[row.get('data', {}).get(key, '') for key in model_keys]} 重复规格，无法确定更新对象（行 {index + 1}）")
+            seen.add(signature)
     new, update = [], []
     matches: dict[int, dict] = {}
     # Reserve every exact content match first. This disambiguates duplicate
     # models when just one colour/spec row changed.
     for index, draft in enumerate(incoming):
-        match = next((row for row in unused if row['row_fingerprint'] == draft['row_fingerprint']), None)
+        exact = [row for row in unused if draft.get('row_fingerprint')
+                 and row['row_fingerprint'] == draft['row_fingerprint']
+                 and row.get('data', {}) == draft.get('data', {})
+                 and row.get('supplier', '') == draft.get('supplier', '')]
+        if len(exact) > 1:
+            raise ValueError(f"供应商 {draft.get('supplier', '')} 型号 {[draft.get('data', {}).get(key, '') for key in model_keys]} 有多个相同商品，无法确定更新对象（行 {index + 1}）")
+        match = exact[0] if exact else None
         if match is not None:
             unused.remove(match)
             matches[index] = match
@@ -56,15 +72,34 @@ def _classify_rows(existing: list[dict], incoming: list[dict], model_keys: list[
         if match is None:
             identity = _model_identity(draft, model_keys)
             candidates = [row for row in unused if identity and _model_identity(row, model_keys) == identity]
-            match = candidates[0] if len(candidates) == 1 else None
+            keys = variant_keys
+            compatible = [row for row in candidates if all(
+                not str(draft.get('data', {}).get(key) or '').strip()
+                or str(row.get('data', {}).get(key) or '').strip() == str(draft['data'][key]).strip()
+                for key in keys)]
+            if len(compatible) > 1:
+                raise ValueError(f"供应商 {draft.get('supplier', '')} 型号 {[draft.get('data', {}).get(key, '') for key in model_keys]} 规格不明确，无法确定更新对象（行 {index + 1}）")
+            candidates = [row for row in candidates if all(
+                str(row.get('data', {}).get(key) or '').strip() == str(draft.get('data', {}).get(key) or '').strip()
+                for key in keys)]
+            if compatible and not candidates:
+                raise ValueError(f"供应商 {draft.get('supplier', '')} 型号 {[draft.get('data', {}).get(key, '') for key in model_keys]} 缺少规格，无法确定更新对象（行 {index + 1}）")
+            match = candidates[0] if candidates else None
         if match is None:
             new.append(draft)
             continue
         if match in unused:
             unused.remove(match)
-        if match['row_fingerprint'] != draft['row_fingerprint']:
+        if match['row_fingerprint'] != draft['row_fingerprint'] or match.get('data') != draft.get('data'):
             update.append([match, draft])
-    return {'new': new, 'update': update, 'delist': unused}
+    return {'new': new, 'update': update, 'delist': []}
+
+
+def _classify_template_rows(existing, incoming, template):
+    incoming = [{**row, 'supplier': row.get('supplier', template.get('supplier', ''))} for row in incoming]
+    return _classify_rows(existing, incoming,
+                          [f['key'] for f in template['fields'] if f['role'] == 'model'],
+                          [f['key'] for f in template['fields'] if f['role'] == 'spec'])
 
 
 def _file_sha256(path: str) -> str:
@@ -184,13 +219,12 @@ def _products_into_template(conn, xlsx_path: str, work_dir, template: dict, *,
         raise ValueError('解析服务暂不可用，请稍后重试导入')
     source_rows = _source_rows(conn, template['key'], source_key, template['source_sheet'])
     existing = [row for row in source_rows if row['status'] != 'delisted']
-    model_keys = [field['key'] for field in template['fields'] if field['role'] == 'model']
     section = {'template': template, 'template_action': 'reuse',
                'expected_version': template['version'], 'title': template['name'],
                'header_row': None, 'image_count': 0,
                'source_sheet': template['source_sheet'],
                'source_snapshot': _source_snapshot(source_rows),
-               'drafts': _classify_rows(existing, incoming, model_keys)}
+               'drafts': _classify_template_rows(existing, incoming, template)}
     return {'kind': 'template_import', 'phase': 'products', 'doc_id': doc_id,
             'filename': os.path.basename(xlsx_path),
             'template_doc_id': None, 'source_key': source_key,
@@ -226,7 +260,7 @@ def _agent_rows(template: dict, xlsx_path: str, work_dir, sheet: str = '') -> li
             images.insert(0, str(p['image_main']))
         fingerprint_payload = {'data': data,
                                'images': [_file_sha256(os.path.join(str(work_dir), name)) for name in images]}
-        rows.append({'data': data, 'images': images,
+        rows.append({'data': data, 'supplier': str(p.get('supplier') or p.get('供应商') or result.get('vendor') or template.get('supplier') or '').strip()[:40], 'images': images,
                      'image_main': images[0] if images else '',
                      'source_row': None,
                      'row_fingerprint': hashlib.sha256(json.dumps(
@@ -452,7 +486,6 @@ def build_product_payload(conn, xlsx_path, work_dir, *, source_key: str,
             raise ValueError('解析服务暂不可用，请稍后重试导入')
         source_rows = _source_rows(conn, template['key'], source_key, template['source_sheet'])
         existing = [row for row in source_rows if row['status'] != 'delisted']
-        model_keys = [field['key'] for field in template['fields'] if field['role'] == 'model']
         sections.append({'template': template, 'template_action': 'reuse',
                          'expected_version': template['version'],
                          'title': discovered[0]['title'],
@@ -460,7 +493,7 @@ def build_product_payload(conn, xlsx_path, work_dir, *, source_key: str,
                          'image_count': sum(item['image_count'] for item in discovered),
                          'source_sheet': template['source_sheet'],
                          'source_snapshot': _source_snapshot(source_rows),
-                         'drafts': _classify_rows(existing, incoming, model_keys)})
+                         'drafts': _classify_template_rows(existing, incoming, template)})
         return {'kind': 'template_import', 'phase': 'products', 'doc_id': doc_id,
                 'filename': os.path.basename(xlsx_path),
                 'template_doc_id': template_doc_id, 'source_key': source_key,
@@ -487,13 +520,12 @@ def build_product_payload(conn, xlsx_path, work_dir, *, source_key: str,
             raise ValueError('解析服务暂不可用，请稍后重试导入')
         source_rows = _source_rows(conn, template['key'], source_key, template['source_sheet'])
         existing = [row for row in source_rows if row['status'] != 'delisted']
-        model_keys = [field['key'] for field in template['fields'] if field['role'] == 'model']
         sections.append({'template': template, 'template_action': 'reuse',
                          'expected_version': template['version'], 'title': found['title'],
                          'header_row': found['header_row'], 'image_count': found['image_count'],
                          'source_sheet': template['source_sheet'],
                          'source_snapshot': _source_snapshot(source_rows),
-                         'drafts': _classify_rows(existing, incoming, model_keys)})
+                         'drafts': _classify_template_rows(existing, incoming, template)})
     return {'kind': 'template_import', 'phase': 'products', 'doc_id': doc_id,
                 'filename': os.path.basename(xlsx_path),
             'template_doc_id': template_doc_id, 'source_key': source_key,
@@ -526,13 +558,12 @@ def build_ticket_payload(conn, xlsx_path, work_dir, *, source_key: str,
                 raise ValueError('解析服务暂不可用，请稍后重试导入')
         source_rows = _source_rows(conn, target['key'], source_key, target['source_sheet'])
         existing = [row for row in source_rows if row['status'] != 'delisted']
-        model_keys = [field['key'] for field in target['fields'] if field['role'] == 'model']
         section = {'template': target, 'template_action': 'reuse',
                    'expected_version': target['version'], 'title': '',
                    'header_row': None, 'image_count': sum(s['image_count'] for s in discovered_sheets),
                    'source_sheet': target['source_sheet'],
                    'source_snapshot': _source_snapshot(source_rows),
-                   'drafts': _classify_rows(existing, incoming, model_keys)}
+                   'drafts': _classify_template_rows(existing, incoming, target)}
         if discovered_sheets:
             section['title'] = discovered_sheets[0]['title']
             section['header_row'] = discovered_sheets[0]['header_row']
@@ -561,7 +592,6 @@ def build_ticket_payload(conn, xlsx_path, work_dir, *, source_key: str,
             action = 'reuse' if _field_signature(current['fields']) == _field_signature(template['fields']) else 'update'
             source_rows = _source_rows(conn, current['key'], source_key, discovered['source_sheet'])
             existing = [row for row in source_rows if row['status'] != 'delisted']
-        model_keys = [field['key'] for field in template['fields'] if field['role'] == 'model']
         incoming = _agent_rows(template, xlsx_path, work_dir, sheet=discovered.get('title') or '')
         if incoming is None:
             raise ValueError('解析服务暂不可用，请稍后重试导入')
@@ -570,7 +600,7 @@ def build_ticket_payload(conn, xlsx_path, work_dir, *, source_key: str,
                        'header_row': discovered['header_row'], 'image_count': discovered['image_count'],
                        'source_sheet': discovered['source_sheet'],
                        'source_snapshot': _source_snapshot(source_rows),
-                       'drafts': _classify_rows(existing, incoming, model_keys)})
+                       'drafts': _classify_template_rows(existing, incoming, template)})
     if not sheets:
         raise ValueError('Excel 中没有识别到有效 Sheet 和表头')
     return {'kind': 'template_import', 'doc_id': doc_id, 'source_key': source_key,
@@ -588,6 +618,8 @@ def _edited(draft: dict, edits: dict, *aliases) -> dict:
     data_changes = change.get('data') if isinstance(change.get('data'), dict) else {
         key: value for key, value in change.items() if not key.startswith('__')}
     result['data'] = {**draft.get('data', {}), **data_changes}
+    if '__supplier' in change:
+        result['supplier'] = str(change['__supplier'] or '').strip()[:40]
     if isinstance(change.get('__images'), list):
         result['images'] = change['__images']
         result['image_main'] = change['__images'][0] if change['__images'] else ''
@@ -615,6 +647,7 @@ def _apply_template_ticket(conn, payload: dict, decisions: dict | None = None) -
                     raise ValueError('此工单已过期（分类模板已更新），请直接驳回；如需入库请重新发送 Excel')
                 changed = template_override and (
                     current['name'] != template['name']
+                    or current.get('supplier', '') != template.get('supplier', '')
                     or current.get('source_sheet', '') != template.get('source_sheet', '')
                     or _field_signature(current['fields']) != _field_signature(template['fields']))
                 approved = dynamic_catalog.approve_template(
@@ -689,6 +722,7 @@ def _apply_ticket_payload(conn, payload: dict, decisions: dict | None = None,
                     raise ValueError('此工单已过期（分类模板已更新），请直接驳回；如需入库请重新发送 Excel')
                 changed = template_override and (
                     approved['name'] != template['name']
+                    or approved.get('supplier', '') != template.get('supplier', '')
                     or approved.get('source_sheet', '') != template.get('source_sheet', '')
                     or _field_signature(approved['fields']) != _field_signature(template['fields']))
                 if changed:
@@ -707,6 +741,7 @@ def _apply_ticket_payload(conn, payload: dict, decisions: dict | None = None,
             draft = _edited(draft, edits, key)
             product_id = secrets.token_hex(8)
             row = {'id': product_id, 'inner_code': inner_code.gen(), 'cs_visible': 1,
+                   'supplier': draft.get('supplier', approved.get('supplier', '')),
                    'data': {key: value for key, value in draft.get('data', {}).items() if key in allowed},
                    'images': draft.get('images') or [], 'source_row': draft.get('source_row'),
                    'row_fingerprint': draft.get('row_fingerprint', '')}
@@ -725,7 +760,7 @@ def _apply_ticket_payload(conn, payload: dict, decisions: dict | None = None,
             incoming = _edited(incoming, edits, old.get('id'), f'u{index}')
             images = incoming['images'] if 'images' in incoming else (old.get('images') or [])
             row = {'id': old['id'], 'inner_code': old['inner_code'], 'cs_visible': old['cs_visible'],
-                   'status': 'approved',
+                   'status': 'approved', 'supplier': incoming.get('supplier', old.get('supplier', '')),
                    'data': {key: value for key, value in incoming.get('data', {}).items() if key in allowed},
                    'images': images,
                    'source_row': incoming.get('source_row'),
@@ -740,12 +775,7 @@ def _apply_ticket_payload(conn, payload: dict, decisions: dict | None = None,
                 created_rows.append({'id': old['id'], '_category': approved['key'],
                                      '_table': 'product_dynamic', 'images': images,
                                      'image_main': images[0]})
-        for old in section['drafts'].get('delist', []):
-            if str(old['id']) in rejected:
-                continue
-            conn.execute("UPDATE product_dynamic SET status='delisted',updated_at=datetime('now') WHERE id=?",
-                         (old['id'],))
-            delisted += 1
+        # Missing Excel rows never authorize delisting, including older pending payloads.
     result = {'created': created, 'updated': updated, 'delisted': delisted,
               'created_rows': created_rows, 'work_dir': payload.get('work_dir')}
     if product_only:

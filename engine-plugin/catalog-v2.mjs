@@ -197,7 +197,7 @@ export async function apply(ctx, _config = {}) {
     name: 'catalog_quote',
     description: '生成正式报价单 Excel（通用格式纯代码生成：14列含装箱物流+合计+定金，完成后系统自动推送文件）。'
       + '支持已配置报价字段映射的分类（quotable=true，用 quote_map_get 查）；未配置映射的分类会返回明确错误，按提示用 quote_map_set 配置后即可出单。'
-      + 'items 每项含 product_id 和 quantity；price_adjustment_pct 正=上浮负=下浮（如 3=+3%, -5=下浮5%）。'
+      + '同型号存在多个供应商时先请商家确认供应商，按 catalog_stats 返回的 supplier 和 product_id 选款，不得混价。items 每项含 product_id 和 quantity；price_adjustment_pct 正=上浮负=下浮（如 3=+3%, -5=下浮5%）。'
       + '用户说"出厂价加3个点"→ pct=3；"销售价下浮5%"→ pct=-5；"加3%佣金"→ pct=3。'
       + 'depositPercent=定金百分比：用户说"30%定金"传30、"两成定金"传20，不传默认30。'
       + '数量按整箱向上取整（QUANTITY=每箱数×箱数，如要100台每箱60→按2箱120台），回复时主动向用户说明实际按整箱计的数量。',
@@ -249,8 +249,8 @@ export async function apply(ctx, _config = {}) {
         price_adjustment_pct: price_adjustment_pct ?? 0,
         deposit_pct: depositPercent ?? 30,
       })
-      return JSON.stringify({ path: r.path,
-        note: `报价单已生成（${items?.length || 0} 款，调整 ${price_adjustment_pct ?? 0}%，定金 ${depositPercent ?? 30}%），系统自动推送` })
+      return JSON.stringify({ path: r.path, items: r.items || [], quantity_adjustment_note: r.quantity_adjustment_note || '',
+        note: `报价单已生成（${items?.length || 0} 款，调整 ${price_adjustment_pct ?? 0}%，定金 ${depositPercent ?? 30}%），系统自动推送。${r.quantity_adjustment_note || ''}` })
     },
   })
 
@@ -283,11 +283,15 @@ export async function apply(ctx, _config = {}) {
         modelField: { type: 'string', description: '型号列（表头名或字段 key）' },
         ctnField: { type: 'string', description: '可选：箱规列' },
         colorField: { type: 'string', description: '可选：颜色列' },
+        pcsField: { type: 'string', description: '可选：独立装箱数量列' },
+        gwField: { type: 'string', description: '可选：独立毛重列' },
+        nwField: { type: 'string', description: '可选：独立净重列' },
+        dimsField: { type: 'string', description: '可选：独立箱体尺寸列' },
       },
       required: ['categoryKey', 'priceField', 'modelField'],
     },
     output: OUT,
-    async execute({ categoryKey, priceField, modelField, ctnField, colorField }) {
+    async execute({ categoryKey, priceField, modelField, ctnField, colorField, pcsField, gwField, nwField, dimsField }) {
       requiredText(categoryKey, 'categoryKey')
       requiredText(priceField, 'priceField')
       requiredText(modelField, 'modelField')
@@ -296,6 +300,10 @@ export async function apply(ctx, _config = {}) {
       const body = { price_field: priceField, model_field: modelField }
       if (ctnField) body.ctn_field = ctnField
       if (colorField) body.color_field = colorField
+      for (const [key, value] of Object.entries({pcs_field:pcsField, gw_field:gwField, nw_field:nwField, dims_field:dimsField})) {
+        optionalText(value, key)
+        if (value) body[key] = value
+      }
       const r = await call(`/categories/${encodeURIComponent(categoryKey)}/quote-map`, 'PUT', body)
       return JSON.stringify({ quotable: r.quotable, quote_map: r.quote_map,
         note: '报价映射已保存，现在可以出正式报价单了' })

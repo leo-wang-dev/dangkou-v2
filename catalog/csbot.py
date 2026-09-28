@@ -238,7 +238,7 @@ class CsBot:
         inquiry = '\n照片里的价格只是采购记录，不是本店确认报价。'
         if found:
             inquiry += '\n可能对应以下本店商品，请先确认型号：\n' + '\n'.join(
-                f'询价{i}：{p["name"]}' for i,p in enumerate(found,1))
+                f'询价{i}：{p["name"]}' + (f'（供应商：{p["supplier"]}）' if p.get('supplier') else '') for i,p in enumerate(found,1))
             inquiry += ('\n回复“选1”加入采购清单；回复“询价1”查看对应商品资料，需要联系商家可回复“找老板”。' if merchant_policy.read(self.conn) is not None else '\n价格及采购数量对应的报价均由老板处理；回复“询价1”即可转人工。')
         else:
             inquiry += '\n尚未匹配到本店在线商品；需要询价可补充型号，或回复“找老板”。'
@@ -478,7 +478,8 @@ class CsBot:
         matches = [product for product in candidates
                    if product.get('name') and hit(str(product['name']))]
         if matches:
-            return matches
+            suppliers = [p for p in matches if p.get('supplier') and str(p['supplier']) in text]
+            return suppliers or matches
         # 第二优先：型号主体匹配。导入商品的名称常是“KS-0276\n铝合金”这种
         # “型号+换行+规格”格式，客户只会说型号，按首行（型号主体）匹配。
         bases = {str(product['name']).split('\n')[0].strip()
@@ -491,7 +492,7 @@ class CsBot:
 
     def _format_catalog_variants(self, products, text):
         """Describe duplicate-model variants without binding the customer to one row."""
-        reply = ('找到多个符合该型号的商品，请按颜色或规格确认：\n' +
+        reply = ('找到多个符合该型号的商品，请按供应商、颜色或规格确认：\n' +
                  self._format_catalog_products(products[:3]))
         specs = [product.get('specs') or {} for product in products]
         if any(word in text for word in ('库存', '有货', '现货', '缺货')) and not any(
@@ -585,6 +586,8 @@ class CsBot:
             title = f'{index}. ' if numbered else ''
             title += (f'【{category}】' if category else '') + str(product['name'])
             specs = []
+            if product.get('supplier') and price_policy.public_spec_allowed('供应商', product['supplier']):
+                specs.append(f"供应商：{product['supplier']}")
             for label, value in (product.get('specs') or {}).items():
                 if not price_policy.public_spec_allowed(label, value):
                     continue

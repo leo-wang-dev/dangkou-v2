@@ -8,10 +8,10 @@ from audit.test_browser_round2 import (server, site, browser, page, review, subm
 def make_update(site, images=False):
     from catalog.dynamic_import import _source_snapshot
     old = dict(site['conn'].execute(
-        "SELECT id, inner_code, data_json, status, image_main, images_json, cs_visible,"
+        "SELECT id, supplier, inner_code, data_json, status, image_main, images_json, cs_visible,"
         " source_key, source_sheet, source_row, row_fingerprint FROM product_dynamic"
         " WHERE id='c1'").fetchone())
-    old_row = {'id': old['id'], 'inner_code': old['inner_code'],
+    old_row = {'id': old['id'], 'supplier': old['supplier'], 'inner_code': old['inner_code'],
                'data': __import__('json').loads(old['data_json']),
                'status': old['status'], 'images': __import__('json').loads(old['images_json']),
                'cs_visible': old['cs_visible'], 'source_key': old['source_key'],

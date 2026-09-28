@@ -261,14 +261,19 @@ def register_routes(app: FastAPI):
         _auth(request, app.state.token)
         conn = request_conn()
         rows = conn.execute(
-            "SELECT t.key cat_key, t.name cat_name, COALESCE(NULLIF(t.supplier,''), t.name) supplier,"
+            "SELECT t.key cat_key, t.name cat_name, COALESCE(NULLIF(p.supplier,''), NULLIF(t.supplier,''), t.name) supplier,"
             " COALESCE(SUM(p.status!='delisted'),0) total,"
-            " COALESCE(SUM(p.status!='delisted' AND p.cs_visible=1),0) visible"
+            " COALESCE(SUM(p.status='approved' AND p.cs_visible=1 AND t.status='approved'),0) visible"
             " FROM category_template t LEFT JOIN product_dynamic p ON p.category_key=t.key"
-            " WHERE t.storage='dynamic' GROUP BY t.key").fetchall()
+            " WHERE t.storage='dynamic' GROUP BY t.key, COALESCE(NULLIF(p.supplier,''), NULLIF(t.supplier,''), t.name)").fetchall()
         items = [dict(r) for r in rows]
         if by == 'category':
-            return {'by': 'category', 'categories': items}
+            categories = {}
+            for item in items:
+                group = categories.setdefault(item['cat_key'], {**item, 'total': 0, 'visible': 0})
+                group['total'] += item['total']
+                group['visible'] += item['visible']
+            return {'by': 'category', 'categories': list(categories.values())}
         groups: dict = {}
         for item in items:
             g = groups.setdefault(item['supplier'], {'supplier': item['supplier'], 'total': 0, 'visible': 0, 'categories': []})
@@ -282,6 +287,10 @@ def register_routes(app: FastAPI):
         model_field: str = Field(min_length=1, max_length=128)
         ctn_field: str | None = Field(default=None, max_length=128)
         color_field: str | None = Field(default=None, max_length=128)
+        pcs_field: str | None = Field(default=None, max_length=128)
+        gw_field: str | None = Field(default=None, max_length=128)
+        nw_field: str | None = Field(default=None, max_length=128)
+        dims_field: str | None = Field(default=None, max_length=128)
 
     @app.get('/categories/{category}/quote-map')
     def get_quote_map(category: str, request: Request):
@@ -770,11 +779,13 @@ def register_routes(app: FastAPI):
         for row in rows:
             product = {field['label']: row['data'].get(field['key'], '')
                        for field in template['fields']}
-            product.update({'内部货号': row['inner_code'], '状态': row['status'],
+            product.update({'supplier': row['supplier'], '供应商': row['supplier'], '内部货号': row['inner_code'], '状态': row['status'],
                             '主图': row['image_main'], '图集': row['images'],
                             '可观测': row['cs_visible'], 'id': row['id']})
             products.append(product)
         fields = [{**field, 'col': field['key']} for field in template['fields']]
+        fields.append({'col': 'supplier', 'label': '供应商', 'type': 'text',
+                       'role': 'spec', 'visibility': 'internal', 'required': False, 'searchable': True})
         fields.append({'col': 'cs_visible', 'label': '可观测', 'type': 'number',
                        'role': 'visibility', 'visibility': 'internal',
                        'required': False, 'searchable': False})
@@ -806,7 +817,7 @@ def register_routes(app: FastAPI):
         except (KeyError, StopIteration):
             return None
         value = {field['label']: row['data'].get(field['key'], '') for field in template['fields']}
-        value.update({'id': row['id'], '内部货号': row['inner_code'], '状态': row['status'],
+        value.update({'id': row['id'], 'supplier': row['supplier'], '供应商': row['supplier'], '内部货号': row['inner_code'], '状态': row['status'],
                       '主图': row['image_main'], '图集': row['images'], '可观测': row['cs_visible']})
         return value
 
@@ -830,6 +841,8 @@ def register_routes(app: FastAPI):
         for key, value in (body.changes or {}).items():
             if key == 'cs_visible' or key in ('可观测', '对客户可见'):
                 normalized['cs_visible'] = str(value).strip()
+            elif key in ('supplier', '供应商'):
+                normalized['supplier'] = str(value).strip()[:40]
             elif key in mapping:
                 normalized[mapping[key]] = str(value).strip()
             else:
@@ -892,7 +905,7 @@ def register_routes(app: FastAPI):
             for row in rows if full else rows[:3]:
                 value = {field['label']: row['data'].get(field['key'], '')
                          for field in template['fields']}
-                value.update({'id': row['id'], '内部货号': row['inner_code'],
+                value.update({'id': row['id'], 'supplier': row['supplier'], '供应商': row['supplier'], '内部货号': row['inner_code'],
                               '状态': row['status'], '主图': row['image_main'],
                               '图集': row['images'], '可观测': row['cs_visible']})
                 values.append(value)
@@ -975,7 +988,7 @@ def register_routes(app: FastAPI):
             ext = os.path.splitext(fn)[1] or '.png'
             img_rels.append(app.state.storage.save(category, pid, f'img-{secrets.token_hex(8)}{ext}', data_bytes))
         result = dynamic_catalog.upsert_approved_products(request_conn(), category, [{
-            'id': pid, 'inner_code': _ic.gen(), 'data': data, 'images': img_rels,
+            'id': pid, 'supplier': body.changes.get('supplier', template.get('supplier', '')), 'inner_code': _ic.gen(), 'data': data, 'images': img_rels,
             'cs_visible': int(visible), 'row_fingerprint': '', 'source_row': None,
         }])
         request_conn().commit()
@@ -1016,7 +1029,7 @@ def register_routes(app: FastAPI):
                 ext = os.path.splitext(fn)[1] or '.png'
                 images.append(app.state.storage.save(category, pid, f'img-{secrets.token_hex(8)}{ext}', data_bytes))
         dynamic_catalog.upsert_approved_products(request_conn(), category, [{
-            'id': pid, 'inner_code': row['inner_code'], 'data': data, 'images': images,
+            'id': pid, 'supplier': body.changes.get('supplier', row['supplier']), 'inner_code': row['inner_code'], 'data': data, 'images': images,
             'cs_visible': int(visible), 'status': row['status'],
             'source_row': row['source_row'], 'row_fingerprint': row['row_fingerprint'],
         }], source_key=row['source_key'], source_sheet=row['source_sheet'], source_doc=row['source_doc'])
@@ -1068,14 +1081,18 @@ def register_routes(app: FastAPI):
         out = os.path.join(out_dir, f'quote-{uuid.uuid4().hex[:8]}.xlsx')
         items = [{'category': i.category, 'product_id': i.product_id, 'quantity': i.quantity}
                  for i in body.items]
+        details = []
         try:
             quote_mod.generate_generic(request_conn(), app.state.storage, items,
-                                       body.price_adjustment_pct, out, deposit_pct=body.deposit_pct)
+                                       body.price_adjustment_pct, out, deposit_pct=body.deposit_pct, details=details)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         from . import notify
-        notify.push_file(f'📄 报价单已生成（{len(items)} 款，调整 {body.price_adjustment_pct:+.0f}%）', out, conn=request_conn())
-        return {'path': out}
+        adjustments = [f"{row['supplier']} {row['model']}：需求 {row['requested_quantity']}，按整箱报 {row['quoted_quantity']}（每箱 {row['pcs_per_carton']}）"
+                       for row in details if row['requested_quantity'] != row['quoted_quantity']]
+        note = '\n'.join(adjustments)
+        notify.push_file(f'📄 报价单已生成（{len(items)} 款，调整 {body.price_adjustment_pct:+g}%）' + ('\n' + note if note else ''), out, conn=request_conn())
+        return {'path': out, 'items': details, 'quantity_adjustment_note': note}
 
     # ---- C端：红线知识（微信 AI 对话 → 工具 → 审批 → 生效）----
     class RedlineIn(BaseModel):
