@@ -3,7 +3,7 @@ from openpyxl.drawing.image import Image as ExcelImage
 from PIL import Image
 
 from catalog.fast_import import parse_structured
-from catalog.fast_import import parse_grouped, grouped_candidate
+from catalog.fast_import import parse_grouped
 
 
 def test_exact_header_groups_continuations_and_images(tmp_path):
@@ -137,7 +137,6 @@ def test_grouped_repeated_models_keep_images_and_flag_conflicts(tmp_path):
     columns = {'model': 1, 'image': 2, 'kind': 3, 'carton': 7, 'price': 11}
     result = parse_grouped(template, path, tmp_path / 'grouped-out',
                            columns=columns, header_row=2, sheet='Sheet1')
-    assert grouped_candidate(template, path, sheet='Sheet1') is True
     assert [p['model'] for p in result['products']] == ['A']
     assert result['products'][0]['source_rows'] == [3, 4]
     assert result['products'][0]['kind'] == '电直梳'
@@ -173,7 +172,7 @@ def test_product_import_uses_reviewable_grouped_path_before_slow_agent(tmp_path,
     assert rows.coverage['uncertain'] is False
 
 
-def test_grouped_sheet_with_unavailable_column_map_fails_fast(tmp_path, monkeypatch):
+def test_grouped_sheet_with_unavailable_column_map_uses_semantic_agent(tmp_path, monkeypatch):
     from catalog.dynamic_import import _agent_rows
     photo = tmp_path / 'photo.png'
     Image.new('RGB', (12, 12), 'red').save(photo)
@@ -185,14 +184,20 @@ def test_grouped_sheet_with_unavailable_column_map_fails_fast(tmp_path, monkeypa
     path = tmp_path / 'grouped.xlsx'; book.save(path)
     monkeypatch.setattr('catalog.dynamic_import.ai_extract.map_approved_fields',
                         lambda *a: None)
-    monkeypatch.setattr('catalog.agent.parse_dynamic', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('slow agent called')))
+    calls = []
+    def semantic_parse(*args, **kwargs):
+        calls.append(kwargs)
+        return {'products': [{'source_sheet': 'Sheet1', 'source_rows': [3, 4],
+                              'model': 'A', 'price': '21', 'images': [], 'image_count': 0}],
+                'failures': [], 'vendor': None}
+    monkeypatch.setattr('catalog.agent.parse_dynamic', semantic_parse)
     rows = _agent_rows({'key': 'test', 'fields': [
         {'key': 'model', 'label': '型号', 'role': 'model'},
         {'key': 'image', 'label': '图片', 'role': 'image'},
         {'key': 'price', 'label': '价格', 'role': 'price'},
     ]}, str(path), tmp_path / 'work', sheet='Sheet1')
-    assert rows == []
-    assert '列映射' in rows.failures[0]['reason']
+    assert [r['data']['model'] for r in rows] == ['A']
+    assert len(calls) == 1
 
 
 def test_approved_column_mapping_recovers_blank_image_header(tmp_path, monkeypatch):

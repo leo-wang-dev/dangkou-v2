@@ -13,44 +13,6 @@ from openpyxl.utils import get_column_letter
 from . import workbook_templates as wbtools
 
 
-def grouped_candidate(template: dict, path, *, sheet: str = '') -> bool:
-    """Recognize a keyed repeated-row sheet so mapping failure can fail fast."""
-    models = [f for f in template['fields'] if f['role'] == 'model']
-    if len(models) != 1 or not any(f['role'] == 'image' for f in template['fields']):
-        return False
-    wbtools.preflight_workbook(path)
-    book = load_workbook(path, data_only=False, read_only=False)
-    try:
-        visible = [ws for ws in book.worksheets if ws.sheet_state == 'visible' and
-                   (not sheet or ws.title == sheet) and (ws._cells or ws._images)]
-        if len(visible) != 1:
-            return False
-        ws = visible[0]
-        matches = [(r, c) for r in range(1, min(ws.max_row, 8) + 1)
-                   for c in range(1, min(ws.max_column, 200) + 1)
-                   if wbtools._label(ws.cell(r, c).value) == models[0]['label']]
-        if len(matches) != 1:
-            return False
-        _, model_col = matches[0]
-        headers = [r for (r, _), cell in ws._cells.items() if r <= 8 and
-                   wbtools._label(cell.value) in {f['label'] for f in template['fields']}]
-        header_end = max(headers, default=matches[0][0])
-        content_rows = sorted({r for (r, _), cell in ws._cells.items()
-                               if r > header_end and wbtools._text(cell.value)})
-        values = [wbtools._text(ws.cell(r, model_col).value) for r in content_rows]
-        if not values or any(not value for value in values):
-            return False
-        repeated = any(a == b for a, b in zip(values, values[1:]))
-        blank_image_col = any(
-            (anchor := getattr(im.anchor, '_from', None)) is not None and
-            all(not wbtools._text(ws.cell(r, anchor.col + 1).value)
-                for r in range(1, header_end + 1))
-            for im in ws._images)
-        return repeated and blank_image_col
-    finally:
-        book.close()
-
-
 def parse_grouped(template: dict, path, output_dir, *, columns: dict,
                   header_row: int, sheet: str = '') -> dict | None:
     """Group adjacent identical model rows when a reviewed column map is known.

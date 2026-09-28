@@ -322,10 +322,6 @@ def _agent_rows(template: dict, xlsx_path: str, work_dir, sheet: str = '') -> li
                     header_row=mapping['header_row'], sheet=sheet)
                 if result is not None:
                     break
-        if result is None and fast_import.grouped_candidate(template, xlsx_path, sheet=sheet):
-            result = {'products': [], 'vendor': None, 'failures': [{
-                'source_sheet': sheet, 'source_rows': sorted(set().union(*evidence.values())) if evidence else [],
-                'reason': '已审批模板列映射暂不可确定；未启动耗时子代理，请重新上传或在审批模板核对字段'}]}
         if result is None:
             result = agent.parse_dynamic(template, xlsx_path, parse_dir, sheet=sheet)
     except Exception as exc:
