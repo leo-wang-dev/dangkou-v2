@@ -166,6 +166,18 @@ def _apply_dynamic_mutate(conn, payload, category):
     allowed = {field['key'] for field in template['fields']}
     data_changes = {key: str(value) for key, value in changes.items() if key in allowed}
     if action == 'create':
+        def nonempty(data):
+            return {key: str(value).strip().casefold() for key, value in data.items()
+                    if str(value).strip()}
+        incoming = nonempty(data_changes)
+        model_keys = {field['key'] for field in template['fields'] if field['role'] == 'model'}
+        supplier = str(changes.get('supplier', template.get('supplier', ''))).strip().casefold()
+        if any(incoming.get(key) for key in model_keys):
+            for existing in rows:
+                old_supplier = str(existing.get('supplier') or '').strip().casefold()
+                if (nonempty(existing['data']) == incoming and
+                        (not supplier or not old_supplier or supplier == old_supplier)):
+                    raise TicketConflict('同一商品已入库，请刷新后改为更新，避免重复新增')
         product_id = secrets.token_hex(8)
         row = {'id': product_id, 'inner_code': inner_code.gen(), 'data': data_changes,
                'supplier': changes.get('supplier', template.get('supplier', '')),

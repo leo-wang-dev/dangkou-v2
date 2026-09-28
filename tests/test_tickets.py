@@ -57,3 +57,17 @@ def test_mutate_update_ticket(conn):
     data = __import__('json').loads(conn.execute(
         "SELECT data_json FROM product_dynamic WHERE id='p1'").fetchone()[0])
     assert data['price'] == '23'
+
+
+def test_manual_create_rejects_product_already_imported(conn):
+    from tests.conftest import seed_products
+    seed_products(conn, [{'id': 'imported', 'data': {'model': '8277', 'price': '24',
+                                                    'spec': '', 'color': '白色'},
+                          'status': 'approved'}])
+    t = tickets.create(conn, 'mutate', 'test_cat', {
+        'kind': 'dynamic_mutate', 'action': 'create', 'product_id': None,
+        'template_version': 1,
+        'changes': {'model': '8277', 'price': '24', 'color': '白色'}})
+    with pytest.raises(tickets.TicketConflict, match='同一商品'):
+        tickets.decide(conn, t['id'], t['token'], approved=True)
+    assert conn.execute("select status from approval_ticket where id=?", (t['id'],)).fetchone()[0] == 'pending'

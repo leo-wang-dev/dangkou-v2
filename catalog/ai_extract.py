@@ -143,3 +143,58 @@ def discover_headers(sheets_evidence: list) -> list | None:
     except Exception as exc:  # noqa: BLE001
         print(f'[ai_extract] qwen 表头发现失败：{exc}', flush=True)
         return None
+
+
+def map_approved_fields(path: str, fields: list[dict], sheet: str) -> dict | None:
+    """Map approved fields to source columns using a small header/sample probe.
+
+    This returns column numbers only. Product values and image bytes always come
+    from the workbook, and an incomplete/ambiguous map uses the agent instead.
+    """
+    if not _enabled() or not fields:
+        return None
+    try:
+        from . import workbook_templates
+        evidence = [item for item in workbook_templates.extract_header_evidence(path, max_rows=16)
+                    if not sheet or item['title'] == sheet]
+        if len(evidence) != 1:
+            return None
+        labels = [f['label'] for f in fields]
+        if len(set(labels)) != len(labels):
+            return None
+        prompt = ('给定已审批模板字段和 Excel 表头及前16行样本，按原始列号一一对应。'
+                  '字段可能来自无表头的值列；不能确定就填 null，不要把无关数字杂项列强行映射。'
+                  '只输出 JSON 对象 {"header_row":数据开始前最后一行,'
+                  '"columns":{"字段名":列号或null}}。证据：'
+                  + json.dumps({'fields': labels, 'sheets': evidence}, ensure_ascii=False))
+        raw = llm.chat_text('你是 Excel 列对应分析员，只输出 JSON。',
+                            [{'role': 'user', 'content': prompt}], temperature=0.1,
+                            extra={'enable_thinking': False, 'max_tokens': 1600})
+        answer = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', raw.strip()))
+        header_row = answer.get('header_row')
+        proposed = answer.get('columns')
+        if type(header_row) is not int or not 1 <= header_row <= 30 or not isinstance(proposed, dict):
+            return None
+        mapped = {}
+        for field in fields:
+            col = proposed.get(field['label'])
+            if type(col) is int and 1 <= col <= 200:
+                mapped[field['key']] = col
+        # The approved image field may have no printed header. Use the sole
+        # blank image-anchor column only when it cannot collide with another.
+        image_anchors = evidence[0]['图片锚点列']
+        for field in fields:
+            if field['role'] != 'image' or field['key'] in mapped:
+                continue
+            candidates = [int(col) for col in image_anchors
+                          if int(col) not in mapped.values()
+                          and all(int(col) > len(row) or not row[int(col)-1].strip()
+                                  for row in evidence[0]['grid'][:header_row])]
+            if len(candidates) == 1:
+                mapped[field['key']] = candidates[0]
+        if len(mapped) != len(fields) or len(set(mapped.values())) != len(mapped):
+            return None
+        return {'header_row': header_row, 'columns': mapped}
+    except Exception as exc:  # noqa: BLE001
+        print(f'[ai_extract] 已审批字段列映射失败：{type(exc).__name__}', flush=True)
+        return None

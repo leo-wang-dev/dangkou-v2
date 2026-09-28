@@ -8,8 +8,157 @@ from bisect import bisect_right
 from pathlib import Path
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 from . import workbook_templates as wbtools
+
+
+def grouped_candidate(template: dict, path, *, sheet: str = '') -> bool:
+    """Recognize a keyed repeated-row sheet so mapping failure can fail fast."""
+    models = [f for f in template['fields'] if f['role'] == 'model']
+    if len(models) != 1 or not any(f['role'] == 'image' for f in template['fields']):
+        return False
+    wbtools.preflight_workbook(path)
+    book = load_workbook(path, data_only=False, read_only=False)
+    try:
+        visible = [ws for ws in book.worksheets if ws.sheet_state == 'visible' and
+                   (not sheet or ws.title == sheet) and (ws._cells or ws._images)]
+        if len(visible) != 1:
+            return False
+        ws = visible[0]
+        matches = [(r, c) for r in range(1, min(ws.max_row, 8) + 1)
+                   for c in range(1, min(ws.max_column, 200) + 1)
+                   if wbtools._label(ws.cell(r, c).value) == models[0]['label']]
+        if len(matches) != 1:
+            return False
+        _, model_col = matches[0]
+        headers = [r for (r, _), cell in ws._cells.items() if r <= 8 and
+                   wbtools._label(cell.value) in {f['label'] for f in template['fields']}]
+        header_end = max(headers, default=matches[0][0])
+        content_rows = sorted({r for (r, _), cell in ws._cells.items()
+                               if r > header_end and wbtools._text(cell.value)})
+        values = [wbtools._text(ws.cell(r, model_col).value) for r in content_rows]
+        if not values or any(not value for value in values):
+            return False
+        repeated = any(a == b for a, b in zip(values, values[1:]))
+        blank_image_col = any(
+            (anchor := getattr(im.anchor, '_from', None)) is not None and
+            all(not wbtools._text(ws.cell(r, anchor.col + 1).value)
+                for r in range(1, header_end + 1))
+            for im in ws._images)
+        return repeated and blank_image_col
+    finally:
+        book.close()
+
+
+def parse_grouped(template: dict, path, output_dir, *, columns: dict,
+                  header_row: int, sheet: str = '') -> dict | None:
+    """Group adjacent identical model rows when a reviewed column map is known.
+
+    Conflicting rows are withheld as failures, never resolved by first/last value.
+    Every image and non-template cell is surfaced for approval review.
+    """
+    fields = template['fields']
+    if (not 1 <= header_row <= 30 or set(columns) != {f['key'] for f in fields}
+            or len(set(columns.values())) != len(columns)
+            or any(type(c) is not int or not 1 <= c <= 200 for c in columns.values())):
+        return None
+    models = [f for f in fields if f['role'] == 'model']
+    if len(models) != 1:
+        return None
+    wbtools.preflight_workbook(path)
+    book = load_workbook(path, data_only=False, read_only=False)
+    try:
+        visible = [ws for ws in book.worksheets if ws.sheet_state == 'visible' and
+                   (not sheet or ws.title == sheet) and (ws._cells or ws._images)]
+        if len(visible) != 1:
+            return None
+        ws = visible[0]
+        if header_row >= ws.max_row:
+            return None
+        # The AI mapping must agree with every printed header in the approved
+        # template. Empty headers remain a human-review warning below.
+        for field in fields:
+            col = columns[field['key']]
+            printed = [wbtools._label(ws.cell(r, col).value)
+                       for r in range(1, header_row + 1)]
+            printed = [label for label in printed if label]
+            if printed and field['label'] not in printed:
+                return None
+        model_col = columns[models[0]['key']]
+        image_cols = {columns[f['key']] for f in fields if f['role'] == 'image'}
+        content_rows = {r for (r, _), cell in ws._cells.items() if wbtools._text(cell.value)}
+        image_rows = {im.anchor._from.row + 1 for im in ws._images
+                      if getattr(im.anchor, '_from', None) is not None}
+        groups = []
+        seen_models = set()
+        for row in sorted((content_rows | image_rows) - set(range(1, header_row + 1))):
+            model = wbtools._text(ws.cell(row, model_col).value)
+            if not model:
+                return None  # A continuation without a key needs semantic parsing.
+            if groups and groups[-1][0] == model:
+                groups[-1][1].append(row)
+            else:
+                if model in seen_models:
+                    return None  # Nonadjacent recurrence may be a distinct variant.
+                seen_models.add(model)
+                groups.append((model, [row]))
+        if not groups or all(len(rows) == 1 for _, rows in groups):
+            return None
+        row_group = {row: index for index, (_, rows) in enumerate(groups) for row in rows}
+        failures = []
+        for field in fields:
+            col = columns[field['key']]
+            if (field['role'] != 'image' and
+                    not any(wbtools._label(ws.cell(r, col).value)
+                            for r in range(1, header_row + 1))):
+                failures.append({'source_sheet': ws.title, 'source_rows': [header_row],
+                                 'reason': f'{field["label"]}映射到无表头的{get_column_letter(col)}列，请人工核对'})
+        for (row, col), cell in ws._cells.items():
+            if row > header_row and col not in columns.values() and wbtools._text(cell.value):
+                failures.append({'source_sheet': ws.title, 'source_rows': [row],
+                                 'reason': f'{get_column_letter(col)}列有未映射内容：{wbtools._text(cell.value)[:80]}，请人工核对'})
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        group_images = [[] for _ in groups]
+        for index, image in enumerate(ws._images, 1):
+            anchor = getattr(image.anchor, '_from', None)
+            if anchor is None or anchor.row + 1 not in row_group:
+                return None
+            row, col = anchor.row + 1, anchor.col + 1
+            extension = str(getattr(image, 'format', '') or 'png').lower()
+            if extension not in {'png', 'jpeg', 'jpg', 'webp', 'gif'}:
+                extension = 'png'
+            name = f'r{row}_c{col}_i{index}.{extension}'
+            (out / name).write_bytes(image._data())
+            group_images[row_group[row]].append(name)
+            if col not in image_cols:
+                failures.append({'source_sheet': ws.title, 'source_rows': [row],
+                                 'reason': f'图片锚点位于{get_column_letter(col)}列而非模板图片列，请人工核对归属'})
+        products = []
+        for index, (model, rows) in enumerate(groups):
+            product = {'source_sheet': ws.title, 'source_rows': rows,
+                       'images': group_images[index], 'image_count': len(group_images[index]),
+                       'image_main': group_images[index][0] if group_images[index] else ''}
+            conflicts = []
+            for field in fields:
+                if field['role'] == 'image':
+                    continue
+                values = list(dict.fromkeys(wbtools._text(ws.cell(row, columns[field['key']]).value)
+                                            for row in rows))
+                values = [value for value in values if value]
+                if len(values) > 1:
+                    conflicts.append(f'{field["label"]}有不同原值：{", ".join(values[:4])}')
+                else:
+                    product[field['key']] = values[0] if values else ''
+            if conflicts:
+                failures.append({'source_sheet': ws.title, 'source_rows': rows,
+                                 'reason': '同型号多行冲突，未自动建商品：' + '；'.join(conflicts)})
+            else:
+                products.append(product)
+        return {'products': products, 'failures': failures, 'vendor': None}
+    finally:
+        book.close()
 
 
 def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> dict | None:
