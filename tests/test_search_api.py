@@ -16,7 +16,8 @@ def _model_key(template):
 
 
 def _parse_with_image(template, xlsx_path, work_dir, *, sheet=''):
-    open(f'{work_dir}/r3_c1.png', 'wb').write(b'PNG')
+    from PIL import Image
+    Image.new('RGB', (6, 6), 'red').save(f'{work_dir}/r3_c1.png')
     return {'vendor': '厂',
             'products': [{_model_key(template): '8225', 'image_main': 'r3_c1.png'}]}
 
@@ -24,7 +25,7 @@ def _parse_with_image(template, xlsx_path, work_dir, *, sheet=''):
 def _parse_with_imgs(template, xlsx_path, work_dir, *, sheet=''):
     """一张 png + 一张 tif（KS-5390 案：浏览器不渲染 tif，落位时须转 png）。"""
     from PIL import Image
-    open(f'{work_dir}/a.png', 'wb').write(b'\x89PNG\r\n\x1a\n' + b'\x00' * 32)
+    Image.new('RGB', (6, 6), 'blue').save(f'{work_dir}/a.png')
     buf = io.BytesIO()
     Image.new('RGB', (4, 4), (200, 30, 30)).save(buf, format='TIFF')
     open(f'{work_dir}/b.tif', 'wb').write(buf.getvalue())
@@ -43,7 +44,10 @@ def client(tmp_path, monkeypatch):
     app.state.storage = st
     app.state.callback = None
     monkeypatch.setattr('catalog.search.embed_image', lambda b, *a, **k: [1.0] + [0.0] * 1023)
-    return TestClient(app, headers={'X-Service-Token': 'test-service-token'})
+    yield TestClient(app, headers={'X-Service-Token': 'test-service-token'})
+    from catalog import ingest
+    assert ingest.join_workers(timeout=5)
+    conn.close()
 
 
 def _import_and_approve(client, tmp_path, parse=_parse_with_image):
@@ -71,7 +75,10 @@ def test_approve_persists_image_and_embeds(client, tmp_path):
     p = client.get(f'/products/{category}').json()['products'][0]
     assert p['主图'].startswith(category + '/')         # 已落位 storage rel
     r = client.get(f"/img/{p['主图']}")
-    assert r.status_code == 200 and r.content == b'PNG'
+    assert r.status_code == 200
+    from PIL import Image
+    with Image.open(io.BytesIO(r.content)) as picture:
+        assert picture.size == (6, 6)
     assert client.app.state.conn.execute(
         'SELECT COUNT(*) c FROM embedding').fetchone()['c'] == 1
 

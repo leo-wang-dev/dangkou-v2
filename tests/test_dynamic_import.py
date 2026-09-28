@@ -14,6 +14,8 @@ def conn():
     value.row_factory = sqlite3.Row
     db.init_db(value)
     yield value
+    from catalog import ingest
+    assert ingest.join_workers(timeout=5)
     value.close()
 
 
@@ -212,11 +214,8 @@ def test_async_import_without_category_creates_template_ticket(conn, tmp_path):
     path = blowdryer_fixture(tmp_path)
     doc_id = ingest.start(conn, LocalStorage(str(tmp_path / 'storage')), str(path), None,
                           source_key='vendor-a')
-    for _ in range(100):
-        status = ingest.status(conn, doc_id)
-        if status['status'] != 'parsing':
-            break
-        time.sleep(.02)
+    assert ingest.join_workers(timeout=5)
+    status = ingest.status(conn, doc_id)
     assert status['status'] == 'ticketed', status
     ticket = conn.execute('SELECT * FROM approval_ticket WHERE ticket_type=\'template_import\'').fetchone()
     assert ticket is not None and ticket['category'] is None

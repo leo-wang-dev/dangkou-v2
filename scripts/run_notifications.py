@@ -11,13 +11,14 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from catalog import config, db, notify
+from catalog import config, db, notify, ingest
 
 
 def run(conn, rounds=None):
     """投递主循环；rounds=None 无限轮询（生产），测试可限定轮数。"""
     n = 0
     while rounds is None or n < rounds:
+        ingest.recover(conn)
         notify.deliver(conn)
         n += 1
         if rounds is None or n < rounds:

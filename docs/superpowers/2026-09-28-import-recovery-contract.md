@@ -1,0 +1,23 @@
+# Durable incremental import contract
+
+Imports retain the existing `phase`, `status`, `doc_id`, template approval and merchant authentication interfaces. Default product imports never delist missing rows. Supplier/category/model/spec identity and the full-category approval snapshot remain authoritative. A repeated approval token cannot execute twice; a subsequent upload matches previously approved products.
+
+An accepted request copies the original bytes to an owned `_imports/<id>` directory and records their SHA-256. `.xls` conversion runs in a unique directory/profile and checks its exit status; neighboring `.xlsx` files are never reused. SQLite serializes deduplication and job claims across processes. A 90-second lease is renewed every 30 seconds; the lease owner fences finalization. Startup and the existing notification worker reclaim expired jobs. Legacy abandoned jobs without a durable source become failed with a re-upload instruction. Private in-memory SQLite uses a synchronous compatibility path for tests; deployments need a file database and persistent storage.
+
+Ticket creation, final import status/stats, and the completion/failure outbox event commit together. An outbox write failure rolls back the ticket and leaves the leased job recoverable. A stale owner cannot finalize after reclamation. Parser output directories are isolated per attempt; recovered checkpoints copy and verify image hashes into the new attempt, so a stale process cannot overwrite the winning ticket’s files. Optional callbacks run after commit and cannot relabel a successful job. The default notifier is not invoked a second time. Template-approved handoff reminders commit in the approval transaction. Queue contents contain no service token; delivery still materializes that credential in memory.
+
+`wait=true` can return the completed result inline, but the durable completion notification is retained: an HTTP response cannot prove that the user received it. Inline plus notification may both be visible. The wait worker keeps its request connection alive through cancellation. No second notification consumer was introduced.
+
+Product output now requests `source_sheet`, `source_rows` and explicit `failures` from the model. Valid rows survive empty/invalid rows, missing or corrupt images, identity ambiguity, and failed sheets. Source coverage identifies candidate physical rows, referenced rows, logical product output count, uncertainty, and unresolved regions. Physical rows are never claimed to equal logical products. Missing references produce a visible coverage warning rather than an invented count. No valid rows produces an actionable failure and no approval ticket. Approval UI and import stats expose failures; successful rows can be approved first.
+
+Per-template/source/sheet checkpoints preserve validated results across worker loss. Explicit retry is a fresh upload after approving/rejecting the pending ticket; it reparses the whole sheet/workbook and classifies against current products. This is **not targeted region retry**. Parsed checkpoints and source evidence live beside the owned upload. Multi-sheet model calls remain serial to bound parser resource use; completed sheets are reused during crash recovery. Product preparation avoids writing/discarding all workbook images before the model. Parser exit failures are rejected; a timeout may retain JSON results only after normal row/image validation and adds an explicit incomplete-coverage failure.
+
+Workbook preflight ignores style-only far columns, while real values/formulas/inline strings and image anchors remain subject to 20,000-row/200-column bounds. Compressed/unpacked bytes, sparse cells, image anchors and merged-area size are bounded. Exact shaver source SHA `67c2f515c6140bf09ce9a4ce597bcba7ceff2600dabc273f45d34fd1b43bb3a9` yielded 30 physical candidate rows and 52 image objects in the structural benchmark. This is not evidence of model accuracy or the 600-second model target.
+
+Reproduce without calling a model:
+
+```sh
+python scripts/benchmark_import.py '/path/剃须刀现货.xls' --sha256 67c2f515c6140bf09ce9a4ce597bcba7ceff2600dabc273f45d34fd1b43bb3a9 --expected-products 30
+```
+
+After parser credentials and the approved template JSON are available, add `--parse --template-json /path/approved-template.json`. The default target is 600 seconds; the command reports model/validation timing and explicit failures. Use `--expected-products 18` only with the identified original 18-product input, which remains unavailable. Neither blocked live dependency was replaced with a different model provider or code-only product parser.

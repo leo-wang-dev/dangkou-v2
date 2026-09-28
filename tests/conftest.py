@@ -73,7 +73,8 @@ def offline_dynamic_agent(monkeypatch, request):
     """
     if request.node.get_closest_marker('real_agent'):
         return
-    from catalog import agent, workbook_templates
+    from catalog import agent, workbook_templates, ai_extract
+    monkeypatch.setattr(ai_extract, '_enabled', lambda: False)
 
     def _label_key(value):
         return ''.join(str(value or '').split()).casefold()
@@ -104,6 +105,8 @@ def offline_dynamic_agent(monkeypatch, request):
             images = [name for name in (row.get('images') or []) if name]
             item['image_main'] = row.get('image_main') or (images[0] if images else '')
             item['images'] = images
+            item['source_sheet'] = found['source_sheet']
+            item['source_rows'] = [row['source_row']]
             products.append(item)
         return {'vendor': None, 'products': products}
 

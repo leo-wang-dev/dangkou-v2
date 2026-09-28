@@ -10,24 +10,25 @@ import os
 from . import config, db
 
 
-def _queue(channel, body, conn=None):
+def _queue(channel, body, conn=None, *, commit=True):
     own = conn is None
     conn = conn or db.connect()
     try:
         conn.execute('INSERT INTO cs_outbox(channel,body) VALUES(?,?)', (channel, body))
-        conn.commit()
+        if commit or own:
+            conn.commit()
     finally:
         if own:
             conn.close()
     return {'notification': 'queued'}
 
 
-def push(doc_id, ticket_id, token, stats, conn=None):
+def push(doc_id, ticket_id, token, stats, conn=None, *, commit=True):
     if stats.get('error'):
         text = f'❌ 导入失败（doc{doc_id}）：{stats["error"]}'
     else:
-        return _queue('notify_import', json.dumps({'doc_id': doc_id, 'stats': stats}, ensure_ascii=False), conn)
-    return _queue('notify', text, conn)
+        return _queue('notify_import', json.dumps({'doc_id': doc_id, 'stats': stats}, ensure_ascii=False), conn, commit=commit)
+    return _queue('notify', text, conn, commit=commit)
 
 
 def render_import(payload):
@@ -47,9 +48,10 @@ def render_import(payload):
                 '请打开审批入口确认字段和客户可见性；模板审批通过后，请再次上传同一份商品 Excel，系统才会导入商品。\n'
                 f'模板审批入口：{link}')
     if stats.get('phase') == 'products':
-        return (f'📦 商品已解析：新增{stats.get("new", 0)} / 更新{stats.get("update", 0)} / 下架{stats.get("delist", 0)}\n'
+        return (f'📦 商品已解析：新增{stats.get("new", 0)} / 更新{stats.get("update", 0)} / 失败区域{stats.get("failed", 0)}\n'
+                '默认增量导入，缺行保留；失败位置和覆盖范围请在审批页核对。\n'
                 f'商品审批入口：{link}')
-    return (f'📦 导入完成：{cat} 新增{stats.get("new", 0)} / 更新{stats.get("update", 0)} / 下架{stats.get("delist", 0)}\n'
+    return (f'📦 导入完成：{cat} 新增{stats.get("new", 0)} / 更新{stats.get("update", 0)} / 失败区域{stats.get("failed", 0)}\n'
             f'供应商：{stats.get("vendor") or "未提供"}\n审批入口：{link}')
 
 

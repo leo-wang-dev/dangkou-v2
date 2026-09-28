@@ -40,6 +40,7 @@ def build_dynamic_prompt(template: dict, xlsx_path: str, out_json: str, sheet: s
 # 硬性验收标准
 表头不一定在第一行（可能在中部、可能是多级表头）：先定位真实表头再取数；表格可能很宽（几十列）。
 一个逻辑商品可能占多个物理行（数据行+规格行+图片行）：按型号/品名判断归属，合并为一个商品；
+每个商品必须另输出 source_sheet（原 Sheet 名）和 source_rows（该商品覆盖的全部物理行号数组，含跨行规格和图片）。无法解析的区域放在 failures 数组，含 source_sheet、source_rows、reason；禁止静默遗漏。
 每个商品另输出 supplier：逐行供应商优先，缺失用表内明确的厂家名，再缺失留空；不同供应商同型号是独立商品。
 同一型号的不同配色/规格仍是独立商品；只有图片没有数据的行不是商品，图片按锚点归属到对应商品。
 纵向合并单元格只是格式：空单元格继承上方有值单元格的内容。
@@ -49,7 +50,7 @@ def build_dynamic_prompt(template: dict, xlsx_path: str, out_json: str, sheet: s
 定稿前自检：商品数应等于表内逻辑商品数（不是物理行数），抽 5-10 个商品核对字段值和图片归属。
 
 # 输出
-{{"vendor":"厂家名或null","products":[{{...模板字段...,"image_main":"主图文件名","images":["该商品全部图片文件名"],"image_count":N}}]}}
+{{"vendor":"厂家名或null","failures":[],"products":[{{"source_sheet":"Sheet1","source_rows":[5],...模板字段...,"image_main":"主图文件名","images":["该商品全部图片文件名"],"image_count":N}}]}}
 用 python 的 json.dump(..., ensure_ascii=False, indent=1) 写入输出文件。
 完成后只回一行：DONE N（N=商品数）"""
 
@@ -140,13 +141,15 @@ def _run_container(prompt: str, xlsx_path: str, work_dir: str, *, out_name: str 
                '--model', config.AGENT_MODEL]
     timed_out = False
     try:
-        subprocess.run(
+        process = subprocess.run(
             command,
             capture_output=True, text=True, timeout=config.AGENT_TIMEOUT,
             env=env, cwd=work_dir)
     except subprocess.TimeoutExpired:
         timed_out = True   # 超时拯救：产物已写出则收用
         subprocess.run([docker, 'rm', '--force', container_name], capture_output=True, timeout=15, env=env)
+    if not timed_out and process.returncode != 0:
+        raise RuntimeError('Agent 解析进程失败，请重试')
     if not os.path.exists(out_json):
         raise RuntimeError(f'Agent 未产出结果文件(timed_out={timed_out})')
     if timed_out:
@@ -157,4 +160,6 @@ def _run_container(prompt: str, xlsx_path: str, work_dir: str, *, out_name: str 
         data = json.load(result)
     if not isinstance(data, dict):
         raise RuntimeError('Agent 结果必须是 JSON 对象')
+    if timed_out:
+        data.setdefault('failures', []).append({'source_sheet': '', 'source_rows': [], 'reason': '解析超时，仅保留已验证结果；其余区域覆盖未确认'})
     return data

@@ -20,6 +20,7 @@ def test_agent_only_mounts_input_and_output_and_filters_service_secrets(tmp_path
     calls=[]
     def run(args,**kwargs):
         calls.append((args,kwargs));(work/'products.json').write_text(json.dumps({'products':[{'model':'A'}]}))
+        return agent.subprocess.CompletedProcess(args, 0)
     monkeypatch.setattr(agent.subprocess,'run',run)
     assert agent.parse_dynamic(_template(),str(source),str(work))['products'][0]['model']=='A'
     args,kwargs=calls[0]
@@ -35,3 +36,17 @@ def test_agent_fails_closed_without_isolation(tmp_path,monkeypatch):
     monkeypatch.delenv('CATALOG_AGENT_CONTAINER_IMAGE',raising=False)
     with pytest.raises(RuntimeError,match='禁止'):
         agent.parse_dynamic(_template(),str(tmp_path/'a.xlsx'),str(tmp_path/'work'))
+
+
+@pytest.mark.real_agent
+def test_nonzero_exit_rejects_leftover_result(tmp_path, monkeypatch):
+    source = tmp_path / 'source.xlsx'; source.write_bytes(b'fixture')
+    work = tmp_path / 'work'; work.mkdir()
+    monkeypatch.setattr(agent.shutil, 'which', lambda name: '/fake/docker')
+    monkeypatch.setenv('CATALOG_AGENT_CONTAINER_IMAGE', 'test:fixture')
+    def run(args, **kwargs):
+        (work / 'products.json').write_text('{"products": [{"model": "A"}]}')
+        return agent.subprocess.CompletedProcess(args, 9)
+    monkeypatch.setattr(agent.subprocess, 'run', run)
+    with pytest.raises(RuntimeError, match='进程失败'):
+        agent.parse_dynamic(_template(), str(source), str(work))

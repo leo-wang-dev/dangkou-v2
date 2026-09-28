@@ -6,6 +6,8 @@ import json
 import os
 import re
 import zipfile
+import xml.etree.ElementTree as ET
+from openpyxl.utils.cell import coordinate_to_tuple
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -125,6 +127,44 @@ def _extract_images(ws, sheet_key: str, image_dir: Path | None):
     return by_row, len(ws._images)
 
 
+def substantive_extents(path):
+    """Bound sparse XML before openpyxl expands styled cells/merged ranges."""
+    extents = []
+    with zipfile.ZipFile(path) as archive:
+        for name in sorted(n for n in archive.namelist() if re.fullmatch(r'xl/worksheets/sheet\d+\.xml', n)):
+            if archive.getinfo(name).file_size > 64 * 1024 * 1024:
+                raise ValueError('Excel 工作表内容过大，请拆分后导入')
+            root = ET.fromstring(archive.read(name))
+            cells = root.findall('.//{*}sheetData/{*}row/{*}c')
+            if len(cells) > 1000000:
+                raise ValueError('Excel 单元格过多，请拆分后导入')
+            rows, cols = 1, 1
+            for cell in cells:
+                if any(child.tag.rsplit('}', 1)[-1] in ('v', 'is', 'f') for child in cell):
+                    row, col = coordinate_to_tuple(cell.attrib['r'])
+                    rows, cols = max(rows, row), max(cols, col)
+            merged_area = 0
+            for merge in root.findall('.//{*}mergeCell'):
+                bounds = merge.attrib['ref'].split(':')
+                a, b = coordinate_to_tuple(bounds[0]), coordinate_to_tuple(bounds[-1])
+                merged_area += (b[0]-a[0]+1)*(b[1]-a[1]+1)
+                if merged_area > 1000000:
+                    raise ValueError('Excel 合并区域过大，请拆分后导入')
+            if rows > 20000 or cols > 200:
+                raise ValueError('Excel 有效内容超过 20000 行或 200 列，请拆分后导入')
+            extents.append((rows, cols))
+        for name in archive.namelist():
+            if re.fullmatch(r'xl/drawings/drawing\d+\.xml', name):
+                root = ET.fromstring(archive.read(name))
+                anchors = root.findall('.//{*}from')
+                if len(anchors) > 5000:
+                    raise ValueError('Excel 图片超过 5000 张，请拆分后导入')
+                for anchor in anchors:
+                    if int(anchor.find('{*}col').text) >= 200 or int(anchor.find('{*}row').text) >= 20000:
+                        raise ValueError('Excel 图片位置超过 20000 行或 200 列，请拆分后导入')
+    return extents
+
+
 def discover_workbook(path, image_dir=None, *, include_rows=True, include_images=True) -> list[dict]:
     """Return one template/product draft for every visible worksheet.
 
@@ -149,6 +189,7 @@ def discover_workbook(path, image_dir=None, *, include_rows=True, include_images
     # A schema-only pass can stream worksheet XML and avoid constructing the
     # cell/image graph for the entire workbook.  Full product discovery keeps
     # normal mode because merged cells and embedded image anchors are needed.
+    substantive_extents(path)
     workbook = load_workbook(path, data_only=False,
                              read_only=not (include_rows or include_images))
     if len(workbook.worksheets) > 20:
@@ -157,8 +198,13 @@ def discover_workbook(path, image_dir=None, *, include_rows=True, include_images
     for ws in workbook.worksheets:
         if ws.sheet_state != 'visible':
             continue
-        if ws.max_row > 20000 or ws.max_column > 200:
-            raise ValueError(f'Sheet“{ws.title}”超过 20000 行或 200 列，请拆分后导入')
+        if hasattr(ws, '_cells'):
+            for coordinate, cell in list(ws._cells.items()):
+                if cell.value is None and (coordinate[0] > 20000 or coordinate[1] > 200):
+                    del ws._cells[coordinate]
+        else:
+            ws._max_column = min(ws.max_column, 200)
+            ws._max_row = min(ws.max_row, 20000)
         if len(getattr(ws, '_images', ())) > 5000:
             raise ValueError(f'Sheet“{ws.title}”图片超过 5000 张，请拆分后导入')
         header_row = _header_row(ws)
@@ -210,6 +256,7 @@ def discover_workbook(path, image_dir=None, *, include_rows=True, include_images
                        'source_sheet': ws.title, 'title': title_values[0] if title_values else '',
                        'header_row': header_row, 'fields': fields, 'rows': rows,
                        'image_count': image_count})
+    workbook.close()
     return drafts
 
 

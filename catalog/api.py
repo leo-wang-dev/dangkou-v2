@@ -475,7 +475,20 @@ def register_routes(app: FastAPI):
 
     # ---- 导入 ----
     @app.post('/import')
-    def do_import(body: ImportIn, request: Request):
+    async def do_import(body: ImportIn, request: Request):
+        done = threading.Event()
+        request.state.database_worker_done = done
+        def work():
+            try:
+                return _do_import(body, request)
+            finally:
+                done.set()
+        try:
+            return await anyio.to_thread.run_sync(work)
+        finally:
+            await drain_worker(done)
+
+    def _do_import(body: ImportIn, request: Request):
         _auth(request, app.state.token)
         if not os.path.isfile(body.path):
             raise HTTPException(404, f'文件不存在: {body.path}')
@@ -495,25 +508,13 @@ def register_routes(app: FastAPI):
         est = min(600, max(60, int(os.path.getsize(body.path) / 1048576 * 4)))
         # 动态两阶段导入：未显式传 phase 的老调用方默认走安全的模板阶段。
         phase = body.phase or 'template'
-        # 模板/商品解析实测都只要几秒：wait 模式原地等结果，让调用方（bot）
-        # 一条消息把结果和审批入口说清。否则后台完成推送可能抢在对话回复
-        # 前面落地，商家会先看到“已完成”再看到“开始解析”的倒序消息。
+        # Wait can return the result inline; its durable completion event stays
+        # queued because a response does not prove that the client received it.
         want_wait = body.wait and phase in ('template', 'products')
-        real_callback = app.state.callback
-        inline_mode = {'on': want_wait}
-
-        def wait_callback(**kw):
-            # inline 模式下完成通知由本请求原样带回；超时后 route 会先关掉
-            # inline_mode 再返回，之后的完成才走出站推送。
-            if inline_mode['on']:
-                return
-            if real_callback:
-                real_callback(**kw)
-
         try:
             doc_id = ingest.start(request_conn(), app.state.storage,
                                   body.path,
-                                  callback=wait_callback, source_key=body.source_key,
+                                  callback=app.state.callback, source_key=body.source_key,
                                   mode=body.mode, category_key=body.category_key,
                                   phase=phase,
                                   template_doc_id=body.template_doc_id)
@@ -534,9 +535,7 @@ def register_routes(app: FastAPI):
                 if s['status'] in ('ticketed', 'failed'):
                     return inline(s)
                 time.sleep(0.4)
-            # 超时兜底：先放出站推送，再补查一次状态——覆盖“回调刚被吞、
-            # 状态其实已落库”的窗口，保证完成通知不丢。
-            inline_mode['on'] = False
+            # Recheck the boundary; completion is independently durable.
             s = ingest.status(request_conn(), doc_id)
             if s['status'] in ('ticketed', 'failed'):
                 return inline(s)
@@ -673,17 +672,6 @@ def register_routes(app: FastAPI):
             raise HTTPException(409 if isinstance(e, tickets.TicketConflict) else 400, str(e))
         if body.approved:
             _reindex_decision(result)
-            if result.get('phase') == 'template' and result.get('template_doc_id'):
-                # Whole-ticket approval is the normal H5 path.  Queue the
-                # hand-off reminder only after the template commit succeeds.
-                try:
-                    from . import notify
-                    notify.push(result['template_doc_id'], ticket_id, body.token,
-                                {'phase': 'template', 'approved': True,
-                                 'template_count': result.get('template_approved', 0)},
-                                conn=request_conn())
-                except Exception:
-                    pass
         return result
 
     def _persist_decision_images(result):

@@ -140,7 +140,12 @@ def test_ambiguous_existing_variants_raise_with_supplier_and_model():
 def test_import_uses_row_supplier_then_document_vendor_then_category_default(conn, monkeypatch, tmp_path):
     seed(conn)
     monkeypatch.setattr(di.agent, 'parse_dynamic', lambda *a, **k: {'vendor':'文档厂', 'products':[{'model':'M1','supplier':'逐行厂'},{'model':'M2'}]})
-    rows = di._agent_rows(dc.get_template(conn,'hairdryer'),'unused.xlsx',tmp_path)
+    from openpyxl import Workbook
+    path = tmp_path / 'supplier.xlsx'
+    workbook = Workbook(); sheet = workbook.active
+    sheet.append(['型号', '供应商']); sheet.append(['M1', '逐行厂']); sheet.append(['M2', ''])
+    workbook.save(path)
+    rows = di._agent_rows(dc.get_template(conn,'hairdryer'),path,tmp_path / 'work')
     assert [r['supplier'] for r in rows] == ['逐行厂','文档厂']
 
 

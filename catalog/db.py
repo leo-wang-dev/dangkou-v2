@@ -42,6 +42,15 @@ def _migrate(conn):
                 conn.execute("ALTER TABLE import_doc ADD COLUMN phase TEXT NOT NULL DEFAULT 'legacy'")
             else:
                 conn.execute(f"ALTER TABLE import_doc ADD COLUMN {field} TEXT NOT NULL DEFAULT ''")
+    for field, declaration in {
+        'converted_path': "TEXT NOT NULL DEFAULT ''", 'converted_sha256': "TEXT NOT NULL DEFAULT ''",
+        'input_path': "TEXT NOT NULL DEFAULT ''", 'storage_base': "TEXT NOT NULL DEFAULT ''",
+        'lease_owner': "TEXT NOT NULL DEFAULT ''", 'lease_until': 'REAL NOT NULL DEFAULT 0',
+        'attempt': 'INTEGER NOT NULL DEFAULT 0', 'work_dir': "TEXT NOT NULL DEFAULT ''",
+        'progress_json': "TEXT NOT NULL DEFAULT '{}'",
+    }.items():
+        if field not in cols:
+            conn.execute(f'ALTER TABLE import_doc ADD COLUMN {field} {declaration}')
     conn.execute("UPDATE import_doc SET source_key=filename WHERE source_key=''")
     inbox_cols = {r[1] for r in conn.execute('PRAGMA table_info(cs_inbox)')}
     if 'next_attempt_at' not in inbox_cols:

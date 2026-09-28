@@ -77,6 +77,7 @@ def test_ai_inference_fallback(client, monkeypatch):
 
 def test_ai_extract_parsing(monkeypatch):
     from catalog import ai_extract
+    monkeypatch.setattr(ai_extract, '_enabled', lambda: True)
     sheets = [{'title': 'Sheet1', 'fields': [
         {'key': 'model', 'label': '产品型号', 'type': 'text', 'role': 'spec'},
         {'key': 'field_x', 'label': '报价', 'type': 'text', 'role': 'spec'}]}]

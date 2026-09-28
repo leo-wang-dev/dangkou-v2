@@ -27,7 +27,10 @@ def client(tmp_path):
     st = LocalStorage(str(tmp_path))
     app.state.storage = st
     app.state.callback = None
-    return TestClient(app, headers={'X-Service-Token': 'test-service-token'})
+    yield TestClient(app, headers={'X-Service-Token': 'test-service-token'})
+    from catalog import ingest
+    assert ingest.join_workers(timeout=5)
+    conn.close()
 
 
 def _import_and_approve(client, tmp_path):
@@ -129,7 +132,7 @@ def test_upload_and_draft_image_edit(client, tmp_path):
     # 3) 审批时换图
     result = client.post(f"/tickets/{ticket['id']}/decision", json={
         'token': ticket['token'], 'approved': True,
-        'decisions': {'edits': {'n0': {'__images': [up1]}}}})
+        'decisions': {'edits': {payload['sheets'][0]['drafts']['new'][0]['_rid']: {'__images': [up1]}}}})
     assert result.status_code == 200, result.text
     ps = client.get(f'/products/{category}').json()['products']
     assert all('_upload' not in (p['主图'] or '') for p in ps)   # 全部已落位成正式rel
@@ -159,7 +162,7 @@ def test_save_draft_edit_persists(client, tmp_path):
     color = next(f for f in payload['sheets'][0]['template']['fields']
                  if f['label'] == '颜色')['key']
     saved = client.patch(f"/tickets/{ticket['id']}/draft", json={
-        'token': ticket['token'], 'row_key': 'n0', 'edits': {color: '人工改色'}})
+        'token': ticket['token'], 'row_key': payload['sheets'][0]['drafts']['new'][0]['_rid'], 'edits': {color: '人工改色'}})
     assert saved.status_code == 200, saved.text
     d = client.get(f"/tickets/{ticket['id']}?t={ticket['token']}").json()
     row = d['payload']['sheets'][0]['drafts']['new'][0]
@@ -175,7 +178,7 @@ def test_decision_rejects_and_edits_rows(client, tmp_path):
     total = len(payload['sheets'][0]['drafts']['new'])
     r = client.post(f"/tickets/{ticket['id']}/decision", json={
         'token': ticket['token'], 'approved': True,
-        'decisions': {'reject': ['n1'], 'edits': {'n0': {color: '审批改色'}}}}).json()
+        'decisions': {'reject': [payload['sheets'][0]['drafts']['new'][1]['_rid']], 'edits': {payload['sheets'][0]['drafts']['new'][0]['_rid']: {color: '审批改色'}}}}).json()
     assert r['created'] == total - 1
     ps = client.get(f'/products/{category}').json()['products']
     assert any(p['颜色'] == '审批改色' for p in ps)     # 编辑生效

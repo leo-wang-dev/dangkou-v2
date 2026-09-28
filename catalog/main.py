@@ -1,5 +1,7 @@
 import os
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -8,7 +10,14 @@ from . import config, db, notify
 from .api import register_routes
 from .storage import LocalStorage
 
-app = FastAPI(title='dangkou catalog v2')
+@asynccontextmanager
+async def lifespan(app):
+    from . import ingest
+    ingest.recover(app.state.conn)
+    yield
+
+
+app = FastAPI(title='dangkou catalog v2', lifespan=lifespan)
 app.state.conn = db.connect()
 db.init_db(app.state.conn)
 app.state.token = config.SERVICE_TOKEN

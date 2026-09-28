@@ -36,12 +36,13 @@ def atomic(fn):
     return wrapped
 
 
-def create(conn, ticket_type, category, payload) -> dict:
+def create(conn, ticket_type, category, payload, *, commit=True) -> dict:
     token = secrets.token_urlsafe(24)
     cur = conn.execute(
         'INSERT INTO approval_ticket(ticket_type, category, payload, token) VALUES(?,?,?,?)',
         (ticket_type, category, json.dumps(payload, ensure_ascii=False), token))
-    conn.commit()
+    if commit:
+        conn.commit()
     return {'id': cur.lastrowid, 'token': token}
 
 
@@ -79,6 +80,11 @@ def decide(conn, ticket_id, token, approved: bool, decisions=None, before_commit
                                   'updated': result.get('updated', 0),
                                   'delisted': result.get('delisted', 0)}, ensure_ascii=False),
                       payload['doc_id']))
+    if result.get('phase') == 'template' and result.get('template_doc_id'):
+        from . import notify
+        notify.push(result['template_doc_id'], ticket_id, token,
+                    {'phase': 'template', 'approved': True,
+                     'template_count': result.get('template_approved', 0)}, conn=conn, commit=False)
     if before_commit:
         before_commit(result)
     conn.execute("UPDATE approval_ticket SET status='approved', "

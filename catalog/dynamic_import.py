@@ -5,6 +5,9 @@ import json
 import hashlib
 import os
 import secrets
+import shutil
+from pathlib import Path
+import time
 
 from . import agent, ai_extract, dynamic_catalog, inner_code, workbook_templates
 
@@ -95,11 +98,48 @@ def _classify_rows(existing: list[dict], incoming: list[dict], model_keys: list[
     return {'new': new, 'update': update, 'delist': []}
 
 
+class ParsedRows(list):
+    def __init__(self, rows=(), *, failures=(), coverage=None):
+        super().__init__(rows)
+        self.failures = list(failures)
+        self.coverage = coverage or {}
+
+
 def _classify_template_rows(existing, incoming, template):
-    incoming = [{**row, 'supplier': row.get('supplier', template.get('supplier', ''))} for row in incoming]
-    return _classify_rows(existing, incoming,
-                          [f['key'] for f in template['fields'] if f['role'] == 'model'],
-                          [f['key'] for f in template['fields'] if f['role'] == 'spec'])
+    failures = list(getattr(incoming, 'failures', []))
+    accepted = []
+    # Validate each proposal against the whole accepted batch. A bad row does
+    # not erase good rows, and identity collisions remain explicit failures.
+    for row in incoming:
+        row = {**row, 'supplier': row.get('supplier', template.get('supplier', ''))}
+        try:
+            _classify_rows(existing, [*accepted, row],
+                [f['key'] for f in template['fields'] if f['role'] == 'model'],
+                [f['key'] for f in template['fields'] if f['role'] == 'spec'])
+            accepted.append(row)
+        except ValueError as exc:
+            failures.append({'source_sheet': row.get('source_sheet', ''),
+                'source_rows': row.get('source_rows', []), 'reason': str(exc)})
+    drafts = _classify_rows(existing, accepted,
+        [f['key'] for f in template['fields'] if f['role'] == 'model'],
+        [f['key'] for f in template['fields'] if f['role'] == 'spec'])
+    drafts['_accepted'] = len(accepted)
+    drafts['_failures'] = failures
+    drafts['_coverage'] = getattr(incoming, 'coverage', {})
+    return drafts
+
+
+def _product_metadata(payload):
+    accepted = 0
+    for section in payload.get('sheets', []):
+        drafts = section.get('drafts', {})
+        accepted += drafts.pop('_accepted', len(drafts.get('new', [])) + len(drafts.get('update', [])))
+        section['failures'] = drafts.pop('_failures', [])
+        section['coverage'] = drafts.pop('_coverage', {})
+    if not accepted:
+        reasons = [f['reason'] for s in payload.get('sheets', []) for f in s.get('failures', [])]
+        raise ValueError('没有有效商品可审批：' + '; '.join(reasons)[:300])
+    return payload
 
 
 def _file_sha256(path: str) -> str:
@@ -233,43 +273,123 @@ def _products_into_template(conn, xlsx_path: str, work_dir, template: dict, *,
 
 
 def _agent_rows(template: dict, xlsx_path: str, work_dir, sheet: str = '') -> list[dict] | None:
-    """子代理（Claude）整表语义解析：合并跨行商品、图片按锚点归属、容忍乱表。
-
-    Docker/代理不可用或产出为空时返回 None——商品解析只有子代理这一条路，
-    调用方收到 None 必须抛 ValueError 终止导入，不做任何代码回落。
-    """
+    """Model-only product parsing, with source coverage and reusable checkpoints."""
+    identity = hashlib.sha256(json.dumps({'template': template, 'sheet': sheet,
+        'source': _file_sha256(xlsx_path)}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    root = Path(work_dir); root.mkdir(parents=True, exist_ok=True)
+    checkpoint = root / (identity + '.checkpoint.json')
+    candidates = [checkpoint]
+    if root.name.startswith('attempt-'):
+        candidates += sorted(root.parent.glob('attempt-*/' + checkpoint.name))
+    for cached in candidates:
+        if not cached.is_file():
+            continue
+        try:
+            saved = json.loads(cached.read_text())
+            for row in saved['rows']:
+                hashes = []
+                for name in row['images']:
+                    source = (cached.parent / name).resolve()
+                    target = (root / name).resolve()
+                    if not source.is_relative_to(cached.parent.resolve()) or not target.is_relative_to(root.resolve()):
+                        raise ValueError('invalid checkpoint image path')
+                    hashes.append(_file_sha256(str(source)))
+                    if cached != checkpoint:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copyfile(source, target)
+                fingerprint = hashlib.sha256(json.dumps({'data': row['data'], 'images': hashes}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+                if fingerprint != row['row_fingerprint']:
+                    raise ValueError('checkpoint image content changed')
+            return ParsedRows(saved['rows'], failures=saved['failures'], coverage=saved['coverage'])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue  # Reparse when a checkpoint or its artifacts are incomplete.
+    # Structural rows are evidence, never a fallback source of product data.
+    manifest = workbook_templates.discover_workbook(xlsx_path, include_images=False)
+    evidence = {d['source_sheet']: {r['source_row'] for r in d['rows']}
+                for d in manifest if not sheet or d['source_sheet'] == sheet}
+    started = time.monotonic()
+    parse_dir = root / identity[:16]; parse_dir.mkdir(exist_ok=True)
     try:
-        result = agent.parse_dynamic(template, xlsx_path, work_dir, sheet=sheet)
-    except Exception as exc:  # noqa: BLE001
-        print(f'[dynamic_import] 子代理解析失败：{exc}', flush=True)
-        return None
-    rows = []
-    for p in result.get('products') or []:
-        if not isinstance(p, dict):
+        result = agent.parse_dynamic(template, xlsx_path, parse_dir, sheet=sheet)
+    except Exception as exc:
+        return ParsedRows(failures=[{'source_sheet': sheet, 'source_rows': sorted(set().union(*evidence.values())) if evidence else [],
+            'reason': '解析服务暂不可用，请重试：' + str(exc)[:160]}], coverage={'uncertain': True})
+    failures = []
+    for failure in result.get('failures') or []:
+        if isinstance(failure, dict):
+            refs = failure.get('source_rows') or []
+            reason = str(failure.get('reason') or '模型未能解析此区域')[:300]
+            if not isinstance(refs, list) or any(type(r) is not int or not 1 <= r <= 20000 for r in refs):
+                refs, reason = [], reason + '（失败位置格式无效，请核对来源区域）'
+            failures.append({'source_sheet': str(failure.get('source_sheet') or sheet),
+                'source_rows': refs, 'reason': reason})
+    rows, represented = [], set()
+    uncertain = False
+    for index, product in enumerate(result.get('products') or []):
+        if not isinstance(product, dict):
+            failures.append({'source_sheet': sheet, 'source_rows': [], 'reason': f'第 {index+1} 个结果不是商品对象'})
             continue
-        data = {}
-        for f in template['fields']:
-            if f.get('role') == 'image':
-                continue
-            value = p.get(f['key'], p.get(f['label']))
-            data[f['key']] = '' if value is None else str(value)
-        if not any(str(v).strip() for v in data.values()):
+        source_sheet = str(product.get('source_sheet') or sheet or (next(iter(evidence)) if len(evidence) == 1 else ''))
+        refs = product.get('source_rows') or ([product['source_row']] if product.get('source_row') else [])
+        reason = ''
+        if not isinstance(refs, list) or any(type(r) is not int or r < 1 for r in refs):
+            reason, refs = '来源行号格式无效', []
+        if refs and (source_sheet not in evidence or any(r not in evidence[source_sheet] for r in refs)):
+            reason = '来源行不在已观察到的数据区域，请核对表头或商品分组'
+        if not refs:
+            uncertain = True
+        data = {f['key']: '' if product.get(f['key'], product.get(f['label'])) is None else str(product.get(f['key'], product.get(f['label'])))
+                for f in template['fields'] if f.get('role') != 'image'}
+        if not any(v.strip() for v in data.values()):
+            reason = reason or '商品字段全部为空'
+        images = product.get('images') or []
+        if not isinstance(images, list):
+            images, reason = [], '图片列表格式无效'
+        images = [str(v) for v in images if v]
+        if product.get('image_main') and product['image_main'] not in images:
+            images.insert(0, str(product['image_main']))
+        hashes = []
+        for name in images:
+            image = (parse_dir / name).resolve()
+            if not image.is_relative_to(parse_dir.resolve()) or not image.is_file():
+                reason = '图片文件缺失或路径无效：' + name[:80]
+                break
+            try:
+                from PIL import Image
+                with Image.open(image) as decoded:
+                    decoded.verify()
+                hashes.append(_file_sha256(str(image)))
+            except Exception:
+                reason = '图片文件无法读取：' + name[:80]
+        if product.get('image_count') is not None and product['image_count'] != len(images):
+            reason = '图片数量与解析结果不一致'
+        if reason:
+            failures.append({'source_sheet': source_sheet, 'source_rows': refs, 'reason': reason})
             continue
-        images = [str(v) for v in (p.get('images') or []) if v]
-        if p.get('image_main') and p['image_main'] not in images:
-            images.insert(0, str(p['image_main']))
-        fingerprint_payload = {'data': data,
-                               'images': [_file_sha256(os.path.join(str(work_dir), name)) for name in images]}
-        rows.append({'data': data, 'supplier': str(p.get('supplier') or p.get('供应商') or result.get('vendor') or template.get('supplier') or '').strip()[:40], 'images': images,
-                     'image_main': images[0] if images else '',
-                     'source_row': None,
-                     'row_fingerprint': hashlib.sha256(json.dumps(
-                         fingerprint_payload, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()})
+        represented.update((source_sheet, r) for r in refs)
+        images = [str(Path(identity[:16]) / name) for name in images]
+        rows.append({'_rid': identity[:16] + '-' + str(index), 'data': data,
+            'supplier': str(product.get('supplier') or product.get('供应商') or result.get('vendor') or template.get('supplier') or '').strip()[:40],
+            'images': images, 'image_main': images[0] if images else '',
+            'source_sheet': source_sheet, 'source_rows': refs, 'source_row': refs[0] if refs else None,
+            'row_fingerprint': hashlib.sha256(json.dumps({'data': data, 'images': hashes}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()})
+    failed_refs = {(f['source_sheet'], r) for f in failures for r in f['source_rows'] if type(r) is int}
+    for name, candidates in evidence.items():
+        missing = sorted(r for r in candidates if (name, r) not in represented | failed_refs)
+        if missing:
+            failures.append({'source_sheet': name, 'source_rows': missing,
+                'reason': '来源覆盖未确认：这些物理行未被商品或失败区域引用，可能包含跨行规格/图片；请核对，不能认定为已解析商品'})
+    coverage = {'candidate_rows': sum(map(len, evidence.values())), 'represented_rows': len(represented),
+        'logical_products': len(rows), 'uncertain': uncertain or bool(failures),
+        'note': '物理候选行不是逻辑商品数量', 'model_seconds': round(time.monotonic()-started, 3),
+        'source_rows': {name: sorted(values) for name, values in evidence.items()}}
     if not rows:
-        print('[dynamic_import] 子代理产出 0 条商品', flush=True)
-        return None
-    print(f'[dynamic_import] 子代理解析产出 {len(rows)} 条商品（sheet={sheet or "全部"}）', flush=True)
-    return rows
+        return ParsedRows(failures=failures, coverage=coverage)
+    saved = {'rows': rows, 'failures': failures, 'coverage': coverage}
+    # Checkpoint even partial successes. A crash resumes these results; an explicit
+    # re-upload creates a new job/workspace and retries the whole sheet/document.
+    temporary = checkpoint.with_suffix('.tmp'); temporary.write_text(json.dumps(saved, ensure_ascii=False)); temporary.replace(checkpoint)
+    return ParsedRows(rows, failures=failures, coverage=coverage)
 
 
 def manual_template_payload(name: str, fields_in: list[dict]) -> dict:
@@ -463,7 +583,7 @@ def build_product_payload(conn, xlsx_path, work_dir, *, source_key: str,
         raise ValueError('商品导入方式必须与模板导入一致，请使用模板工单返回的 mode')
     if (category_key or '') != (session.get('category_key') or ''):
         raise ValueError('商品导入目标分类必须与模板工单一致')
-    discovered = workbook_templates.discover_workbook(xlsx_path, work_dir)
+    discovered = workbook_templates.discover_workbook(xlsx_path, include_images=False)
     sections = []
     if mode == 'existing':
         # The existing-category contract accepts a workbook with several
@@ -515,7 +635,7 @@ def build_product_payload(conn, xlsx_path, work_dir, *, source_key: str,
         expected = int(item.get('version') or 0)
         if template['version'] != expected:
             raise ValueError('分类模板已经更新，请重新导入并审批模板后再上传商品 Excel')
-        incoming = _agent_rows(template, xlsx_path, work_dir, sheet=found.get('title') or '')
+        incoming = _agent_rows(template, xlsx_path, work_dir, sheet=found.get('source_sheet') or '')
         if incoming is None:
             raise ValueError('解析服务暂不可用，请稍后重试导入')
         source_rows = _source_rows(conn, template['key'], source_key, template['source_sheet'])
@@ -551,11 +671,12 @@ def build_ticket_payload(conn, xlsx_path, work_dir, *, source_key: str,
             raise ValueError('未知目标分类，请先从商品管理中选择已有分类') from exc
         if target['storage'] != 'dynamic':
             raise ValueError(f'分类 {target["name"]} 是旧版固定分类，已下线；请新建动态分类导入')
-        incoming = []
+        incoming = ParsedRows()
         for discovered in discovered_sheets:
-            incoming = _agent_rows(target, xlsx_path, work_dir, sheet=discovered.get('title') or '')
-            if incoming is None:
-                raise ValueError('解析服务暂不可用，请稍后重试导入')
+            parsed = _agent_rows(target, xlsx_path, work_dir, sheet=discovered.get('source_sheet') or '')
+            incoming.extend(parsed)
+            incoming.failures.extend(parsed.failures)
+            incoming.coverage.setdefault('sheets', []).append(parsed.coverage)
         source_rows = _source_rows(conn, target['key'], source_key, target['source_sheet'])
         existing = [row for row in source_rows if row['status'] != 'delisted']
         section = {'template': target, 'template_action': 'reuse',
@@ -592,7 +713,7 @@ def build_ticket_payload(conn, xlsx_path, work_dir, *, source_key: str,
             action = 'reuse' if _field_signature(current['fields']) == _field_signature(template['fields']) else 'update'
             source_rows = _source_rows(conn, current['key'], source_key, discovered['source_sheet'])
             existing = [row for row in source_rows if row['status'] != 'delisted']
-        incoming = _agent_rows(template, xlsx_path, work_dir, sheet=discovered.get('title') or '')
+        incoming = _agent_rows(template, xlsx_path, work_dir, sheet=discovered.get('source_sheet') or '')
         if incoming is None:
             raise ValueError('解析服务暂不可用，请稍后重试导入')
         sheets.append({'template': template, 'template_action': action,
@@ -796,3 +917,14 @@ def apply_ticket(conn, payload: dict, decisions: dict | None = None) -> dict:
     if phase == 'products':
         return _apply_product_payload(conn, payload, decisions)
     return _apply_ticket_payload(conn, payload, decisions)
+
+
+def _with_product_metadata(builder):
+    from functools import wraps
+    @wraps(builder)
+    def wrapped(*args, **kwargs):
+        return _product_metadata(builder(*args, **kwargs))
+    return wrapped
+
+build_product_payload = _with_product_metadata(build_product_payload)
+build_ticket_payload = _with_product_metadata(build_ticket_payload)

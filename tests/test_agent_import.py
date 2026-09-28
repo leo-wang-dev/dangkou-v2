@@ -36,33 +36,37 @@ def test_dynamic_prompt_carries_fields_and_messy_sheet_rules():
 
 
 def test_agent_rows_shape_and_image_main_prepend(tmp_path, monkeypatch):
-    (tmp_path / 'a.png').write_bytes(b'A')
-    (tmp_path / 'b.png').write_bytes(b'B')
-    monkeypatch.setattr(agent, 'parse_dynamic', lambda tpl, xlsx, wd, sheet='': {
-        'vendor': '华悦',
-        'products': [
+    from PIL import Image
+    from pathlib import Path
+    def parsed(tpl, xlsx, wd, sheet=''):
+        for name in ('a.png', 'b.png'):
+            Image.new('RGB', (10, 10), 'red').save(Path(wd) / name)
+        return {'vendor': '华悦', 'products': [
             {'model': 'T821', 'field_p': '2000W', 'note_f': '', 'image_main': 'a.png',
              'images': ['a.png', 'b.png'], 'image_count': 2},
-            {'model': '', 'field_p': '', 'note_f': '', 'images': []},   # 空行应被丢弃
-        ]})
-    rows = dynamic_import._agent_rows(TEMPLATE, '/tmp/fake.xlsx', tmp_path)
-    assert rows is not None and len(rows) == 1
+            {'model': '', 'field_p': '', 'note_f': '', 'images': []}]}
+    monkeypatch.setattr(agent, 'parse_dynamic', parsed)
+    rows = dynamic_import._agent_rows(TEMPLATE, blowdryer_fixture(tmp_path), tmp_path / 'work')
+    assert len(rows) == 1 and rows.failures
     row = rows[0]
     assert row['data'] == {'model': 'T821', 'field_p': '2000W', 'note_f': ''}
-    assert row['images'] == ['a.png', 'b.png'] and row['image_main'] == 'a.png'
+    assert [Path(name).name for name in row['images']] == ['a.png', 'b.png']
+    assert Path(row['image_main']).name == 'a.png'
     assert len(row['row_fingerprint']) == 64
     assert set(row) >= {'data', 'images', 'source_row', 'row_fingerprint'}
 
 
-def test_agent_failure_returns_none_and_import_raises(conn, tmp_path, monkeypatch):
+def test_agent_failure_has_explicit_region_and_import_raises(conn, tmp_path, monkeypatch):
     """子代理失败/产出空 → _agent_rows 返回 None，导入直接报错（删A 后无代码回落）。"""
     def boom(*a, **kw):
         raise RuntimeError('docker 不可用')
     monkeypatch.setattr(agent, 'parse_dynamic', boom)
-    assert dynamic_import._agent_rows(TEMPLATE, '/tmp/fake.xlsx', '/tmp') is None
+    rows = dynamic_import._agent_rows(TEMPLATE, blowdryer_fixture(tmp_path), tmp_path / 'parse')
+    assert not rows and rows.failures
     monkeypatch.setattr(agent, 'parse_dynamic', lambda *a, **kw: {'products': []})
-    assert dynamic_import._agent_rows(TEMPLATE, '/tmp/fake.xlsx', '/tmp') is None
-    with pytest.raises(ValueError, match='解析服务暂不可用'):
+    rows = dynamic_import._agent_rows(TEMPLATE, blowdryer_fixture(tmp_path), tmp_path / 'parse')
+    assert not rows and rows.failures
+    with pytest.raises(ValueError, match='没有有效商品|解析服务暂不可用'):
         dynamic_import.build_ticket_payload(
             conn, blowdryer_fixture(tmp_path), tmp_path / 'work', source_key='vendor-a', doc_id=1)
 
@@ -85,11 +89,11 @@ def test_legacy_payload_agent_down_raises(conn, tmp_path, monkeypatch):
     """一阶段旧路径：子代理失败即报错，不再回落 discover 行直落。"""
     from catalog.dynamic_import import build_ticket_payload
     monkeypatch.setattr(agent, 'parse_dynamic', lambda *a, **kw: (_ for _ in ()).throw(RuntimeError('down')))
-    with pytest.raises(ValueError, match='解析服务暂不可用'):
+    with pytest.raises(ValueError, match='没有有效商品|解析服务暂不可用'):
         build_ticket_payload(conn, blowdryer_fixture(tmp_path), tmp_path / 'work',
                              source_key='vendor-a', doc_id=1)
     monkeypatch.setattr(agent, 'parse_dynamic', lambda *a, **kw: {'vendor': None, 'products': []})
-    with pytest.raises(ValueError, match='解析服务暂不可用'):
+    with pytest.raises(ValueError, match='没有有效商品|解析服务暂不可用'):
         build_ticket_payload(conn, blowdryer_fixture(tmp_path), tmp_path / 'work2',
                              source_key='vendor-a', doc_id=1)
 

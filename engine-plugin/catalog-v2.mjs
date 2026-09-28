@@ -95,13 +95,13 @@ export async function apply(ctx, _config = {}) {
         note = `模板识别完成：${cats}。把审批入口发给商家，请商家确认字段和客户可见性；模板审批通过后必须提醒商家再次上传同一份商品 Excel（用 templateDocId=${r.doc_id} 进入 products 阶段导入商品）。审批入口：${MANAGE}/?t=${TOKEN}`
       } else if (r.status === 'ticketed') {
         const s = r.stats || {}
-        note = `商品解析完成：新增${s.new || 0} / 更新${s.update || 0} / 下架${s.delist || 0}。把审批入口发给商家核对，批准后商品才入库。审批入口：${MANAGE}/?t=${TOKEN}`
+        note = `商品解析完成：新增${s.new || 0} / 更新${s.update || 0} / 失败区域${s.failed || 0}。把审批入口发给商家核对，批准后商品才入库。审批入口：${MANAGE}/?t=${TOKEN}`
       } else if (r.status === 'failed') {
-        note = `模板识别失败：${r.error || '未知错误'}；如实告知商家，不要编造原因`
+        note = `导入失败：${r.error || '未知错误'}；如实告知商家，不要编造原因`
       } else {
         note = phase === 'template'
-          ? `模板识别已在后台启动，完成后审批入口会自动推送到本对话；模板审批通过后必须提醒商家再次上传商品 Excel，并用 templateDocId=${r.doc_id} 进入 products 阶段`
-          : '商品解析已在后台启动，量大时需要一些时间；完成后商品审批入口会自动推送，不要向商家承诺具体分钟数'
+          ? `模板导入请求已接收，以完成通知或 catalog_check 的最新状态为准，审批入口会自动推送到本对话；模板审批通过后必须提醒商家再次上传商品 Excel，并用 templateDocId=${r.doc_id} 进入 products 阶段`
+          : '商品导入请求已接收；以完成通知或 catalog_check 的最新状态为准，审批入口会自动推送，不要承诺具体分钟数或断言仍在解析'
       }
       return JSON.stringify({ docId: r.doc_id, phase, status: r.status || 'parsing',
         templateDocId: phase === 'template' ? r.doc_id : templateDocId,

@@ -25,7 +25,7 @@ globalThis.fetch = async (url, options = {}) => {
   return {ok:true, status:200, text:async()=>JSON.stringify(body)}
 }
 
-const imported = JSON.parse(await tools.get('catalog_import').execute({path:'/tmp/products.xlsx', sourceKey:'supplier-a'}))
+const imported = JSON.parse(await tools.get('catalog_import').execute({path:'/tmp/products.xlsx', sourceKey:'supplier-a', phase:'template', mode:'new'}))
 assert.equal(imported.docId, 7)
 assert.match(JSON.parse(await tools.get('catalog_check').execute({docId:7})).approveUrl, /^http/)
 assert.equal(JSON.parse(await tools.get('catalog_stats').execute({category:'cat_custom'})).total, 2)

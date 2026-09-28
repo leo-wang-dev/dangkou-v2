@@ -328,7 +328,9 @@ function renderTemplateImport(tid, payload, box){
       </tbody></table></div>
       ${productPhase?'':'<div class="row" style="margin-top:8px"><button class="btn o s" onclick="addTemplateField(this)">＋ 添加表头字段</button><span class="muted">漏识别的列在这里补：填字段名、选好可见性，批准后生效（商品数据里该列的值需要重新导入一次才有）</span></div>'}
       <p class="muted">字段类型、删除和客户可见性可在此编辑；图片类型会用于导入商品图片。成本、价格、备注和序号默认设为内部字段，客户 Bot 不会返回金额字段。</p>`}
-      <div class="row"><span class="tag new">新增 ${counts.new?.length||0}</span><span class="tag upd">更新 ${counts.update?.length||0}</span><span class="tag del">疑似下架 ${counts.delist?.length||0}</span></div>
+      <div class="row"><span class="tag new">新增 ${counts.new?.length||0}</span><span class="tag upd">更新 ${counts.update?.length||0}</span><span class="tag">增量导入 · 缺行保留</span></div>
+      ${(section.failures||[]).length?`<div role="alert" class="card"><b>待核对/失败区域 ${(section.failures||[]).length} 处</b><p>可先审批有效商品。审批后重新上传同一文件可重试整表，已审批商品按供应商、型号和规格匹配，不会因缺行下架。</p>${section.failures.map(f=>`<p>${esc(f.source_sheet||'未知Sheet')} · 行 ${esc((f.source_rows||[]).join(',')||'未定位')}：${esc(f.reason)}</p>`).join('')}</div>`:''}
+      ${section.coverage?.candidate_rows!=null?`<p class="muted">观察到 ${section.coverage.candidate_rows} 个物理候选行，解析 ${section.coverage.logical_products} 个逻辑商品；物理行不等于商品数。${section.coverage.uncertain?'覆盖范围尚待核对。':''}</p>`:''}
       <div style="margin-top:10px">
         ${(counts.new||[]).map((row,index)=>templateRowHtml(tid,tpl,row,row._rid||('n'+index),'新增')).join('')}
         ${(counts.update||[]).map((pair,index)=>{const row=Array.isArray(pair)?pair[1]:pair;const old=Array.isArray(pair)?pair[0]:pair;return templateRowHtml(tid,tpl,row,old.id||row._rid||('u'+index),'更新')}).join('')}

@@ -11,14 +11,17 @@ from catalog.storage import LocalStorage
 
 @pytest.fixture()
 def client(tmp_path):
-    conn = sqlite3.connect(':memory:', check_same_thread=False)
+    conn = db.connect(str(tmp_path / 'wait.sqlite'))
     conn.row_factory = sqlite3.Row
     db.init_db(conn)
     app.state.conn = conn
     app.state.token = 'T0KEN'
     app.state.storage = LocalStorage(str(tmp_path))
     app.state.callback = None
-    return TestClient(app)
+    yield TestClient(app)
+    from catalog import ingest
+    assert ingest.join_workers(timeout=5)
+    conn.close()
 
 
 def _fake_payload(conn, xlsx_path, work_dir, **kw):
@@ -26,8 +29,8 @@ def _fake_payload(conn, xlsx_path, work_dir, **kw):
         {'key': 'model', 'label': '型号', 'visibility': 'public'}]}}]}
 
 
-def test_template_wait_returns_inline_and_skips_push(client, tmp_path, monkeypatch):
-    """wait 模式：模板解析结果随 HTTP 响应带回，出站推送不再发“已识别”。"""
+def test_template_wait_returns_inline_and_keeps_durable_push(client, tmp_path, monkeypatch):
+    """wait 模式：模板解析结果随 HTTP 响应带回，完成事件仍持久化，HTTP 响应不能证明用户已收到。"""
     f = tmp_path / 'a.xlsx'
     f.write_bytes(b'PK\x03\x04fake')
     calls = []
@@ -40,7 +43,8 @@ def test_template_wait_returns_inline_and_skips_push(client, tmp_path, monkeypat
     assert body['status'] == 'ticketed'
     assert body['stats']['categories'] == ['Sheet1']
     time.sleep(0.5)
-    assert calls == []
+    assert len(calls) == 1
+    assert app.state.conn.execute('SELECT count(*) FROM cs_outbox').fetchone()[0] == 1
 
 
 def test_template_wait_timeout_falls_back_to_push(client, tmp_path, monkeypatch):
@@ -82,3 +86,31 @@ def test_products_and_default_calls_keep_push(client, tmp_path, monkeypatch):
             break
         time.sleep(0.1)
     assert calls and calls[0]['stats']['phase'] == 'template'
+
+
+def test_cancelled_wait_keeps_connection_until_worker_and_completion_durable(client, tmp_path, monkeypatch):
+    import asyncio
+    import threading
+    import httpx
+    from catalog import ingest
+    entered, release = threading.Event(), threading.Event()
+    def slow(*args, **kwargs):
+        entered.set(); assert release.wait(5)
+        return _fake_payload(*args, **kwargs)
+    monkeypatch.setattr(dynamic_import, 'build_template_payload', slow)
+    source = tmp_path / 'cancel.xlsx'; source.write_bytes(b'fake')
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+            task = asyncio.create_task(http.post('/import', headers={'X-Service-Token': 'T0KEN'},
+                json={'path': str(source), 'phase': 'template', 'mode': 'new', 'wait': True}))
+            assert await asyncio.to_thread(entered.wait, 2)
+            task.cancel(); await asyncio.sleep(.03); task.cancel()
+            release.set()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+    asyncio.run(exercise())
+    assert ingest.join_workers(timeout=5)
+    assert app.state.conn.execute('SELECT status FROM import_doc').fetchone()[0] == 'ticketed'
+    assert app.state.conn.execute('SELECT count(*) FROM cs_outbox').fetchone()[0] == 1
