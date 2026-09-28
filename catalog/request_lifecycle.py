@@ -2,6 +2,8 @@
 import asyncio
 import threading
 
+import anyio
+
 
 async def drain_worker(done: threading.Event | None) -> bool:
     """Wait through repeated native task cancellation; report interruption.
@@ -12,12 +14,17 @@ async def drain_worker(done: threading.Event | None) -> bool:
     """
     if done is None or done.is_set():
         return False
-    waiter = asyncio.create_task(asyncio.to_thread(done.wait))
     interrupted = False
-    while not waiter.done():
-        try:
-            await asyncio.shield(waiter)
-        except asyncio.CancelledError:
-            interrupted = True
+    try:
+        await anyio.lowlevel.checkpoint()
+    except asyncio.CancelledError:
+        interrupted = True
+    waiter = asyncio.create_task(asyncio.to_thread(done.wait))
+    with anyio.CancelScope(shield=True):
+        while not waiter.done():
+            try:
+                await asyncio.shield(waiter)
+            except asyncio.CancelledError:
+                interrupted = True
     waiter.result()
     return interrupted
