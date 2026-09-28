@@ -34,7 +34,8 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
     wb.remove(wb.active)
     groups = {}
     for note in notes:
-        groups.setdefault(note.get('batch_id', 'legacy') if isinstance(note, dict) else 'legacy', []).append(note)
+        from .note_batches import export_group
+        groups.setdefault(export_group(note) if isinstance(note, dict) else ('batch','legacy'), []).append(note)
     for group in groups.values():
         card = group[0].get('batch_fields', {}) if isinstance(group[0], dict) else {}
         title = re.sub(r'[\\/*?:\[\]]', '_', str(card.get('档口名称') or '待确认档口')).strip(" '")[:31] or '采购清单'

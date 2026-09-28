@@ -194,7 +194,7 @@ function toolQuery() {
 
 export const toolApi = {
   endSession: () => request('session/end', { method:'POST', base:getBases().tool, headers:toolAuthHeaders(), data:{guest:storage.get('ut_guest')} }),
-  confirmBatch: (batch_id, note_ids = [], fields = null) => request((fields ? 'batches' : 'batches/confirm') + toolQuery(), { method:'POST',base:getBases().tool,headers:toolAuthHeaders(),data:{batch_id,note_ids,fields} }),
+  confirmBatch: (batch_id, note_ids = [], fields = null, action = 'confirm') => request((fields ? 'batches' : 'batches/confirm') + toolQuery(), { method:'POST',base:getBases().tool,headers:toolAuthHeaders(),data:{batch_id,note_ids,fields,action} }),
   newGuest: () => request('guest', { method: 'POST', base: getBases().tool }),
   sendCode: (email) => request('auth/code', { method: 'POST', base: getBases().tool, data: { email } }),
   verify: (email, code, guest) =>
@@ -215,8 +215,9 @@ export const csApi = {
   newSession: (token) => request('cs/chat/'+token+'/session',{method:'POST',base:getBases().cs}),
   session: (token,visitor) => request('cs/chat/'+token+'/session?visitor='+encodeURIComponent(visitor),{base:getBases().cs}),
   endSession: (token,visitor) => request('cs/chat/'+token+'/session/end',{method:'POST',base:getBases().cs,data:{visitor}}),
+  discardPhoto: (token,visitor) => request('cs/chat/'+token+'/pending-photo/discard',{method:'POST',base:getBases().cs,data:{visitor}}),
   setMode: (token,visitor,mode) => request('cs/chat/'+token+'/mode',{method:'POST',base:getBases().cs,data:{visitor,mode}}),
-  confirmBatch: (token,visitor,batch_id,note_ids=[],fields=null) => request('cs/chat/'+token+'/batches/confirm',{method:'POST',base:getBases().cs,data:{visitor,batch_id,note_ids,fields}}),
+  confirmBatch: (token,visitor,batch_id,note_ids=[],fields=null,action='confirm') => request('cs/chat/'+token+'/batches/confirm',{method:'POST',base:getBases().cs,data:{visitor,batch_id,note_ids,fields,action}}),
   send: (token, text, visitor) =>
     request('cs/chat/' + token + '/message', { method: 'POST', base: getBases().cs, data: { text, visitor } }),
   uploadPhoto: (token, visitor, filePath) =>

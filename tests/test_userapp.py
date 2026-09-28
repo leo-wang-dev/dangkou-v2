@@ -165,6 +165,8 @@ def test_auth_code_and_verify_merges_guest_notes(client):
     wrong = client.post('/auth/verify', json={'email': email, 'code': '000000'})
     assert wrong.status_code == 400
 
+    issued_owner = client.app.state.conn.execute('SELECT owner_id FROM guest_sessions WHERE token_hash=?',(userapp._hash(guest),)).fetchone()[0]
+    assert client.app.state.conn.execute("SELECT COUNT(*) FROM notes WHERE owner_kind='guest' AND owner_id=?",(issued_owner,)).fetchone()[0] == 1
     r = client.post('/auth/verify', json={'email': email, 'code': code, 'guest': guest})
     assert r.status_code == 200
     token = r.json()['token']
@@ -176,7 +178,7 @@ def test_auth_code_and_verify_merges_guest_notes(client):
     assert conn.execute("SELECT COUNT(*) FROM notes WHERE owner_kind='user' AND owner_id=?",
                         (email,)).fetchone()[0] == 1     # 迁到账号
     assert conn.execute("SELECT COUNT(*) FROM notes WHERE owner_kind='guest' AND owner_id=?",
-                        (guest,)).fetchone()[0] == 0     # guest 行清空
+                        (issued_owner,)).fetchone()[0] == 0     # guest 行清空
     assert client.post('/notes', params={'guest': guest}).status_code == 410
     assert conn.execute("SELECT used_at FROM auth_codes WHERE code_hash=?",
                         (userapp._hash(f'{email}:{code}'),)).fetchone()[0]

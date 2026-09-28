@@ -308,6 +308,9 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     async def confirm_batch(request: Request, guest: str = ''):
         kind, owner = _identity(request, guest)
         body = await request.json()
+        if body.get('action') == 'decline':
+            note_batches.decline(request_conn(),kind,owner,body.get('batch_id'))
+            return {'declined':True}
         note_batches.confirm(request_conn(),kind,owner,body.get('batch_id'),body.get('note_ids') or [],'notes')
         return {'confirmed':True}
 

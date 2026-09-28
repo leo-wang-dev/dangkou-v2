@@ -20,7 +20,9 @@
       <button @click="setMode('search')">查商品</button><button @click="setMode('notes')">记笔记</button>
       <button @click="newSession(true)">结束当前会话</button><button @click="manualBatch">手动切换档口</button>
       <label v-for="n in unassigned" :key="n.id"><checkbox :checked="selected.includes(n.id)" @click="toggleNote(n.id)" />关联待归属条目 {{ n.id }} {{ n.fields['型号或品名'] }}</label>
-      <button v-for="b in batches.filter(x=>x.state!=='unassigned')" :key="b.id" @click="confirmBatch(b.id)">{{ b.active ? '当前档口：' : '确认切换：' }}{{ b.fields['档口名称'] || '未命名档口' }}</button>
+      <button v-for="b in batches.filter(x=>['pending','confirmed'].includes(x.state))" :key="b.id" @click="confirmBatch(b.id)">{{ b.active ? '当前档口：' : '确认切换：' }}{{ b.fields['档口名称'] || '未命名档口' }}</button>
+      <button v-for="b in batches.filter(x=>x.state==='pending')" :key="'decline'+b.id" @click="confirmBatch(b.id,null,'decline')">不切换此名片：{{ b.fields['档口名称'] }}</button>
+      <view v-if="hasPending"><text>有一张照片待处理。请选择模式后重试，或明确放弃。</text><button @click="retryPhoto">重试待处理照片</button><button @click="discardPhoto">放弃待处理照片</button></view>
     </view>
     <scroll-view class="log" scroll-y :scroll-top="tail" scroll-with-animation>
       <view v-for="(m, i) in messages" :key="i" class="msg" :class="m.role === 'me' ? 'me' : 'bot'">
@@ -62,6 +64,7 @@ import NoteTable from '../../components/note-table.vue'
 const token = ref('')
 const visitor = ref('')
 let ready = Promise.resolve()
+const hasPending=ref(false)
 const photoMode=ref(''), batches=ref([]),unassigned=ref([]),selected=ref([])
 const input = ref('')
 const messages = ref([])
@@ -153,13 +156,33 @@ async function openList() {
 }
 
 function toggleNote(id){selected.value=selected.value.includes(id)?selected.value.filter(x=>x!==id):[...selected.value,id]}
-async function refreshSession(){const r=await csApi.session(token.value,visitor.value);if(!r.ok){tip(r.status===410?'会话已失效，请开始新会话':'会话加载失败');return}photoMode.value=r.data.photo_mode;batches.value=r.data.batches||[];unassigned.value=(r.data.notes||[]).filter(n=>['unassigned','legacy_unassigned'].includes(n.batch_state))}
+async function refreshSession(){const r=await csApi.session(token.value,visitor.value);if(!r.ok){tip(r.status===410?'会话已失效，请开始新会话':'会话加载失败');return}photoMode.value=r.data.photo_mode;hasPending.value=!!r.data.intent_required;batches.value=r.data.batches||[];unassigned.value=(r.data.notes||[]).filter(n=>['unassigned','legacy_unassigned'].includes(n.batch_state))}
 async function newSession(end=false){
-  if(end&&visitor.value){const r=await csApi.endSession(token.value,visitor.value);if(!r.ok&&r.status!==410){tip('结束会话失败');return}}
-  const r=await csApi.newSession(token.value);if(!r.ok){tip('初始化失败');return}visitor.value=r.data.visitor;storage.set('h5v:'+token.value,visitor.value);messages.value=[];drawer.value=false;selected.value=[];await refreshSession()
+  try{
+    if(end&&visitor.value){
+      const r=await csApi.endSession(token.value,visitor.value)
+      if(!r.ok&&![401,410].includes(r.status)){tip('结束会话失败');return}
+      visitor.value='';storage.remove('h5v:'+token.value)
+    }
+    const r=await csApi.newSession(token.value)
+    if(!r.ok||!r.data?.visitor){tip('初始化失败');return}
+    visitor.value=r.data.visitor;storage.set('h5v:'+token.value,visitor.value);messages.value=[];drawer.value=false;selected.value=[];await refreshSession()
+  }catch(e){tip('网络异常，请重试')}
 }
-async function setMode(mode){await ready;const r=await csApi.setMode(token.value,visitor.value,mode);if(r.data?.reply||r.data?.detail)bubble('bot',r.data.reply||r.data.detail);await refreshSession()}
-async function confirmBatch(id,fields=null){const r=await csApi.confirmBatch(token.value,visitor.value,id,selected.value,fields);if(!r.ok){tip(r.data?.detail||'切换失败');return}selected.value=[];await refreshSession()}
+async function setMode(mode){
+  await ready
+  try{const r=await csApi.setMode(token.value,visitor.value,mode);if(r.data?.reply||r.data?.detail)bubble('bot',r.data.reply||r.data.detail);if(!r.ok)tip('照片处理失败，可重试或放弃待处理照片')}
+  catch(e){tip('网络异常，请重试')}
+  finally{await refreshSession()}
+}
+async function retryPhoto(){if(!photoMode.value){tip('请先选择查商品或记笔记');return}await setMode(photoMode.value)}
+async function discardPhoto(){
+  await ready
+  try{const r=await csApi.discardPhoto(token.value,visitor.value);if(!r.ok)tip('放弃失败，请重试')}
+  catch(e){tip('网络异常，请重试')}
+  finally{await refreshSession()}
+}
+async function confirmBatch(id,fields=null,action='confirm'){const r=await csApi.confirmBatch(token.value,visitor.value,id,selected.value,fields,action);if(!r.ok){tip(r.data?.detail||'切换失败');return}selected.value=[];await refreshSession()}
 function manualBatch(){uni.showModal({title:'新档口名称',editable:true,success:r=>{if(r.confirm&&r.content)confirmBatch(null,{'档口名称':r.content})}})}
 
 onLoad((options) => {

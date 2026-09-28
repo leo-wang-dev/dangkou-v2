@@ -16,8 +16,12 @@ def test_issued_photo_intent_and_explicit_card_association(h5, monkeypatch):
     from fastapi.staticfiles import StaticFiles
     app.mount('/',StaticFiles(directory=str(Path(__file__).resolve().parents[2]/'static'),html=True),name='static')
     calls=[]
+    fail_once=[True]
     def vision(*args,**kwargs):
         calls.append(1)
+        if fail_once[0]:
+            fail_once[0]=False
+            raise RuntimeError('offline first-photo failure')
         return json.dumps([{'型号或品名':'Browser Goods'},{'名片':{'档口名称':'Browser Card'}}])
     monkeypatch.setattr(llm,'chat_vision',vision)
     with socket.socket() as sock:
@@ -38,7 +42,16 @@ def test_issued_photo_intent_and_explicit_card_association(h5, monkeypatch):
                 page.locator('#file').set_input_files({'name':'goods.jpg','mimeType':'image/jpeg','buffer':photo})
             assert response.value.json()['status']=='intent_required'
             assert not calls
-            page.get_by_role('button',name='记笔记',exact=True).click()
+            with page.expect_response(lambda r:r.url.endswith('/mode')) as failed:
+                page.get_by_role('button',name='记笔记',exact=True).click()
+            assert failed.value.status==500
+            page.reload()
+            expect(page.locator('#pending-photo')).to_be_visible()
+            with page.expect_response(lambda r:r.url.endswith('/photo')) as blocked:
+                page.locator('#file').set_input_files({'name':'second.jpg','mimeType':'image/jpeg','buffer':photo})
+            assert blocked.value.status==409
+            page.get_by_role('button',name='重试待处理照片',exact=True).click()
+            expect(page.locator('#pending-photo')).to_be_hidden()
             expect(page.locator('#photo-mode')).to_have_text('图片模式：记笔记')
             expect(page.locator('#batches input')).to_have_count(1)
             page.locator('#batches input').check()
@@ -56,6 +69,11 @@ def test_issued_photo_intent_and_explicit_card_association(h5, monkeypatch):
             page.get_by_role('button',name='结束当前会话',exact=True).click()
             expect(page.locator('#photo-mode')).to_have_text('图片模式：待选择')
             expect(page.locator('#batches')).to_be_empty()
+            with page.expect_response(lambda r:r.url.endswith('/photo')):
+                page.locator('#file').set_input_files({'name':'discard.jpg','mimeType':'image/jpeg','buffer':photo})
+            expect(page.locator('#pending-photo')).to_be_visible()
+            page.get_by_role('button',name='放弃待处理照片',exact=True).click()
+            expect(page.locator('#pending-photo')).to_be_hidden()
             browser.close()
     finally:
         server.should_exit=True;thread.join(timeout=10)

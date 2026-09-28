@@ -126,3 +126,54 @@ def test_double_pending_mode_submission_has_one_effect(h5, monkeypatch):
         assert sorted(f.result().status_code for f in futures)==[200,409]
     assert app.state.conn.execute('SELECT count(*) FROM cs_note').fetchone()[0]==1
     assert len(list((database.parent/'photos').glob('*')))==1
+
+
+import pytest
+
+@pytest.mark.parametrize('mode', ['search','notes'])
+@pytest.mark.parametrize('rule_scope', ['', 'shop', 'product'])
+def test_unique_local_catalog_match_photo_policy_uses_product_id(h5, monkeypatch, mode, rule_scope):
+    from tests.conftest import seed_products
+    app,_,photo=h5
+    seed_products(app.state.conn,[{'id':'unique-product','inner_code':'UNIQUE-1','cs_visible':1,'data':{'model':'UNIQUE-1'}}])
+    if rule_scope:
+        app.state.conn.execute("INSERT INTO cs_redline(product_id,text_raw,text_summary) VALUES(?,?,?)",
+                               ('unique-product' if rule_scope=='product' else '', '该照片需商家确认','该照片需商家确认'))
+    app.state.conn.commit()
+    def vision(prompt,*a,**kw):
+        return 'TRANSFER' if '规则匹配' in prompt else json.dumps([{'型号或品名':'UNIQUE-1'}])
+    monkeypatch.setattr(llm,'chat_vision',vision)
+    with TestClient(app,raise_server_exceptions=False) as c:
+        guest=c.post('/cs/chat/test-shop/session').json()['visitor']
+        c.post('/cs/chat/test-shop/mode',json={'visitor':guest,'mode':mode})
+        r=c.post('/cs/chat/test-shop/photo',data={'visitor':guest},files={'file':('p.jpg',photo)})
+        assert r.status_code==200, r.text
+    assert app.state.conn.execute('SELECT count(*) FROM cs_outbox').fetchone()[0]==bool(rule_scope)
+    assert app.state.conn.execute('SELECT count(*) FROM cs_note').fetchone()[0]==(mode=='notes' and not rule_scope)
+
+
+def test_failed_retained_photo_blocks_new_upload_until_retry_or_discard(h5, monkeypatch):
+    app,_,photo=h5
+    with TestClient(app,raise_server_exceptions=False) as c:
+        guest=c.post('/cs/chat/test-shop/session').json()['visitor']
+        c.post('/cs/chat/test-shop/photo',data={'visitor':guest},files={'file':('first.jpg',photo)})
+        def fail(*a,**kw):raise RuntimeError('offline vision failure')
+        monkeypatch.setattr(llm,'chat_vision',fail)
+        assert c.post('/cs/chat/test-shop/mode',json={'visitor':guest,'mode':'notes'}).status_code==500
+        pending=app.state.conn.execute('SELECT pending_photo FROM guest_sessions WHERE token_hash=?',(__import__('catalog.guest_sessions',fromlist=['digest']).digest(guest),)).fetchone()[0]
+        monkeypatch.setattr(llm,'chat_vision',lambda *a,**kw:json.dumps([{'型号或品名':'First recovered'}]))
+        assert c.post('/cs/chat/test-shop/photo',data={'visitor':guest},files={'file':('second.jpg',photo)}).status_code==409
+        assert app.state.conn.execute('SELECT pending_photo FROM guest_sessions WHERE token_hash=?',(__import__('catalog.guest_sessions',fromlist=['digest']).digest(guest),)).fetchone()[0]==pending
+        assert c.get('/cs/chat/test-shop/session',params={'visitor':guest}).json()['intent_required']
+        assert app.state.conn.execute('SELECT count(*) FROM cs_note').fetchone()[0]==0
+        assert c.post('/cs/chat/test-shop/mode',json={'visitor':guest,'mode':'notes'}).status_code==200
+        assert not c.get('/cs/chat/test-shop/session',params={'visitor':guest}).json()['intent_required']
+        assert app.state.conn.execute('SELECT count(*) FROM cs_note').fetchone()[0]==1
+        import os
+        assert not os.path.exists(pending)
+        # An explicit discard can also resolve a failed retained upload.
+        c.post('/cs/chat/test-shop/session/end',json={'visitor':guest})
+        guest=c.post('/cs/chat/test-shop/session').json()['visitor']
+        c.post('/cs/chat/test-shop/photo',data={'visitor':guest},files={'file':('third.jpg',photo)})
+        assert c.post('/cs/chat/test-shop/pending-photo/discard',json={'visitor':guest}).status_code==200
+        assert not c.get('/cs/chat/test-shop/session',params={'visitor':guest}).json()['intent_required']

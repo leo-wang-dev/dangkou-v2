@@ -72,7 +72,7 @@ def _photo(bot, cust, data=b'fake-jpeg-bytes'):
     return bot._on_photo(cust, None, prepared=prepared)
 
 
-def _export(conn, bot, cust):
+def _export(conn, bot, cust, workbook=False):
     """出表：_make_link 生成 cs_link，再走页面导出接口拿 Excel。"""
     reply = bot._make_link(cust)
     row = conn.execute('SELECT token FROM cs_link WHERE customer_id=?',
@@ -88,7 +88,8 @@ def _export(conn, bot, cust):
     with TestClient(app) as client:
         response = client.get(f"/cs/link/{row['token']}/export.xlsx")
     assert response.status_code == 200
-    return reply, openpyxl.load_workbook(io.BytesIO(response.content)).active
+    result = openpyxl.load_workbook(io.BytesIO(response.content))
+    return reply, result if workbook else result.active
 
 
 # ---------- 语言候选（删A：只留中文/English，检测与翻译机制保留） ----------
@@ -312,9 +313,8 @@ def test_assign_different_suppliers_and_export_without_cross_customer_changes(bo
     bot._on_text(cust, '清单第3条 档口：B档口')
     bot._on_text(cust, '清单第1、2条 档口号/地址：二区10号')
     bot._on_text(cust, '清单第3条 供应商联系方式：微信 test-only')
-    from catalog.cs_export import render_notes
-    from catalog.shop_link import snapshot
-    workbook = openpyxl.load_workbook(io.BytesIO(render_notes([snapshot(conn,n) for n in conn.execute("SELECT * FROM cs_note WHERE customer_id=? ORDER BY id",(cust['id'],))])))
+    reply, workbook = _export(conn, bot, cust, workbook=True)
+    assert '清单' in reply
     rows = []
     for sheet in workbook:
         values = list(sheet.values)

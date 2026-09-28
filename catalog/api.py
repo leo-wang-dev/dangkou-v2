@@ -1281,6 +1281,9 @@ def register_routes(app: FastAPI):
         bid = body.get('batch_id')
         if body.get('fields'):
             bid = note_batches.create(request_conn(),'guest',cust['id'],body['fields'],'pending','manual')
+        if body.get('action') == 'decline':
+            note_batches.decline(request_conn(),'guest',cust['id'],bid)
+            return {'declined':True}
         note_batches.confirm(request_conn(),'guest',cust['id'],bid,body.get('note_ids') or [],'cs_note')
         return {'confirmed':True}
 
@@ -1328,6 +1331,8 @@ def register_routes(app: FastAPI):
         rule = merchant_policy.photo_rule(bot, data, found)
         request_conn().execute('BEGIN IMMEDIATE')
         current = guest_sessions.validate(request_conn(),visitor)
+        if not pending_path and current['pending_photo']:
+            raise HTTPException(409,'pending_photo_requires_resolution')
         if pending_path and current['pending_photo'] != pending_path:
             raise HTTPException(409,'pending_photo_already_processed')
         if current['photo_mode'] != mode:
@@ -1341,7 +1346,8 @@ def register_routes(app: FastAPI):
                      if found else '尚未匹配到本店在线商品，请补充型号或联系商家。')
         else:
             reply = bot._on_photo(cust,None,prepared=(path,items,[],cards), notes_only=True)
-        request_conn().execute("UPDATE guest_sessions SET pending_photo='' WHERE token_hash=?",(session['token_hash'],))
+        if pending_path:
+            request_conn().execute("UPDATE guest_sessions SET pending_photo='' WHERE token_hash=? AND pending_photo=?",(session['token_hash'],pending_path))
         request_conn().execute("INSERT INTO cs_link(token,customer_id) VALUES(?,?)", (secrets.token_urlsafe(24),cust['id']))
         return {'reply':reply,'photo_mode':mode,'batches':note_batches.listing(request_conn(),'guest',cust['id'])}
 
@@ -1361,6 +1367,17 @@ def register_routes(app: FastAPI):
             return await run_request_worker(request,lambda:_process_guest_photo(request,visitor,data,mode,session['pending_photo']),model=True)
         return {'photo_mode':mode}
 
+    @app.post('/cs/chat/{token}/pending-photo/discard')
+    def discard_pending_photo(token: str, body: dict, request: Request):
+        _chat_conn(token)
+        session = _session(request, str(body.get('visitor') or ''))
+        pending = session['pending_photo']
+        discarded = False
+        if pending:
+            request.state.created_photos = [pending]
+            discarded = bool(request_conn().execute("UPDATE guest_sessions SET pending_photo='' WHERE token_hash=? AND pending_photo=?",(session['token_hash'],pending)).rowcount)
+        return {'discarded':discarded}
+
     @app.post('/cs/chat/{token}/photo')
     async def cs_chat_photo(token: str, request: Request):
         _chat_conn(token)
@@ -1373,9 +1390,9 @@ def register_routes(app: FastAPI):
         data = await up.read()
         if not data:
             raise HTTPException(400,'文件为空')
+        if session['pending_photo']:
+            raise HTTPException(409,'pending_photo_requires_resolution')
         if not session['photo_mode']:
-            if session['pending_photo']:
-                raise HTTPException(409,'pending_photo_requires_intent')
             from .cs_chat import H5Bot
             bot = H5Bot(request_conn(),api=None)
             path = os.path.join(bot.img_dir,'pending_'+secrets.token_hex(16)+'.jpg')

@@ -199,16 +199,20 @@ async function exportXlsx(){
   }catch(e){ tip('网络异常，请重试'); }
 }
 async function newSession(end=false){
-  if (end && !TOKEN && GUEST) {
-    const r = await fetch('session/end', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guest:GUEST})});
-    if (!r.ok && r.status !== 410) { tip('结束会话失败'); return; }
-  }
   if (TOKEN) { tip('请先退出登录'); return; }
-  const r = await fetch('guest',{method:'POST'}); const d = await r.json();
-  GUEST=d.guest; sessionStorage.setItem('ut_guest',GUEST);
-  document.getElementById('log').replaceChildren();
-  document.getElementById('batches').replaceChildren();
-  document.getElementById('dlist').replaceChildren(); closeList();
+  try {
+    if (end && GUEST) {
+      const ended = await fetch('session/end', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guest:GUEST})});
+      if (!ended.ok && ![401,410].includes(ended.status)) { tip('结束会话失败'); return; }
+      GUEST=''; sessionStorage.removeItem('ut_guest');
+    }
+    const r=await fetch('guest',{method:'POST'}), d=await r.json();
+    if(!r.ok || !d.guest){tip('新会话创建失败，请重试');return;}
+    GUEST=d.guest; sessionStorage.setItem('ut_guest',GUEST);
+    document.getElementById('log').replaceChildren();
+    document.getElementById('batches').replaceChildren();
+    document.getElementById('dlist').replaceChildren(); closeList();
+  } catch(e) { tip('网络异常，请重试'); }
 }
 async function refreshBatches(){
   const r=await fetch('notes'+q(),auth({method:'POST'}));
@@ -222,14 +226,15 @@ function renderBatches(d){
     const label=document.createElement('label'), check=document.createElement('input');check.type='checkbox';check.value=n.id;
     label.append(check,document.createTextNode('关联待归属条目 '+n.id+' '+(n.fields['型号或品名']||'')));el.append(label);
   }
-  for(const b of d.batches||[]){if(b.state==='unassigned')continue;
+  for(const b of d.batches||[]){if(!['pending','confirmed'].includes(b.state))continue;
     const btn=document.createElement('button');btn.textContent=(b.active?'当前档口：':'确认切换：')+(b.fields['档口名称']||'未命名档口');
     btn.onclick=()=>confirmBatch(b.id);el.append(btn);
+    if(b.state==='pending'){const decline=document.createElement('button');decline.textContent='不切换此名片';decline.onclick=()=>confirmBatch(b.id,null,'decline');el.append(decline);}
   }
 }
-async function confirmBatch(batch_id,fields=null){
+async function confirmBatch(batch_id,fields=null,action='confirm'){
   const note_ids=Array.from(document.querySelectorAll('#batches input:checked'),x=>Number(x.value));
-  const r=await fetch((fields?'batches':'batches/confirm')+q(),auth({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({batch_id,note_ids,fields})}));
+  const r=await fetch((fields?'batches':'batches/confirm')+q(),auth({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({batch_id,note_ids,fields,action})}));
   if(!r.ok){tip((await r.json()).detail||'切换失败');return;} await refreshBatches();
 }
 async function manualBatch(){const name=prompt('新档口名称（仅用于后续照片和勾选的待归属条目）');if(name)await confirmBatch(null,{'档口名称':name});}

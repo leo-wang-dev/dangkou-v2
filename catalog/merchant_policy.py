@@ -342,7 +342,7 @@ def photo_rule(bot, data, candidates):
     policy = read(bot.conn) or {}
     if policy.get('wechat_managed') or not policy:
         # A product-specific rule is applicable only after unique catalog resolution.
-        pid = candidates[0]['id'] if len(candidates) == 1 else None
+        pid = candidates[0]['product_id'] if len(candidates) == 1 else None
         rule = cs.get_redline(bot.conn, pid)['text_raw'].strip()
         if rule:
             rules.append(rule)
