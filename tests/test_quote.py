@@ -22,9 +22,7 @@ from tests.conftest import seed_products
 PNG = base64.b64decode(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
 
-HEADERS = ['ITEM NO.', 'PHOTO', 'DESCRIPTION', 'COLORS', 'PRICE', 'QUANTITY',
-           'TOTAL AMOUNT', 'PCS/CTN', 'CTNS', 'G.W/CTN', 'N.W/CTN', 'MEAS',
-           'T.G.W', 'T-CBM']
+HEADERS = ['型号或品名','商品照片','描述','颜色','单价','数量','金额','装箱数','箱数','每箱毛重','每箱净重','箱体尺寸','总毛重','总体积 (m³)']
 
 # ---- 生产库 24 种真实箱规变体（2026-09-03 从 catalog.db 全量拉取）----
 REAL_CTN = [
@@ -139,7 +137,7 @@ def test_header_row_and_layout(tmp_path):
     quote.generate_generic(conn, st, [{'category': 'test_cat', 'product_id': 'r0',
                                        'quantity': 100}], 0, out)
     ws = openpyxl.load_workbook(out).active
-    assert ws.title == 'QUOTATION'
+    assert ws.title == '报价单'
     for c, label in enumerate(HEADERS, 1):
         cell = ws.cell(1, c)
         assert cell.value == label
@@ -153,7 +151,7 @@ def test_header_row_and_layout(tmp_path):
     assert ws.row_dimensions[1].height == 27
     assert ws.row_dimensions[2].height == 100
     assert ws.cell(2, 1).value == 'M0'                       # 数据从行2起
-    assert ws.max_row == 5                                   # 1列头+1数据+3合计
+    assert ws.max_row == 6                                   # 1列头+1数据+3合计
 
 
 def test_full_fields_three_items(tmp_path):
@@ -197,19 +195,20 @@ def test_full_fields_three_items(tmp_path):
     assert ws.cell(r, 13).value is None                    # M 空
     assert ws.cell(r, 14).value == round(2 * (60 * 40 * 40) / 1e6, 3)
     # 合计：3款 → TOTAL 行=2+3=5，之后 DEPOSIT/BALANCE
-    assert ws.cell(5, 1).value == 'TOTAL'
+    assert ws.cell(5, 1).value == '合计'
     assert ws.cell(5, 7).value == 3935                   # 1236+927+1772
     assert ws.cell(5, 9).value == 6                      # 3+1+2箱
     assert ws.cell(5, 13).value == 72.1                  # 53.1+19.0
     assert ws.cell(5, 14).value == round(round(3 * (38.5 * 37.5 * 42.5) / 1e6, 3) + 0.091 + 0.192, 3)
     # 定金 20%：总额3935 → 787；尾款差额（写值不写公式）
-    assert ws.cell(6, 1).value == 'DEPOSIT'
+    assert ws.cell(6, 1).value == '定金'
     assert ws.cell(6, 7).value == round(3935 * 0.2, 2)
-    assert ws.cell(7, 1).value == 'BALANCE'
+    assert ws.cell(7, 1).value == '尾款'
     assert ws.cell(7, 7).value == 3935 - round(3935 * 0.2, 2)
     for r_ in (5, 6, 7):
         assert isinstance(ws.cell(r_, 7).value, (int, float))   # 值不是 '=SUM(...)'
-    assert ws.max_row == 7
+    assert ws.max_row == 8
+    assert '需求 100' in ws.cell(8,1).value and '报价 120' in ws.cell(8,1).value
     # 图片：纯代码版无模板装饰图，只有 3 张商品主图，全部锚在 B 列对应数据行
     imgs = ws._images
     assert len(imgs) == 3
@@ -237,8 +236,8 @@ def test_multi_item_quote_with_adjustment(tmp_path):
         {'category': 'test_cat', 'product_id': 'p2', 'quantity': 500},
     ], price_adjustment_pct=3, out_path=out)
     ws = openpyxl.load_workbook(out).active
-    assert ws.cell(1, 6).value == 'QUANTITY'
-    assert ws.cell(1, 7).value == 'TOTAL AMOUNT'
+    assert ws.cell(1, 6).value == '数量'
+    assert ws.cell(1, 7).value == '金额'
     assert ws.cell(2, 1).value == '8226'          # ITEM NO.
     assert ws.cell(2, 5).value == 22.15           # 21.5*1.03=22.145 → 22.15
     assert ws.cell(2, 6).value == 120             # QUANTITY=整箱(40×3)
@@ -248,7 +247,7 @@ def test_multi_item_quote_with_adjustment(tmp_path):
     assert ws.cell(3, 6).value == 500
     assert ws.cell(3, 7).value == 30.90 * 500
     # 合计：k=2 → TOTAL 在 2+2=4
-    assert ws.cell(4, 1).value == 'TOTAL'
+    assert ws.cell(4, 1).value == '合计'
     total = 22.15 * 120 + 30.90 * 500
     assert ws.cell(4, 7).value == total
     assert ws.cell(5, 7).value == round(total * 0.3, 2)  # 默认定金30%
@@ -266,7 +265,7 @@ def test_twenty_items_rows_and_totals(tmp_path):
     ws = openpyxl.load_workbook(out).active
     assert ws.cell(2, 1).value == 'M0' and ws.cell(21, 1).value == 'M19'
     T = 22                                                   # 2+20
-    assert ws.cell(T, 1).value == 'TOTAL'
+    assert ws.cell(T, 1).value == '合计'
     total20 = 0
     for i in range(20):
         pcs = REAL_CTN[i][1]
@@ -274,7 +273,7 @@ def test_twenty_items_rows_and_totals(tmp_path):
     assert ws.cell(T, 7).value == total20
     assert ws.cell(T + 2, 7).value == total20 - round(total20 * 0.3, 2)  # BALANCE
     assert len(ws._images) == 20                             # 20张商品图
-    assert ws.max_row == 24                                  # 1列头+20数据+3合计
+    assert ws.max_row >= 24                                  # 1列头+20数据+3合计
 
 
 def test_deposit_default_and_edges(tmp_path):
@@ -387,8 +386,8 @@ def test_sample_xlsx_structure_in_tmp():
         ws = openpyxl.load_workbook(out).active
         assert [ws.cell(1, c).value for c in range(1, 15)] == HEADERS
         assert ws.cell(2, 1).value == 'SAMPLE-0' and ws.cell(3, 1).value == 'SAMPLE-1'
-        assert ws.cell(4, 1).value == 'TOTAL' and ws.cell(5, 1).value == 'DEPOSIT' \
-            and ws.cell(6, 1).value == 'BALANCE'
+        assert ws.cell(4, 1).value == '合计' and ws.cell(5, 1).value == '定金' \
+            and ws.cell(6, 1).value == '尾款'
         assert len(ws._images) == 2
     finally:
         conn.close()

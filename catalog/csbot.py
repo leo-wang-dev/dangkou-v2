@@ -429,7 +429,7 @@ class CsBot:
         if product:
             system += '\n当前商品型号：' + product['name']
         lang = self._cust_lang(cust)
-        if lang and lang != '中文':
+        if cs_i18n.normalize_language(lang) != 'zh':
             system += f'\n回复必须使用「{lang}」书写。'
         # The model only judges policy. It cannot author a customer-facing price.
         system += '\n未命中红线时只输出 <<PASS>>，不要报价或提供任何数字。'

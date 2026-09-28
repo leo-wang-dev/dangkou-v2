@@ -217,12 +217,13 @@ export async function apply(ctx, _config = {}) {
           },
         },
         price_adjustment_pct: { type: 'number', description: '价格调整百分比，正=上浮负=下浮' },
+        target_language: { type: 'string', enum: ['zh','en','fr','es','pt','ru','ar','de','ja','ko','vi','th','id'], description: '客户报价文件语言，默认 zh；商家通知保持中文' },
         depositPercent: { type: 'number', description: '定金百分比（30=30%），用户说了定金比例才传，默认30' },
       },
       required: ['items'],
     },
     output: OUT,
-    async execute({ items, price_adjustment_pct, depositPercent }) {
+    async execute({ items, price_adjustment_pct, depositPercent, target_language }) {
       if (!Array.isArray(items) || items.length === 0) throw new Error('至少选择一款商品')
       if (items.length > 200) throw new Error('单次报价最多 200 款商品')
       for (const item of items) {
@@ -248,6 +249,7 @@ export async function apply(ctx, _config = {}) {
         })),
         price_adjustment_pct: price_adjustment_pct ?? 0,
         deposit_pct: depositPercent ?? 30,
+        target_language: target_language ?? "zh",
       })
       return JSON.stringify({ path: r.path, items: r.items || [], quantity_adjustment_note: r.quantity_adjustment_note || '',
         note: `报价单已生成（${items?.length || 0} 款，调整 ${price_adjustment_pct ?? 0}%，定金 ${depositPercent ?? 30}%），系统自动推送。${r.quantity_adjustment_note || ''}` })

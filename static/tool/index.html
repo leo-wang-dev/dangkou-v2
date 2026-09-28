@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>拍照清单工具</title>
+<title data-i18n="photoToolTitle" data-icon="">拍照清单工具</title>
 <style>
   body{font-family:-apple-system,"PingFang SC",sans-serif;margin:0;background:#f5f6f8;color:#222;display:flex;flex-direction:column;height:100vh}
   header{background:#1677ff;color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px}
@@ -41,31 +41,36 @@
   .session-controls button,#batches button{border:1px solid #ddd;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;color:#245b9c}
   #batches{max-height:160px;overflow:auto;flex-shrink:0}#batches:empty{display:none}#batches label{width:100%}
 </style>
-</head>
+<style>.customer-language{display:flex;gap:10px;align-items:center;padding:8px 16px;background:#fff}.customer-language select{max-width:180px}html[dir=rtl] body{text-align:right}html[dir=rtl] th,html[dir=rtl] td{text-align:start}td[contenteditable],.msg,.f{unicode-bidi:plaintext}html[dir=rtl] .msg.me{align-self:flex-start}html[dir=rtl] .msg.bot{align-self:flex-end}</style></head>
 <body>
-<header><b>📷 拍照清单</b><span id="who"></span><button id="loginbtn" onclick="toggleLogin()">登录</button></header>
+<header><b data-i18n="photoListFileBase" data-icon="📷 ">📷 拍照清单</b><span id="who"></span><button id="loginbtn" onclick="toggleLogin()" data-i18n="login" data-icon="">登录</button></header>
 <div id="loginbar">
-  <div class="row"><input id="email" type="email" placeholder="邮箱" autocomplete="email"><button id="sendbtn" onclick="sendCode()">发验证码</button></div>
-  <div class="row"><input id="code" type="text" placeholder="6位验证码" autocomplete="one-time-code" inputmode="numeric"><button id="verifybtn" onclick="doLogin()" disabled>登录</button></div>
-  <div id="loginhint">登录后清单会挂到您的账号；未登录也可直接用（游客模式）。</div>
+  <div class="row"><input id="email" type="email" placeholder="邮箱" data-i18n-placeholder="email" autocomplete="email"><button id="sendbtn" onclick="sendCode()" data-i18n="sendCodeShort" data-icon="">发验证码</button></div>
+  <div class="row"><input id="code" type="text" placeholder="6位验证码" data-i18n-placeholder="verificationCode" autocomplete="one-time-code" inputmode="numeric"><button id="verifybtn" onclick="doLogin()" disabled data-i18n="login" data-icon="">登录</button></div>
+  <div id="loginhint" data-i18n="loginHint" data-icon="">登录后清单会挂到您的账号；未登录也可直接用（游客模式）。</div>
 </div>
-<div class="session-controls"><button onclick="newSession(true)">结束当前会话</button><button onclick="manualBatch()">手动切换档口</button></div><div id="batches"></div><div id="log"></div>
+<div class="session-controls"><button onclick="newSession(true)" data-i18n="endSession" data-icon="">结束当前会话</button><button onclick="manualBatch()" data-i18n="manualSwitchShop" data-icon="">手动切换档口</button></div><div id="batches"></div><div id="log"></div>
 <nav>
-  <button onclick="document.getElementById('file').click()">📷 拍照</button>
-  <button class="ghost" onclick="openList()">📋 清单</button>
-  <button class="ghost" onclick="exportXlsx()">⬇ Excel</button>
+  <button onclick="document.getElementById('file').click()" data-i18n="takePhoto" data-icon="📷 ">📷 拍照</button>
+  <button class="ghost" onclick="openList()" data-i18n="listShort" data-icon="📋 ">📋 清单</button>
+  <button class="ghost" onclick="exportXlsx()" data-i18n="exportExcel" data-icon="⬇ ">⬇ Excel</button>
 </nav>
 <input id="file" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
 <div id="tip"></div>
 <div id="drawer" hidden>
   <div class="mask" onclick="closeList()"></div>
   <aside>
-    <div class="dhead"><b>📋 我的清单</b><button class="ghost" onclick="openList()">↻ 刷新</button><button onclick="closeList()">✕ 关闭</button></div>
-    <div id="dempty" hidden>还没有条目——拍几张照片，识别后会自动进清单。</div>
+    <div class="dhead"><b data-i18n="myShortList" data-icon="📋 ">📋 我的清单</b><button class="ghost" onclick="openList()" data-i18n="refresh" data-icon="↻ ">↻ 刷新</button><button onclick="closeList()" data-i18n="close" data-icon="✕ ">✕ 关闭</button></div>
+    <div id="dempty" hidden data-i18n="toolListEmpty" data-icon="">还没有条目——拍几张照片，识别后会自动进清单。</div>
     <div id="dlist"></div>
   </aside>
 </div>
+<script src="customer-catalog.js"></script>
+<script src="customer-sources.js"></script>
+<script src="customer-i18n.js"></script>
 <script>
+const {t,label,display,request:customerFetch}=CustomerI18n;
+
 let GUEST = sessionStorage.getItem('ut_guest') || '';
 let TOKEN = localStorage.getItem('ut_token') || '';
 let EMAIL = localStorage.getItem('ut_email') || '';
@@ -86,65 +91,65 @@ function auth(opts){
 function renderWho(){
   const who = document.getElementById('who');
   const btn = document.getElementById('loginbtn');
-  if (TOKEN) { who.textContent = EMAIL; btn.textContent = '退出'; }
-  else { who.textContent = '游客模式'; btn.textContent = '登录'; }
+  if (TOKEN) { who.textContent = EMAIL; btn.textContent = t('logoutShort'); }
+  else { who.textContent = t('guestMode'); btn.textContent = t('login'); }
   document.getElementById('loginbar').style.display = 'none';
 }
 async function toggleLogin(){
   const bar = document.getElementById('loginbar');
   if (TOKEN) {   // 退出登录 → 回游客模式（原游客记录还在）
-    const ended = await fetch('session/end', auth({method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}));
-    if (!ended.ok) { tip('退出失败，请重试'); return; }
+    const ended = await customerFetch('session/end', auth({method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}));
+    if (!ended.ok) { tip(t('networkError')); return; }
     TOKEN = ''; EMAIL = '';
     await newSession();
     localStorage.removeItem('ut_token'); localStorage.removeItem('ut_email');
-    renderWho(); bubble('bot', '已退出登录，回到游客模式。');
+    renderWho(); bubble('bot', t('signedOutGuest'));
     return;
   }
   bar.style.display = bar.style.display === 'flex' ? 'none' : 'flex';
 }
 async function sendCode(){
   const email = document.getElementById('email').value.trim();
-  if (!email) { tip('请输入邮箱'); return; }
+  if (!email) { tip(t('enterEmail')); return; }
   document.getElementById('sendbtn').disabled = true;
   try{
-    const r = await fetch('auth/code', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email})});
+    const r = await customerFetch('auth/code', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email})});
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) { tip(d.detail || '发送失败'); return; }
-    tip('验证码已发送，请查收邮箱（10分钟内有效）');
+    if (!r.ok) { tip(d.detail || t('sendError')); return; }
+    tip(t('codeSent'));
     document.getElementById('verifybtn').disabled = false;
-  }catch(e){ tip('网络异常，请重试'); }
+  }catch(e){ tip(t('networkError')); }
   finally{ document.getElementById('sendbtn').disabled = false; }
 }
 async function doLogin(){
   const email = document.getElementById('email').value.trim();
   const code = document.getElementById('code').value.trim();
-  if (!email || !code) { tip('请输入邮箱和验证码'); return; }
+  if (!email || !code) { tip(t('enterEmailCode')); return; }
   document.getElementById('verifybtn').disabled = true;
   try{
-    const r = await fetch('auth/verify', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    const r = await customerFetch('auth/verify', {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({email, code, guest: TOKEN ? '' : GUEST})});
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) { tip(d.detail || '登录失败'); return; }
+    if (!r.ok) { tip(d.detail || t('loginError')); return; }
     TOKEN = d.token; EMAIL = d.email; GUEST = ''; sessionStorage.removeItem('ut_guest');
     localStorage.setItem('ut_token', TOKEN); localStorage.setItem('ut_email', EMAIL);
     renderWho();
-    bubble('bot', '登录成功，邮箱 ' + EMAIL + '；刚才游客模式下的记录已合并到您的账号。');
-  }catch(e){ tip('网络异常，请重试'); }
+    bubble('bot', t('loginMergedDetailed',{email:EMAIL}));
+  }catch(e){ tip(t('networkError')); }
   finally{ document.getElementById('verifybtn').disabled = false; }
 }
 async function photo(input){
   const f = input.files[0]; input.value = '';
   if (!f) return;
-  bubble('me', '📷 ' + (f.name || '照片'));
-  tip('识别中…');
+  bubble('me', '📷 ' + (f.name || t('photo')));
+  tip(t('recognizing'));
   const fd = new FormData(); fd.append('file', f); fd.append('owner', GUEST);
   try{
-    const r = await fetch('photo', auth({method: 'POST', body: fd}));
+    const r = await customerFetch('photo', auth({method: 'POST', body: fd}));
     const d = await r.json().catch(() => ({}));
     bubble('bot', d.reply || d.detail || '…');
     await refreshBatches();
-  }catch(e){ tip('上传失败，请重试'); }
+  }catch(e){ tip(t('uploadError')); }
 }
 async function openList(){
   document.getElementById('drawer').hidden = false;
@@ -152,9 +157,9 @@ async function openList(){
   const empty = document.getElementById('dempty');
   list.innerHTML = ''; empty.hidden = true;
   try{
-    const r = await fetch('notes' + q(), auth({method: 'POST'}));
+    const r = await customerFetch('notes' + q(), auth({method: 'POST'}));
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) { tip(d.detail || '加载失败'); return; }
+    if (!r.ok) { tip(d.detail || t('loadError')); return; }
     const notes = d.notes || [];
     if (!notes.length) { empty.hidden = false; return; }
     notes.forEach((n, i) => {
@@ -163,13 +168,13 @@ async function openList(){
       if (n.photo) {
         const img = document.createElement('img');
         img.loading = 'lazy';
-        img.alt = '照片';
+        img.alt = t('photo');
         img.src = 'notes/' + n.id + '/photo' + (TOKEN ? '?token=' + encodeURIComponent(TOKEN) : '?guest=' + encodeURIComponent(GUEST));
         div.appendChild(img);
       }
       const fields = Object.entries(n.fields || {})
         .filter(([k]) => k !== '__图框__')
-        .map(([k, v]) => k + '=' + v).join('\n');
+        .map(([k, v]) => label(k) + '=' + display(v)).join('\n');
       const wrap = document.createElement('div');
       wrap.className = 'f';
       wrap.textContent = '【' + (i + 1) + '】\n' + fields;
@@ -180,7 +185,7 @@ async function openList(){
       div.appendChild(wrap);
       list.appendChild(div);
     });
-  }catch(e){ tip('网络异常，请重试'); }
+  }catch(e){ tip(t('networkError')); }
 }
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -188,35 +193,35 @@ function escapeHtml(s){
 function closeList(){ document.getElementById('drawer').hidden = true; }
 async function exportXlsx(){
   try{
-    const r = await fetch('export.xlsx' + q(), auth());
-    if (!r.ok) { const d = await r.json().catch(() => ({})); tip(d.detail || '导出失败'); return; }
+    const r = await customerFetch('export.xlsx' + q(), auth());
+    if (!r.ok) { const d = await r.json().catch(() => ({})); tip(d.detail || t('exportError')); return; }
     const blob = await r.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = '拍照清单.xlsx';
+    a.download = t('photoListFileBase');
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  }catch(e){ tip('网络异常，请重试'); }
+  }catch(e){ tip(t('networkError')); }
 }
 async function newSession(end=false){
-  if (TOKEN) { tip('请先退出登录'); return; }
+  if (TOKEN) { tip(t('logout')); return; }
   try {
     if (end && GUEST) {
-      const ended = await fetch('session/end', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guest:GUEST})});
-      if (!ended.ok && ![401,410].includes(ended.status)) { tip('结束会话失败'); return; }
+      const ended = await customerFetch('session/end', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guest:GUEST})});
+      if (!ended.ok && ![401,410].includes(ended.status)) { tip(t('networkError')); return; }
       GUEST=''; sessionStorage.removeItem('ut_guest');
     }
-    const r=await fetch('guest',{method:'POST'}), d=await r.json();
-    if(!r.ok || !d.guest){tip('新会话创建失败，请重试');return;}
+    const r=await customerFetch('guest',{method:'POST'}), d=await r.json();
+    if(!r.ok || !d.guest){tip(t('initError'));return;}
     GUEST=d.guest; sessionStorage.setItem('ut_guest',GUEST);
     document.getElementById('log').replaceChildren();
     document.getElementById('batches').replaceChildren();
     document.getElementById('dlist').replaceChildren(); closeList();
-  } catch(e) { tip('网络异常，请重试'); }
+  } catch(e) { tip(t('networkError')); }
 }
 async function refreshBatches(){
-  const r=await fetch('notes'+q(),auth({method:'POST'}));
-  if(r.status===410){tip('会话已失效，请开始新会话');return;}
+  const r=await customerFetch('notes'+q(),auth({method:'POST'}));
+  if(r.status===410){tip(t('guestSessionExpired'));return;}
   if(!r.ok)return;
   const d=await r.json(); renderBatches(d);
 }
@@ -224,32 +229,34 @@ function renderBatches(d){
   const el=document.getElementById('batches');el.replaceChildren();
   for(const n of d.notes||[]){if(n.batch_state!=='unassigned'&&n.batch_state!=='legacy_unassigned')continue;
     const label=document.createElement('label'), check=document.createElement('input');check.type='checkbox';check.value=n.id;
-    label.append(check,document.createTextNode('关联待归属条目 '+n.id+' '+(n.fields['型号或品名']||'')));el.append(label);
+    label.append(check,document.createTextNode(t('attachNotes')+n.id+' '+(n.fields['型号或品名']||'')));el.append(label);
   }
   for(const b of d.batches||[]){if(!['pending','confirmed'].includes(b.state))continue;
-    const btn=document.createElement('button');btn.textContent=(b.active?'当前档口：':'确认切换：')+(b.fields['档口名称']||'未命名档口');
+    const btn=document.createElement('button');btn.textContent=(b.active?t('currentShop'):t('confirmSwitch'))+(b.fields['档口名称']||t('shopPending'));
     btn.onclick=()=>confirmBatch(b.id);el.append(btn);
-    if(b.state==='pending'){const decline=document.createElement('button');decline.textContent='不切换此名片';decline.onclick=()=>confirmBatch(b.id,null,'decline');el.append(decline);}
+    if(b.state==='pending'){const decline=document.createElement('button');decline.textContent=t('declineCard');decline.onclick=()=>confirmBatch(b.id,null,'decline');el.append(decline);}
   }
 }
 async function confirmBatch(batch_id,fields=null,action='confirm'){
   const note_ids=Array.from(document.querySelectorAll('#batches input:checked'),x=>Number(x.value));
-  const r=await fetch((fields?'batches':'batches/confirm')+q(),auth({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({batch_id,note_ids,fields,action})}));
-  if(!r.ok){tip((await r.json()).detail||'切换失败');return;} await refreshBatches();
+  const r=await customerFetch((fields?'batches':'batches/confirm')+q(),auth({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({batch_id,note_ids,fields,action})}));
+  if(!r.ok){tip((await r.json()).detail||t('networkError'));return;} await refreshBatches();
 }
-async function manualBatch(){const name=prompt('新档口名称（仅用于后续照片和勾选的待归属条目）');if(name)await confirmBatch(null,{'档口名称':name});}
+async function manualBatch(){const name=prompt(t('newShopName'));if(name)await confirmBatch(null,{'档口名称':name});}
+CustomerI18n.mount(async lang=>{await customerFetch('lang',auth({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lang,guest:GUEST})}))});
 (async function init(){
+  if(TOKEN){const r=await customerFetch('me',auth());if(r.ok){const d=await r.json();if(d.lang)CustomerI18n.setLanguage(d.lang)}}
   renderWho();
   if (!GUEST) {
     try{
-      const r = await fetch('guest', {method: 'POST'});
+      const r = await customerFetch('guest', {method: 'POST'});
       const d = await r.json();
       GUEST = d.guest;
       sessionStorage.setItem('ut_guest', GUEST);
-    }catch(e){ tip('初始化失败，请刷新重试'); }
+    }catch(e){ tip(t('initError')); }
   }
   await refreshBatches();
-  bubble('bot', '您好！拍商品/名片照片，我帮您整理成清单，随时可导出 Excel。登录邮箱后清单挂账号，不登录也能用。');
+  bubble('bot', t('toolWelcome'));
 })();
 </script>
 </body>

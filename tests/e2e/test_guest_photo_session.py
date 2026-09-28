@@ -37,7 +37,7 @@ def test_issued_photo_intent_and_explicit_card_association(h5, monkeypatch):
             browser=pw.chromium.launch(headless=True)
             page=browser.new_page(viewport={'width':390,'height':844})
             page.goto(f'http://127.0.0.1:{port}/cs/chat/test-shop')
-            expect(page.locator('#photo-mode')).to_have_text('图片模式：待选择')
+            expect(page.locator('#photo-mode')).to_have_text('当前模式：新会话请选择照片用途')
             with page.expect_response(lambda r:r.url.endswith('/photo')) as response:
                 page.locator('#file').set_input_files({'name':'goods.jpg','mimeType':'image/jpeg','buffer':photo})
             assert response.value.json()['status']=='intent_required'
@@ -52,7 +52,7 @@ def test_issued_photo_intent_and_explicit_card_association(h5, monkeypatch):
             assert blocked.value.status==409
             page.get_by_role('button',name='重试待处理照片',exact=True).click()
             expect(page.locator('#pending-photo')).to_be_hidden()
-            expect(page.locator('#photo-mode')).to_have_text('图片模式：记笔记')
+            expect(page.locator('#photo-mode')).to_have_text('当前模式：记笔记')
             expect(page.locator('#batches input')).to_have_count(1)
             page.locator('#batches input').check()
             page.get_by_role('button',name='确认切换：Browser Card',exact=True).click()
@@ -67,7 +67,7 @@ def test_issued_photo_intent_and_explicit_card_association(h5, monkeypatch):
             artifact=Path(os.environ.get('DANGKOU_AUDIT_ARTIFACT_DIR','/tmp/dangkou-task4-audit'));artifact.mkdir(parents=True,exist_ok=True)
             page.screenshot(path=str(artifact/'guest-photo-session.png'),full_page=True)
             page.get_by_role('button',name='结束当前会话',exact=True).click()
-            expect(page.locator('#photo-mode')).to_have_text('图片模式：待选择')
+            expect(page.locator('#photo-mode')).to_have_text('当前模式：新会话请选择照片用途')
             expect(page.locator('#batches')).to_be_empty()
             with page.expect_response(lambda r:r.url.endswith('/photo')):
                 page.locator('#file').set_input_files({'name':'discard.jpg','mimeType':'image/jpeg','buffer':photo})

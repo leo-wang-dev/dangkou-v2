@@ -28,6 +28,7 @@ from fastapi.responses import FileResponse, Response
 from . import guest_sessions, note_batches
 from . import llm as default_llm
 from .cs_export import render_notes
+from . import cs_i18n
 from .cs_supplier import normalize as normalize_fields
 from .csbot import CsBot, extract_photo_items
 from .request_lifecycle import drain_worker
@@ -103,9 +104,13 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     conn.executescript(SCHEMA)
     guest_sessions.migrate(conn)
     note_batches.migrate(conn, "notes")
+    for table in ('users','guest_sessions'):
+        if 'lang' not in {r[1] for r in conn.execute(f'PRAGMA table_info({table})')}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN lang TEXT NOT NULL DEFAULT 'zh'")
     conn.commit()
 
     app = FastAPI(title='dangkou user tool')
+    cs_i18n.install_errors(app)
     app.state.conn = conn
     app.state.photo_dir = photo_dir
     app.state.codes_log = codes_log
@@ -193,10 +198,13 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
                 (_hash(token),)).fetchone()
             if row is None:
                 raise HTTPException(401, '登录已失效，请重新登录')
+            language=request_conn().execute('SELECT lang FROM users WHERE email=?',(row['email'],)).fetchone()
+            request.state.customer_language=cs_i18n.normalize_language(language[0] if language else '')
             return 'user', row['email']
         guest = str(guest or request.query_params.get('guest') or '').strip()
         if guest:
             session = guest_sessions.validate(request_conn(), guest)
+            request.state.customer_language = session['lang']
             request.state.guest_capability = guest
             return 'guest', session['owner_id']
         raise HTTPException(401, '缺少身份：请登录，或刷新页面以游客模式使用')
@@ -247,8 +255,19 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     # ---------- 游客 ----------
 
     @app.post('/guest')
-    def new_guest():
-        return {'guest': guest_sessions.issue(request_conn()), 'photo_mode': 'notes', 'idle_seconds': guest_sessions.ttl()}
+    def new_guest(request: Request):
+        guest=guest_sessions.issue(request_conn())
+        request_conn().execute('UPDATE guest_sessions SET lang=? WHERE token_hash=?',(cs_i18n.request_language(request),_hash(guest)))
+        return {'guest': guest, 'photo_mode': 'notes', 'idle_seconds': guest_sessions.ttl()}
+
+    @app.post('/lang')
+    async def set_language(request: Request):
+        body = await request.json()
+        kind, owner = _identity(request,str(body.get('guest') or ''))
+        lang = cs_i18n.normalize_language(body.get('lang'))
+        table, key = ('users','email') if kind == 'user' else ('guest_sessions','owner_id')
+        request_conn().execute(f'UPDATE {table} SET lang=? WHERE {key}=?',(lang,owner))
+        return {'lang':lang}
 
     @app.post('/session/end')
     async def end_session(request: Request):
@@ -283,7 +302,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
                      and any(str(v or '').strip() for v in c.values())]
             if not items and not cards:
                 os.unlink(path)
-                return {'reply': '这张照片我没能认出可记录的信息，麻烦重拍一张近一点的～', 'added': 0}
+                return {'reply': cs_i18n.t('photoEmpty',cs_i18n.request_language(request)), 'added': 0}
             _identity(request, owner)  # expiry/revocation during model work cannot resurrect data
             batch_id, pending = note_batches.prepare(request_conn(), kind, owner_id, cards)
             start = request_conn().execute(
@@ -299,7 +318,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
                     'INSERT INTO notes(owner_kind, owner_id, photo_path, fields_json, batch_id) '
                     'VALUES(?,?,?,?,?)',
                     (kind, owner_id, note_photo, json.dumps(fields, ensure_ascii=False),batch_id))
-            return {'reply': _receipt(items, cards), 'added': len(items), 'photo_mode':'notes',
+            return {'reply': _receipt(items, cards) if cs_i18n.request_language(request)=='zh' else cs_i18n.receipt(items,cards,cs_i18n.request_language(request)), 'added': len(items), 'photo_mode':'notes',
                     'pending_batches':[b for b in note_batches.listing(request_conn(),kind,owner_id) if b['id'] in pending]}
 
         return await run_request_worker(request, process_photo, model=True)
@@ -336,7 +355,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
             notes.append({'id': n['id'], 'created_at': n['created_at'],
                           'fields': json.loads(n['fields_json']), 'batch_id':n['batch_id'], 'batch_state':n['batch_state'],
                           'photo': (f'/notes/{n["id"]}/photo' if n['photo_path'] else '')})
-        return {'notes': notes, 'batches':note_batches.listing(request_conn(),kind,owner_id)}
+        return {'lang':cs_i18n.request_language(request), 'notes': notes, 'batches':note_batches.listing(request_conn(),kind,owner_id)}
 
     @app.get('/notes/{note_id}/photo')
     def note_photo(note_id: int, request: Request, guest: str = ''):
@@ -357,7 +376,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         if not rows:
             raise HTTPException(409, '暂无可导出条目，请先上传照片')
         content = render_notes(
-            [{**note_batches.project(request_conn(), n), 'photo': n['photo_path']} for n in rows])
+            [{**note_batches.project(request_conn(), n), 'photo': n['photo_path']} for n in rows],lang=cs_i18n.request_language(request))
         fname = f'tool-list-{owner_id.split("@")[0][:16]}.xlsx'
         return Response(
             content=content,
@@ -408,6 +427,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
             # 合并：当前游客的记录迁到账号名下（guest 行随之清空）。
             if guest:
                 session = guest_sessions.revoke(request_conn(), guest, 'merged')
+                request_conn().execute('UPDATE users SET lang=? WHERE email=?',(cs_i18n.request_language(request,session['lang']),email))
                 request_conn().execute(
                     "UPDATE notes SET owner_kind='user', owner_id=? WHERE owner_kind='guest' AND owner_id=?",
                     (email, session['owner_id']))
@@ -425,11 +445,17 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     @app.get('/me')
     def me(request: Request):
         kind, owner_id = _identity(request, '')
-        return {'kind': kind, 'email': owner_id if kind == 'user' else ''}
+        return {'kind': kind, 'email': owner_id if kind == 'user' else '', 'lang':cs_i18n.normalize_language(request.state.customer_language)}
 
     # ---------- 页面（nginx 经 /tool/ 反代，前缀剥掉后落到这里的根路由） ----
 
     _page = os.path.join(_ROOT, 'static', 'tool', 'index.html')
+
+    @app.get('/customer-{asset}.js', include_in_schema=False)
+    def language_asset(asset: str):
+        if asset not in ('catalog','sources','i18n'):
+            raise HTTPException(404,'Not found')
+        return FileResponse(os.path.join(_ROOT,'static',f'customer-{asset}.js'))
 
     @app.get('/', include_in_schema=False)
     @app.get('/tool', include_in_schema=False)

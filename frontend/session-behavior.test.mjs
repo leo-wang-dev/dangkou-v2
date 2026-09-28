@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { translate, fieldLabel } from './src/i18n.js'
 import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../', import.meta.url))
 
@@ -25,6 +26,8 @@ function harness(surface, endStatus) {
     toolApi:{endSession:end,newGuest:issue,notes:state},csApi:{endSession:end,newSession:issue,session:state},
     fetch:async url=>{let r;if(url.includes('/end'))r=await end();else if(url==='guest'||url.endsWith('/session'))r=await issue();else r=await state();return {...r,json:async()=>r.data||{}}}
   })
+  context.useCustomerLanguage=()=>({locale:{value:'zh'},dir:{value:'ltr'},t:(key,values)=>translate(key,values,'zh'),label:value=>fieldLabel(value,'zh'),changeLanguage(){}})
+  context.CustomerI18n={...context.useCustomerLanguage(),mount(){},request:(...args)=>context.fetch(...args)}
   vm.runInContext(code,context)
   const setup=isStatic ? (tool?"TOKEN=''; GUEST='stale'; sessionStorage.setItem('ut_guest','stale')":"visitor='stale'; ready=Promise.resolve(); sessionStorage.setItem('h5v:shop','stale')") : (tool?"token.value='';guest.value='stale';storage.set('ut_guest','stale')":"token.value='shop';visitor.value='stale';storage.set('h5v:shop','stale')")
   vm.runInContext(setup,context)

@@ -143,5 +143,5 @@ def test_full_catalog_quote_end_to_end(client):
     n = len(items)
     assert ws.cell(2 + n - 1, 1).value                       # 最后一行有数据（行2起）
     T = next(rr for rr in range(2 + n, 2 + n + 12)
-             if ws.cell(rr, 1).value == 'TOTAL')
+             if ws.cell(rr, 1).value == '合计')
     assert ws.cell(T, 7).value == 1359.60  # 合计=值（10台→整箱40）

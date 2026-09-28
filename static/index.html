@@ -109,6 +109,7 @@ img.big{width:86px;height:86px}
   <button class="nav" id="lbNext" onclick="event.stopPropagation();lbStep(1)">›</button>
 </div>
 <div id="modal"><div class="box" id="modalBox"></div></div>
+<script src="./customer-catalog.js"></script>
 <script>
 const MANAGE_PREFIX = location.pathname.match(/^\/merchant\/manage\/[a-f0-9]{24}/)?.[0] || '';
 const QUERY_TOKEN = new URLSearchParams(location.search).get('t') || '';
@@ -661,6 +662,7 @@ function renderProducts(){
             <button class="btn ${visible?'p':'d'} s" onclick="toggleProductVisible('${p['id']}',${visible})"
               title="控制这款商品是否对客户可见">${visible?'👁 客户可见':'🚫 客户不可见'}</button>
             <button class="btn o s" onclick="openForm('${p['id']}')">编辑</button>
+            <button class="btn o s" data-quote-product="${esc(p.id)}" onclick="openQuote(this.dataset.quoteProduct)">生成报价</button>
             <button class="btn d s" onclick="delP('${p['id']}')">下架</button>
           </div>
         </div>
@@ -670,6 +672,30 @@ function renderProducts(){
           <div class="pf"><span class="pl">${f.label||f.col}</span><span class="pv">${esc(str(p[f.label]))||'—'}</span></div>`).join('')}
       </div>
     </div>`;}).join('');
+}
+function openQuote(pid){
+  const product=cur.prods.find(p=>p.id===pid);if(!product)return;
+  const box=document.querySelector('#modal .box');
+  box.innerHTML='<h3>生成客户报价单</h3><p id="quote-product"></p><div class="fg"><label>采购数量</label><input id="quote-quantity" type="number" min="1" step="1" value="1"></div><div class="fg"><label>报价文件语言</label><select id="quote-language"></select></div><p class="muted">按现有报价字段与整箱规则生成，定金默认30%。</p><p id="quote-result" role="status"></p><button id="quote-submit" class="btn p">生成并下载</button> <button class="btn o" onclick="document.getElementById(\'modal\').style.display=\'none\'">关闭</button>';
+  document.getElementById('quote-product').textContent=product.supplier||'';
+  const select=document.getElementById('quote-language');
+  for(const code of CustomerCatalog.codes){const option=document.createElement('option');option.value=code;option.textContent=CustomerCatalog.nativeNames[code];select.append(option)}
+  document.getElementById('quote-submit').onclick=()=>submitQuote(pid);
+  document.getElementById('modal').style.display='flex';
+}
+async function submitQuote(pid){
+  const quantity=Number(document.getElementById('quote-quantity').value),result=document.getElementById('quote-result');
+  if(!Number.isInteger(quantity)||quantity<=0){result.textContent='采购数量必须为正整数';return;}
+  const button=document.getElementById('quote-submit');button.disabled=true;
+  try{
+    const data=await api('/quote',{method:'POST',body:JSON.stringify({items:[{category:cur.cat,product_id:pid,quantity}],target_language:document.getElementById('quote-language').value})});
+    const file=await fetch(MANAGE_PREFIX+data.download_url,{headers:H});
+    if(!file.ok)throw Error('报价已生成，但下载失败，请重试');
+    const url=URL.createObjectURL(await file.blob()),a=document.createElement('a');a.href=url;a.download='quotation.xlsx';a.textContent='重新下载报价单';result.replaceChildren(a);a.click();
+    if(data.quantity_adjustment_note)result.append(document.createTextNode(' '+data.quantity_adjustment_note));
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }catch(e){result.textContent=e.message||'报价失败，请重试';}
+  finally{button.disabled=false;}
 }
 async function toggleProductVisible(pid, visible){
   if(!cur.cat) return;

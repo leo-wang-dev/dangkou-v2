@@ -11,6 +11,7 @@ from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
+from . import cs_i18n
 
 
 _HEADERS = ('ITEM NO.', 'PHOTO', 'DESCRIPTION', 'COLORS', 'PRICE', 'QUANTITY',
@@ -150,7 +151,7 @@ def _dynamic_extractor(conn, category_key):
     return extract
 
 
-def generate_generic(conn, storage, items, price_adjustment_pct, out_path, deposit_pct: float = 30, *, details: list | None = None):
+def generate_generic(conn, storage, items, price_adjustment_pct, out_path, deposit_pct: float = 30, *, details: list | None = None, target_language="zh", llm=None):
     """纯代码生成报价单：行1=列头，行2起=数据（嵌图），末三行 TOTAL/DEPOSIT/BALANCE（写值）。"""
     if not math.isfinite(price_adjustment_pct) or price_adjustment_pct < -100:
         raise ValueError('价格调整百分比无效')
@@ -174,14 +175,16 @@ def generate_generic(conn, storage, items, price_adjustment_pct, out_path, depos
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = 'QUOTATION'
+    lang = cs_i18n.normalize_language(target_language)
+    ws.title = cs_i18n.t('quotation',lang)[:31]
+    ws.sheet_view.rightToLeft = lang == 'ar'
     for col, width in _COL_WIDTHS.items():
         ws.column_dimensions[col].width = width
 
     # 行1：列头（加粗+底色+居中，不追求花哨）
     ws.row_dimensions[1].height = _HEADER_ROW_H
     header_fill = PatternFill('solid', fgColor='D9E1F2')
-    for c, label in enumerate(_HEADERS, 1):
+    for c, label in enumerate([cs_i18n.t(k,lang) for k in ('modelHeader','photoHeader','description','colorHeader','priceHeader','quantityHeader','amount','cartonHeader','cartons','grossWeight','netWeight','measurements','totalWeight','volume')], 1):
         cell = ws.cell(1, c, label)
         cell.font = Font(bold=True)
         cell.fill = header_fill
@@ -220,7 +223,7 @@ def generate_generic(conn, storage, items, price_adjustment_pct, out_path, depos
         tcbm = round(ctns * (dims[0] * dims[1] * dims[2]) / 1e6, 3) \
             if (ctns is not None and dims) else None
 
-        ws.cell(r, 1, str(row['item'] or ''))                    # A ITEM NO.
+        ws.cell(r, 1, str(row['item'] or '')).alignment = Alignment(readingOrder=1)                    # A ITEM NO.
         if p['image_main']:                                    # B PHOTO（统一框+居中）
             try:
                 _add_photo(ws, r, storage.abs_path(p['image_main']))
@@ -250,7 +253,7 @@ def generate_generic(conn, storage, items, price_adjustment_pct, out_path, depos
     # 合计/定金/尾款：数据区后三行，写计算值（预览器不重算公式，值才处处可见）
     T = DATA_START + len(prows)
     for r, label in ((T, 'TOTAL'), (T + 1, 'DEPOSIT'), (T + 2, 'BALANCE')):
-        cell = ws.cell(r, 1, label)
+        cell = ws.cell(r, 1, cs_i18n.t(label.lower(),lang))
         cell.font = Font(bold=True)
     deposit = (sums['amount'] * Decimal(str(deposit_pct)) / 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     ws.cell(T, 7, sums['amount']).number_format = '0.00'
@@ -260,5 +263,24 @@ def generate_generic(conn, storage, items, price_adjustment_pct, out_path, depos
     ws.cell(T + 1, 7, deposit).number_format = '0.00'            # DEPOSIT = 总额×定金%
     ws.cell(T + 2, 7, round(sums['amount'] - deposit, 2)).number_format = '0.00'  # BALANCE = 差额
 
+    # Customer narrative terms have a separate translation boundary; raw models,
+    # suppliers, quantities and prices never enter the translation batch.
+    raw = [ws.cell(r,c).value or '' for r in range(2,T) for c in (3,4)]
+    protected = [v for extract,p,_ in prows for v in (extract(p)['supplier'],extract(p)['item']) if v]
+    translated = cs_i18n.translate_texts(conn,llm,lang,raw,protected=protected,
+        commit=False,max_missing=0 if conn.in_transaction or llm is None else None)
+    for (r,c),value in zip(((r,c) for r in range(2,T) for c in (3,4)),translated):
+        ws.cell(r,c,value)
+    adjustments=[]
+    for extract,p,requested in prows:
+        row=extract(p);pcs=row['ctn'].get('pcs')
+        quoted=pcs*_ceil_div(requested,pcs) if pcs else requested
+        if quoted!=requested:
+            adjustments.append(cs_i18n.t('cartonAdjustment',lang,model=row['item'],requested=requested,quoted=quoted,pcs=pcs))
+    for value in adjustments:
+        ws.append([value])
+    for row in ws:
+        for cell in row:
+            if cell.data_type == 'f': cell.data_type = 's'
     wb.save(out_path)
     return out_path

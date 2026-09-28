@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>我的采购清单</title>
+<title data-i18n="myList" data-icon="">我的采购清单</title>
 <style>
   body{font-family:-apple-system,"PingFang SC",sans-serif;margin:0;background:#f5f6f8;color:#222}
   .wrap{max-width:1200px;margin:0 auto;padding:16px}
@@ -28,62 +28,68 @@
   #tip{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#222;color:#fff;
        padding:6px 14px;border-radius:16px;font-size:13px;opacity:0;transition:opacity .3s}
 </style>
-</head>
+<style>.customer-language{display:flex;gap:10px;align-items:center;padding:8px 16px;background:#fff}.customer-language select{max-width:180px}html[dir=rtl] body{text-align:right}html[dir=rtl] th,html[dir=rtl] td{text-align:start}td[contenteditable],.msg,.f{unicode-bidi:plaintext}html[dir=rtl] .msg.me{align-self:flex-start}html[dir=rtl] .msg.bot{align-self:flex-end}</style></head>
 <body>
 <div class="wrap">
-  <h1>📦 我的采购清单</h1>
+  <h1 data-i18n="myList" data-icon="📦 ">📦 我的采购清单</h1>
   <div class="bar">
-    <button id="export" disabled onclick="location.href=exportUrl()">⬇️ 导出 Excel</button>
-    <button class="ghost" onclick="load()">↻ 刷新</button>
+    <button id="export" disabled onclick="location.href=exportUrl()" data-i18n="exportExcel" data-icon="⬇️ ">⬇️ 导出 Excel</button>
+    <button class="ghost" onclick="load()" data-i18n="refresh" data-icon="↻ ">↻ 刷新</button>
   </div>
-  <div id="list"><div class="empty">加载中…</div></div>
+  <div id="list"><div class="empty" data-i18n="loading" data-icon="">加载中…</div></div>
 </div>
 <div id="tip"></div>
+<script src="../customer-catalog.js"></script>
+<script src="../customer-sources.js"></script>
+<script src="../customer-i18n.js"></script>
 <script>
+const {t,label,display,request:customerFetch}=CustomerI18n;
+
 const prefix = location.pathname.match(/^\/merchant\/(?:customer|manage)\/[a-f0-9]{24}(?=\/|$)/)?.[0] || '';
 const k = new URLSearchParams(location.search).get('k') || '';
-const exportUrl = () => `${prefix}/cs/link/${k}/export.xlsx`;
+const exportUrl = () => `${prefix}/cs/link/${k}/export.xlsx?lang=${CustomerI18n.language}`;
 function tip(msg){ const t=document.getElementById('tip'); t.textContent=msg; t.style.opacity=1;
   setTimeout(()=>t.style.opacity=0, 1500); }
 async function load(){
   document.getElementById('export').disabled = true;
-  const r = await fetch(`${prefix}/cs/link/${k}`);
+  const r = await customerFetch(`${prefix}/cs/link/${k}`);
   if(!r.ok){ document.getElementById('list').innerHTML=
-    '<div class="empty">链接无效或已过期，请找商家重新生成</div>'; return; }
+    `<div class="empty">${t('linkExpiredContact')}</div>`; return; }
   const {notes} = await r.json();
   if(!notes.length){ document.getElementById('list').innerHTML=
-    '<div class="empty">清单还是空的——先在客服页拍照发给我吧</div>'; return; }
+    `<div class="empty">${t('listEmpty')}</div>`; return; }
   document.getElementById('export').disabled = false;
   const keys = [...new Set(notes.flatMap(n=>Object.keys(n.fields)))];
   let html = '<div class="table-scroll"><table><tr><th style="width:36px">#</th>' +
-    keys.map(x=>`<th>${esc(x)}</th>`).join('') + '<th>确认状态</th><th>商品照片</th></tr>';
+    keys.map(x=>`<th>${esc(label(x))}</th>`).join('') + `<th>${t('statusHeader')}</th><th>${t('photoHeader')}</th></tr>`;
   notes.forEach((n,i)=>{
     html += `<tr><td>${i+1}</td>` + keys.map(x=>{
-      const v = n.fields[x]??'';
+      const v = display(n.fields[x]??'');
       if(x==='档口归属依据') return `<td data-id="${n.id}" data-field="${esc(x)}">${esc(v)}</td>`;
       const isPhoto = x.includes('图') || /^photo$/i.test(x);
       if(isPhoto && n.photo) return `<td><img class="photo" src="${esc(prefix+n.photo)}" onerror="this.remove()"></td>`;
-      return `<td contenteditable="true" data-id="${n.id}" data-field="${esc(x)}"
-        onblur="edit(this)">${esc(v)}</td>`;}).join('') + `<td>${n.status==='draft'?'待确认':'已确认'}</td><td>${n.photo?`<img class="photo" src="${esc(prefix+n.photo)}">`:''}</td></tr>`;
+      return `<td contenteditable="true" data-id="${n.id}" data-field="${esc(x)}" data-display="${esc(v)}"
+        onblur="edit(this)">${esc(v)}</td>`;}).join('') + `<td>${n.status==='draft'?t('statusDraft'):t('statusConfirmed')}</td><td>${n.photo?`<img class="photo" src="${esc(prefix+n.photo)}">`:''}</td></tr>`;
   });
   document.getElementById('list').innerHTML = html + '</table></div>' +
-    '<p class="saved">提示：待确认条目已包含在清单及导出中；档口信息待补充时请直接编辑对应列，或在客服对话里发送“清单第1、2条 档口：A档口”。核对后可回复“确认”。左右滑动查看全部字段；点击单元格修改，改完自动保存</p>';
+    `<p class="saved">${t('listEditingHelp')}</p>`;
 }
 async function edit(td){
   const value = td.textContent.trim();
-  const r = await fetch(`${prefix}/cs/link/${k}/note/${td.dataset.id}`, {
+  if(value===td.dataset.display)return;
+  const r = await customerFetch(`${prefix}/cs/link/${k}/note/${td.dataset.id}`, {
     method:'PATCH', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({field: td.dataset.field, value})});
   if(r.ok){
     const updated = await r.json();
     for(const cell of document.querySelectorAll('td[data-id]')){
-      if(cell.dataset.id === td.dataset.id && updated.fields[cell.dataset.field] !== undefined) cell.textContent = updated.fields[cell.dataset.field];
+      if(cell.dataset.id === td.dataset.id && updated.fields[cell.dataset.field] !== undefined) {cell.textContent = display(updated.fields[cell.dataset.field]);cell.dataset.display=cell.textContent;}
     }
   }
-  tip(r.ok ? '已保存 ✓' : '保存失败');
+  tip(r.ok ? t('saved') : t('saveError'));
 }
 function esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-load();
+CustomerI18n.mount();load();
 </script>
 </body>
 </html>

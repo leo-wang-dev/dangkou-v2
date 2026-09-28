@@ -12,6 +12,7 @@
 //   GET /cs/chat/{token}/list-token、GET /cs/link/{k}、PATCH /cs/link/{k}/note/{id}、
 //   GET /cs/link/{k}/export.xlsx
 import { storage } from './storage.js'
+import { getLanguage, translate } from './i18n.js'
 
 // baseURL 默认值（小程序开发期指向测试服务器；上线前改成正式域名）
 let DEFAULT_TOOL_BASE = ''  // 工具端：H5 同源相对路径
@@ -38,15 +39,22 @@ export function setBases(bases) {
 }
 
 function joinUrl(base, path) {
-  if (!base) return path
+  if (!base) return /^\/?cs\//.test(path) ? '/' + path.replace(/^\/+/, '') : path
   return base.replace(/\/+$/, '') + '/' + String(path).replace(/^\/+/, '')
+}
+
+// uni-app rewrites root-relative image src against its H5 public path. Resolve
+// browser image URLs fully before passing them to <image> under /tool/.
+function assetUrl(url) {
+  if(typeof location !== 'undefined' && location.href) return new URL(url,location.href).href
+  return url
 }
 
 // 通用请求：返回统一形状 { ok, status, data }，不抛异常（页面自行 tip）
 export async function request(path, opts = {}) {
   const { method = 'GET', data, base = '', headers = {} } = opts
   const url = joinUrl(base, path)
-  const header = { ...headers }
+  const header = { 'X-Customer-Language':getLanguage(), ...headers }
   if (data !== undefined) header['Content-Type'] = 'application/json'
   // #ifdef H5
   try {
@@ -92,7 +100,7 @@ export function upload(path, filePath, formData = {}, opts = {}) {
       filePath,
       name: 'file',
       formData,
-      header: headers,
+      header: { 'X-Customer-Language':getLanguage(), ...headers },
       success: (res) => {
         let d = null
         try { d = JSON.parse(res.data) } catch (e) { d = null }
@@ -111,11 +119,11 @@ export async function downloadFile(path, opts = {}) {
   const url = joinUrl(base, path)
   // #ifdef H5
   try {
-    const r = await fetch(url, { headers })
+    const r = await fetch(url, { headers: { 'X-Customer-Language':getLanguage(), ...headers } })
     if (!r.ok) {
       let d = null
       try { d = await r.json() } catch (e) { d = null }
-      return { ok: false, error: (d && d.detail) || '导出失败' }
+      return { ok: false, error: (d && d.detail) || translate('exportError') }
     }
     const blob = await r.blob()
     const a = document.createElement('a')
@@ -127,25 +135,25 @@ export async function downloadFile(path, opts = {}) {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000)
     return { ok: true }
   } catch (e) {
-    return { ok: false, error: '网络异常，请重试' }
+    return { ok: false, error: translate('networkError') }
   }
   // #endif
   // #ifdef MP-WEIXIN
   return new Promise((resolve) => {
     uni.downloadFile({
       url,
-      header: headers,
+      header: { 'X-Customer-Language':getLanguage(), ...headers },
       success: (res) => {
-        if (res.statusCode !== 200) return resolve({ ok: false, error: '导出失败' })
+        if (res.statusCode !== 200) return resolve({ ok: false, error: translate('exportError') })
         uni.openDocument({
           filePath: res.tempFilePath,
           fileType: 'xlsx',
           showMenu: true,
           success: () => resolve({ ok: true }),
-          fail: () => resolve({ ok: false, error: '打开文件失败' })
+          fail: () => resolve({ ok: false, error: translate('exportError') })
         })
       },
-      fail: () => resolve({ ok: false, error: '下载失败' })
+      fail: () => resolve({ ok: false, error: translate('exportError') })
     })
   })
   // #endif
@@ -193,6 +201,7 @@ function toolQuery() {
 }
 
 export const toolApi = {
+  setLang: lang=>request('lang',{method:'POST',base:getBases().tool,headers:toolAuthHeaders(),data:{lang,guest:storage.get('ut_guest')}}),
   endSession: () => request('session/end', { method:'POST', base:getBases().tool, headers:toolAuthHeaders(), data:{guest:storage.get('ut_guest')} }),
   confirmBatch: (batch_id, note_ids = [], fields = null, action = 'confirm') => request((fields ? 'batches' : 'batches/confirm') + toolQuery(), { method:'POST',base:getBases().tool,headers:toolAuthHeaders(),data:{batch_id,note_ids,fields,action} }),
   newGuest: () => request('guest', { method: 'POST', base: getBases().tool }),
@@ -203,7 +212,7 @@ export const toolApi = {
   uploadPhoto: (filePath) =>
     upload('photo', filePath, { owner: storage.get('ut_guest') }, { base: getBases().tool, headers: toolAuthHeaders() }),
   notes: () => request('notes' + toolQuery(), { method: 'POST', base: getBases().tool }),
-  photoUrl: (id) => joinUrl(getBases().tool, 'notes/' + id + '/photo' + toolQuery()),
+  photoUrl: (id) => assetUrl(joinUrl(getBases().tool, 'notes/' + id + '/photo' + toolQuery())),
   exportXlsx: () => downloadFile('export.xlsx' + toolQuery(), {
     base: getBases().tool, headers: toolAuthHeaders(), fallbackName: '拍照清单.xlsx'
   })
@@ -218,8 +227,8 @@ export const csApi = {
   discardPhoto: (token,visitor) => request('cs/chat/'+token+'/pending-photo/discard',{method:'POST',base:getBases().cs,data:{visitor}}),
   setMode: (token,visitor,mode) => request('cs/chat/'+token+'/mode',{method:'POST',base:getBases().cs,data:{visitor,mode}}),
   confirmBatch: (token,visitor,batch_id,note_ids=[],fields=null,action='confirm') => request('cs/chat/'+token+'/batches/confirm',{method:'POST',base:getBases().cs,data:{visitor,batch_id,note_ids,fields,action}}),
-  send: (token, text, visitor) =>
-    request('cs/chat/' + token + '/message', { method: 'POST', base: getBases().cs, data: { text, visitor } }),
+  send: (token, text, visitor, action) =>
+    request('cs/chat/' + token + '/message', { method: 'POST', base: getBases().cs, data: { text, visitor, action } }),
   uploadPhoto: (token, visitor, filePath) =>
     upload('cs/chat/' + token + '/photo', filePath, { visitor }, { base: getBases().cs }),
   setLang: (token, lang, visitor) =>
@@ -229,7 +238,7 @@ export const csApi = {
   linkNotes: (k) => request('cs/link/' + k, { base: getBases().cs }),
   editNote: (k, noteId, field, value) =>
     request('cs/link/' + k + '/note/' + noteId, { method: 'PATCH', base: getBases().cs, data: { field, value } }),
-  photoUrl: (p) => joinUrl(getBases().cs, p),
+  photoUrl: (p) => assetUrl(joinUrl(getBases().cs, p)),
   exportXlsx: (k) => downloadFile('cs/link/' + k + '/export.xlsx', {
     base: getBases().cs, fallbackName: '采购清单.xlsx'
   })

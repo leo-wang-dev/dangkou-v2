@@ -5,6 +5,7 @@ import os
 import re
 import openpyxl
 from .cs_supplier import normalize
+from . import cs_i18n
 
 INTERNAL_NOTE_FIELDS = frozenset({'商品编号', '商品类别'})
 # 内部留档口径，对客户导出没有意义（档口归属依据 = bot_context/photo/...）。
@@ -23,12 +24,10 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
     """客户采购清单 Excel。
 
     - 只保留有实际内容的列（全空/未拍到/待补充的列删掉，档口归属依据等内部字段不导出）。
-    - lang 非空且非中文时表头、确认状态和文字内容按客户语言出（cs_i18n 翻译缓存）。
-    - texts 可注入自定义翻译函数（HTTP 请求路径用它限流，超量回退中文）。
+    - Fixed headers use the shared locale catalog; raw evidence cells are never translated.
+    - texts/conn/llm remain compatibility parameters for older outbox callers.
     """
-    if texts is None and lang and lang != '中文' and conn is not None and llm is not None:
-        from . import cs_i18n
-        texts = lambda values: cs_i18n.translate_texts(conn, llm, lang, values)  # noqa: E731
+    lang = cs_i18n.normalize_language(lang)
     notes = list(notes)
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
@@ -38,7 +37,7 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
         groups.setdefault(export_group(note) if isinstance(note, dict) else ('batch','legacy'), []).append(note)
     for group in groups.values():
         card = group[0].get('batch_fields', {}) if isinstance(group[0], dict) else {}
-        title = re.sub(r'[\\/*?:\[\]]', '_', str(card.get('档口名称') or '待确认档口')).strip(" '")[:31] or '采购清单'
+        title = re.sub(r'[\\/*?:\[\]]', '_', str(card.get('档口名称') or cs_i18n.t('shopPending',lang))).strip(" '")[:31] or '采购清单'
         original, number = title, 1
         while title.casefold() in {x.casefold() for x in wb.sheetnames}:
             number += 1
@@ -47,7 +46,7 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
         ws = wb.create_sheet(title)
         _render_sheet(group, ws, card, lang, texts)
     if not wb.worksheets:
-        wb.create_sheet('采购清单')
+        wb.create_sheet(cs_i18n.t('myList',lang)[:31])
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -70,19 +69,14 @@ def _render_sheet(notes, ws, card, lang, texts):
             if k not in keys:
                 keys.append(k)
     keys = [k for k in keys if _column_useful(k, [f.get(k, '') for f in items])]
-    if texts is not None and lang and lang != '中文':
-        headers = texts(['序号', *keys, '商品照片'])
-        # 全表单元格一批翻译（走缓存），不要逐行打翻译请求。
-        flat = [str(f.get(k, '')) for f in items for k in keys]
-        flat = texts(flat)
-        width = len(keys)
-        rows = [flat[i * width:(i + 1) * width] for i in range(len(items))]
-    else:
-        headers = ['序号', *keys, '商品照片']
-        rows = [[str(f.get(k, '')) for k in keys] for f in items]
+    # Fields contain customer/supplier evidence, identifiers and numeric literals.
+    # Translate the schema labels locally; never send raw evidence to a translator.
+    headers = [cs_i18n.fixed(k,lang) for k in ['序号', *keys, '商品照片']]
+    rows = [[cs_i18n.display_value(f.get(k, ''),lang) for k in keys] for f in items]
+    ws.sheet_view.rightToLeft = lang == 'ar'
     from openpyxl.drawing.image import Image as XlImage
     for key, value in card.items():
-        ws.append([key, value])
+        ws.append([cs_i18n.fixed(key,lang), value])
     offset = len(card)
     ws.append(headers)
     for i, values in enumerate(rows, 1):
@@ -109,4 +103,4 @@ def _render_sheet(notes, ws, card, lang, texts):
     from openpyxl.styles import Alignment
     for cells in ws:
         for cell in cells:
-            cell.alignment = Alignment(wrap_text=True, vertical='top')
+            cell.alignment = Alignment(wrap_text=True, vertical='top', readingOrder=1)

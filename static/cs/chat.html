@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>采购助手</title>
+<title data-i18n="chatTitle" data-icon="">采购助手</title>
 <style>
   body{font-family:-apple-system,"PingFang SC",sans-serif;margin:0;background:#f5f6f8;color:#222;display:flex;flex-direction:column;height:100vh}
   header{background:#1677ff;color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px}
@@ -38,16 +38,13 @@
   .session-controls button,#batches button{border:1px solid #ddd;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;color:#245b9c}
   #batches{max-height:160px;overflow:auto;flex-shrink:0}#batches:empty{display:none}#pending-photo[hidden]{display:none}#batches label{width:100%}
 </style>
-</head>
+<style>.customer-language{display:flex;gap:10px;align-items:center;padding:8px 16px;background:#fff}.customer-language select{max-width:180px}html[dir=rtl] body{text-align:right}html[dir=rtl] th,html[dir=rtl] td{text-align:start}td[contenteditable],.msg,.f{unicode-bidi:plaintext}html[dir=rtl] .msg.me{align-self:flex-start}html[dir=rtl] .msg.bot{align-self:flex-end}</style></head>
 <body>
-<header><b>🤖 采购助手</b><button id="mylist" onclick="openList()">📋 我的清单</button><button id="cam" onclick="document.getElementById('file').click()">📷</button><button id="boss" onclick="send('找老板')">找老板</button></header>
-<div class="langbar" id="langbar" hidden>
-  <span style="align-self:center;color:#888">语言 / Language:</span>
-  <button onclick="pickLang('中文')">中文</button><button onclick="pickLang('English')">English</button>
-</div>
-<div class="session-controls"><span id="photo-mode">图片模式：待选择</span><button onclick="setMode('search')">查商品</button><button onclick="setMode('notes')">记笔记</button><button onclick="newSession(true)">结束当前会话</button><button onclick="manualBatch()">手动切换档口</button></div><div id="pending-photo" class="session-controls" hidden><span>有一张照片待处理。请选择模式后重试，或明确放弃。</span><button onclick="retryPhoto()">重试待处理照片</button><button onclick="discardPhoto()">放弃待处理照片</button></div><div id="batches"></div><div id="log"></div>
+<header><b data-i18n="chatTitle" data-icon="🤖 ">🤖 采购助手</b><button id="mylist" onclick="openList()" data-i18n="myShortList" data-icon="📋 ">📋 我的清单</button><button id="cam" onclick="document.getElementById('file').click()">📷</button><button id="boss" onclick="sendAction('contact_owner')" data-i18n="contactOwner" data-icon="">找老板</button></header>
+<div id="langbar" hidden></div>
+<div class="session-controls"><span id="photo-mode">图片模式：待选择</span><button onclick="setMode('search')" data-i18n="findProduct" data-icon="">查商品</button><button onclick="setMode('notes')" data-i18n="takeNotes" data-icon="">记笔记</button><button onclick="newSession(true)" data-i18n="endSession" data-icon="">结束当前会话</button><button onclick="manualBatch()" data-i18n="manualSwitchShop" data-icon="">手动切换档口</button></div><div id="pending-photo" class="session-controls" hidden><span data-i18n="pendingPhoto" data-icon="">有一张照片待处理。请选择模式后重试，或明确放弃。</span><button onclick="retryPhoto()" data-i18n="retryPhoto" data-icon="">重试待处理照片</button><button onclick="discardPhoto()" data-i18n="discardPhoto" data-icon="">放弃待处理照片</button></div><div id="batches"></div><div id="log"></div>
 <form onsubmit="event.preventDefault();send()">
-  <input id="text" type="text" placeholder="发消息，或点 📷 拍照整理采购清单" autocomplete="off">
+  <input id="text" type="text" placeholder="发消息，或点 📷 拍照整理采购清单" data-i18n-placeholder="chatInputHint" autocomplete="off">
   <button type="submit">➤</button>
 </form>
 <input id="file" type="file" accept="image/*" capture="environment" hidden onchange="photo(this)">
@@ -55,12 +52,17 @@
 <div id="drawer" hidden>
   <div class="mask" onclick="closeList()"></div>
   <aside>
-    <div class="dhead"><b>📋 我的清单</b><button class="ghost" onclick="openList()">↻ 刷新</button><button onclick="closeList()">✕ 关闭</button></div>
-    <div id="dempty" hidden>还没有清单——在对话里发照片整理条目，然后说「出表」生成清单。</div>
+    <div class="dhead"><b data-i18n="myShortList" data-icon="📋 ">📋 我的清单</b><button class="ghost" onclick="openList()" data-i18n="refresh" data-icon="↻ ">↻ 刷新</button><button onclick="closeList()" data-i18n="close" data-icon="✕ ">✕ 关闭</button></div>
+    <div id="dempty" hidden data-i18n="chatListEmpty" data-icon="">还没有清单——在对话里发照片整理条目，然后说「出表」生成清单。</div>
     <iframe id="listframe" title="我的采购清单"></iframe>
   </aside>
 </div>
+<script src="../../customer-catalog.js"></script>
+<script src="../../customer-sources.js"></script>
+<script src="../../customer-i18n.js"></script>
 <script>
+const {t,label,display,request:customerFetch}=CustomerI18n;
+
 const TOKEN = location.pathname.split('/').pop();
 let visitor = sessionStorage.getItem('h5v:'+TOKEN) || '';
 let photoMode = '';
@@ -84,35 +86,29 @@ async function send(override){
   if (!override) box.value = '';
   bubble('me', text);
   try{
-    const r = await fetch(`/cs/chat/${TOKEN}/message`, {method:'POST', headers:{'Content-Type':'application/json'},
+    const r = await customerFetch(`/cs/chat/${TOKEN}/message`, {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({text, visitor})});
     const d = await r.json();
     bubble('bot', d.reply || d.detail || '…');
     await refreshSession();
-  }catch(e){ tip('网络异常，请重试'); }
+  }catch(e){ tip(t('networkError')); }
 }
 async function photo(input){
   await ready;
   const f = input.files[0]; input.value = '';
   if (!f) return;
-  bubble('me', '📷 ' + (f.name || '照片'));
-  tip('识别中…');
+  bubble('me', '📷 ' + (f.name || t('photo')));
+  tip(t('recognizing'));
   const fd = new FormData(); fd.append('file', f); fd.append('visitor', visitor);
   try{
-    const r = await fetch(`/cs/chat/${TOKEN}/photo`, {method:'POST', body: fd});
+    const r = await customerFetch(`/cs/chat/${TOKEN}/photo`, {method:'POST', body: fd});
     const d = await r.json();
     bubble('bot', d.reply || d.detail || '…');
     await refreshSession();
-  }catch(e){ tip('上传失败，请重试'); }
+  }catch(e){ tip(t('uploadError')); }
 }
-async function pickLang(lang){
-  await ready;
-  await fetch(`/cs/chat/${TOKEN}/lang`, {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({lang, visitor})});
-  document.getElementById('langbar').hidden = true;
-  bubble('bot', lang === '中文' ? '您好！可以查询商品、发照片整理采购清单，需要联系商家可点右上角「找老板」。'
-    : 'Hello! You can search products or send photos to build a purchase list. Tap "找老板" to reach the owner.');
-}
+async function pickLang(lang){await ready;const r=await customerFetch(`/cs/chat/${TOKEN}/lang`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lang,visitor})});if(!r.ok)tip(t('networkError'));}
+async function sendAction(action){await ready;const r=await customerFetch(`/cs/chat/${TOKEN}/message`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,visitor})});const d=await r.json();bubble('bot',d.reply||d.detail||t('networkError'));await refreshSession();}
 // 我的清单抽屉：后端按访客取最近 cs_link token，iframe 复用 list.html 的表格/编辑/导出能力
 async function openList(){
   await ready;
@@ -122,73 +118,74 @@ async function openList(){
   const frame = document.getElementById('listframe');
   frame.src = 'about:blank';
   try{
-    const r = await fetch(`/cs/chat/${TOKEN}/list-token?visitor=${encodeURIComponent(visitor)}`);
+    const r = await customerFetch(`/cs/chat/${TOKEN}/list-token?visitor=${encodeURIComponent(visitor)}`);
     const d = await r.json();
     if (d.token){
       frame.src = `/cs/list.html?k=${encodeURIComponent(d.token)}`;
     } else {
       document.getElementById('dempty').hidden = false;
     }
-  }catch(e){ tip('网络异常，请重试'); }
+  }catch(e){ tip(t('networkError')); }
 }
 function closeList(){ document.getElementById('drawer').hidden = true; }
 async function newSession(end=false){
   try {
     if(end&&visitor){
-      const ended=await fetch(`/cs/chat/${TOKEN}/session/end`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor})});
-      if(!ended.ok&&![401,410].includes(ended.status)){tip('结束会话失败');return;}
+      const ended=await customerFetch(`/cs/chat/${TOKEN}/session/end`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor})});
+      if(!ended.ok&&![401,410].includes(ended.status)){tip(t('networkError'));return;}
       visitor='';sessionStorage.removeItem('h5v:'+TOKEN);
     }
-    const r=await fetch(`/cs/chat/${TOKEN}/session`,{method:'POST'}),d=await r.json();
-    if(!r.ok||!d.visitor){tip('新会话创建失败，请重试');return;}
+    const r=await customerFetch(`/cs/chat/${TOKEN}/session`,{method:'POST'}),d=await r.json();
+    if(!r.ok||!d.visitor){tip(t('initError'));return;}
     visitor=d.visitor;sessionStorage.setItem('h5v:'+TOKEN,visitor);log.replaceChildren();closeList();await refreshSession();
-  }catch(e){tip('网络异常，请重试');}
+  }catch(e){tip(t('networkError'));}
 }
 async function refreshSession(){
-  const r=await fetch(`/cs/chat/${TOKEN}/session?visitor=${encodeURIComponent(visitor)}`);
-  if(r.status===410||r.status===401){tip('会话已失效，请开始新会话');return;}
+  const r=await customerFetch(`/cs/chat/${TOKEN}/session?visitor=${encodeURIComponent(visitor)}`);
+  if(r.status===410||r.status===401){tip(t('guestSessionExpired'));return;}
   if(!r.ok)return;const d=await r.json(); photoMode=d.photo_mode;hasPending=!!d.intent_required;
   document.getElementById('pending-photo').hidden=!hasPending;
-  document.getElementById('photo-mode').textContent='图片模式：'+({search:'查商品',notes:'记笔记'}[photoMode]||'待选择');
+  document.getElementById('photo-mode').textContent=t('activeMode',{mode:({search:t('findProduct'),notes:t('takeNotes')}[photoMode]||t('choosePhotoIntentAgain'))});
   const el=document.getElementById('batches');el.replaceChildren();
   for(const n of d.notes||[]){if(n.batch_state!=='unassigned'&&n.batch_state!=='legacy_unassigned')continue;
     const label=document.createElement('label'), check=document.createElement('input');check.type='checkbox';check.value=n.id;
-    label.append(check,document.createTextNode('关联待归属条目 '+n.id+' '+(n.fields['型号或品名']||'')));el.append(label);
+    label.append(check,document.createTextNode(t('attachNotes')+n.id+' '+(n.fields['型号或品名']||'')));el.append(label);
   }
   for(const b of d.batches||[]){if(!['pending','confirmed'].includes(b.state))continue;
-    const btn=document.createElement('button');btn.textContent=(b.active?'当前档口：':'确认切换：')+(b.fields['档口名称']||'未命名档口');btn.onclick=()=>confirmBatch(b.id);el.append(btn);
-    if(b.state==='pending'){const decline=document.createElement('button');decline.textContent='不切换此名片';decline.onclick=()=>confirmBatch(b.id,null,'decline');el.append(decline);}}
+    const btn=document.createElement('button');btn.textContent=(b.active?t('currentShop'):t('confirmSwitch'))+(b.fields['档口名称']||t('shopPending'));btn.onclick=()=>confirmBatch(b.id);el.append(btn);
+    if(b.state==='pending'){const decline=document.createElement('button');decline.textContent=t('declineCard');decline.onclick=()=>confirmBatch(b.id,null,'decline');el.append(decline);}}
 }
 async function setMode(mode){
   await ready;
   try {
-    const r=await fetch(`/cs/chat/${TOKEN}/mode`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,mode})});
+    const r=await customerFetch(`/cs/chat/${TOKEN}/mode`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,mode})});
     const d=await r.json().catch(()=>({}));
     if(d.reply||d.detail)bubble('bot',d.reply||d.detail);
-    if(!r.ok)tip('照片处理失败，可重试或放弃待处理照片');
-  }catch(e){tip('网络异常，请重试');}
+    if(!r.ok)tip(t('pendingPhoto'));
+  }catch(e){tip(t('networkError'));}
   finally{await refreshSession();}
 }
-async function retryPhoto(){if(!photoMode){tip('请先选择查商品或记笔记');return;}await setMode(photoMode);}
+async function retryPhoto(){if(!photoMode){tip(t('photoIntentPrompt'));return;}await setMode(photoMode);}
 async function discardPhoto(){
   await ready;
-  try{const r=await fetch(`/cs/chat/${TOKEN}/pending-photo/discard`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor})});if(!r.ok)tip('放弃失败，请重试');}
-  catch(e){tip('网络异常，请重试');}
+  try{const r=await customerFetch(`/cs/chat/${TOKEN}/pending-photo/discard`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor})});if(!r.ok)tip(t('networkError'));}
+  catch(e){tip(t('networkError'));}
   finally{await refreshSession();}
 }
 async function confirmBatch(batch_id,fields=null,action='confirm'){
   const note_ids=Array.from(document.querySelectorAll('#batches input:checked'),x=>Number(x.value));
-  const r=await fetch(`/cs/chat/${TOKEN}/batches/confirm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,batch_id,note_ids,fields,action})});
-  if(!r.ok){tip((await r.json()).detail||'切换失败');return;}await refreshSession();
+  const r=await customerFetch(`/cs/chat/${TOKEN}/batches/confirm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,batch_id,note_ids,fields,action})});
+  if(!r.ok){tip((await r.json()).detail||t('networkError'));return;}await refreshSession();
 }
-async function manualBatch(){const name=prompt('新档口名称（仅用于后续照片和勾选的待归属条目）');if(name)await confirmBatch(null,{'档口名称':name});}
+async function manualBatch(){const name=prompt(t('newShopName'));if(name)await confirmBatch(null,{'档口名称':name});}
+CustomerI18n.mount(pickLang);
 ready=(async function init(){
   if(!visitor)await newSession();else await refreshSession();
 
   // 首访先选语言；老访客直接欢迎
   const first = !sessionStorage.getItem('h5lang');
   if (first) { document.getElementById('langbar').hidden = false; }
-  else bubble('bot', '您好，有什么可以帮您？');
+  else bubble('bot', t('chatReturnWelcome'));
 })();
 </script>
 </body>

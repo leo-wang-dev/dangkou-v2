@@ -117,7 +117,7 @@ def test_h5_chat_flow(client, monkeypatch):
     client.post(f'/cs/chat/{tok}/mode',json={'visitor':guest,'mode':'notes'})
     v = {'text': '你好', 'visitor': guest}
     r = client.post(f'/cs/chat/{tok}/lang', json={'lang': 'English', 'visitor': guest})
-    assert r.json()['lang'] == 'English'
+    assert r.json()['lang'] == 'en'
     class FakeLlm:
         def chat_text(self, system, messages, **kw):
             if '规则匹配' in system: return 'PASS'
@@ -141,7 +141,7 @@ def test_h5_chat_flow(client, monkeypatch):
     assert conn.execute("SELECT COUNT(*) FROM cs_outbox WHERE channel LIKE 'tg%'").fetchone()[0] == 0
     # 我的清单抽屉：出表后按访客取最近 cs_link token；他人/未出表拿空串
     r = client.post(f'/cs/chat/{tok}/message', json={'text': '出表', 'visitor': guest})
-    assert '我的清单' in r.json()['reply']
+    assert 'Export ready' in r.json()['reply'] and '/cs/list.html?k=' in r.json()['reply']
     token = client.get(f'/cs/chat/{tok}/list-token',params={'visitor':guest}).json()['token']
     r = client.get(f'/cs/chat/{tok}/list-token', params={'visitor': guest})
     assert r.status_code == 200 and r.json()['token'] == token

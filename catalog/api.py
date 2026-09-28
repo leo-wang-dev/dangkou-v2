@@ -93,6 +93,8 @@ def _push_redline_card(conn, ticket_id, token, product_id, old_text, new_text):
 
 
 def register_routes(app: FastAPI):
+    from . import cs_i18n
+    cs_i18n.install_errors(app, customer_only=True)
     from .merchant_binding import register as register_merchant
     register_merchant(app)
     # C端接口（/cs/...）无 Cookie（身份=链接/访客 token），放开跨域供 uni-app H5
@@ -1080,6 +1082,7 @@ def register_routes(app: FastAPI):
         quantity: int = Field(default=1, gt=0)
 
     class QuoteIn(BaseModel):
+        target_language: str = "zh"
         items: list[QuoteItem]
         price_adjustment_pct: FiniteFloat = Field(default=0, ge=-100)
         deposit_pct: FiniteFloat = Field(default=30, ge=0, le=100)          # 定金百分比（30=30%），商家说"两成定金"传20
@@ -1097,9 +1100,10 @@ def register_routes(app: FastAPI):
         items = [{'category': i.category, 'product_id': i.product_id, 'quantity': i.quantity}
                  for i in body.items]
         details = []
+        from . import llm as translation_model
         try:
             quote_mod.generate_generic(request_conn(), app.state.storage, items,
-                                       body.price_adjustment_pct, out, deposit_pct=body.deposit_pct, details=details)
+                                       body.price_adjustment_pct, out, deposit_pct=body.deposit_pct, details=details, target_language=body.target_language, llm=translation_model)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         from . import notify
@@ -1107,7 +1111,17 @@ def register_routes(app: FastAPI):
                        for row in details if row['requested_quantity'] != row['quoted_quantity']]
         note = '\n'.join(adjustments)
         notify.push_file(f'📄 报价单已生成（{len(items)} 款，调整 {body.price_adjustment_pct:+g}%）' + ('\n' + note if note else ''), out, conn=request_conn())
-        return {'path': out, 'items': details, 'quantity_adjustment_note': note}
+        return {'path': out, 'items': details, 'quantity_adjustment_note': note, 'target_language':cs_i18n.normalize_language(body.target_language), 'download_url':'/quotes/'+os.path.basename(out)}
+
+    @app.get('/quotes/{filename}')
+    def quote_download(filename: str, request: Request):
+        _auth(request, app.state.token)
+        if not __import__('re').fullmatch(r'quote-[0-9a-f]{8}\.xlsx',filename):
+            raise HTTPException(404,'报价文件不存在')
+        path=os.path.join(app.state.storage.base,'_quotes',filename)
+        if not os.path.isfile(path):
+            raise HTTPException(404,'报价文件不存在')
+        return FileResponse(path,filename=filename,media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
     # ---- C端：红线知识（微信 AI 对话 → 工具 → 审批 → 生效）----
     class RedlineIn(BaseModel):
@@ -1203,6 +1217,8 @@ def register_routes(app: FastAPI):
         row = request_conn().execute('SELECT * FROM cs_link WHERE token=?', (token,)).fetchone()
         if row is None:
             raise HTTPException(404, '链接无效')
+        language = request_conn().execute('SELECT lang FROM cs_customer WHERE id=?',(row['customer_id'],)).fetchone()
+        request.state.customer_language = cs_i18n.normalize_language(language[0] if language else '')
         active = request_conn().execute(
             "SELECT 1 FROM cs_link WHERE token=? AND datetime(expires_at)>datetime('now')",
             (token,)).fetchone()
@@ -1242,6 +1258,9 @@ def register_routes(app: FastAPI):
     def _session(request, visitor):
         session = guest_sessions.validate(request_conn(), visitor)
         request.state.guest_capability = visitor
+        from .cs_chat import lookup_visitor
+        cust = lookup_visitor(request_conn(),session['owner_id'])
+        request.state.customer_language = cs_i18n.normalize_language(cust['lang'] if cust else '')
         return session
 
     @app.post('/cs/chat/{token}/session')
@@ -1262,7 +1281,7 @@ def register_routes(app: FastAPI):
         session = _session(request,visitor)
         cust = cs_chat.lookup_visitor(request_conn(),session['owner_id'])
         notes = request_conn().execute("SELECT * FROM cs_note WHERE customer_id=? AND status IN ('draft','confirmed') ORDER BY id",(cust['id'],)).fetchall() if cust else []
-        return {'photo_mode':session['photo_mode'], 'intent_required':bool(session['pending_photo']),
+        return {'lang':cs_i18n.request_language(request), 'photo_mode':session['photo_mode'], 'intent_required':bool(session['pending_photo']),
                 'batches':note_batches.listing(request_conn(),'guest',cust['id']) if cust else [],
                 'notes':[{'id':n['id'],'batch_state':note_batches.project(request_conn(),n)['batch_state'],'fields':shop_link.customer_fields(request_conn(),n)} for n in notes]}
 
@@ -1306,7 +1325,8 @@ def register_routes(app: FastAPI):
     @app.post('/cs/chat/{token}/message')
     async def cs_chat_message(token: str, body: dict, request: Request):
         from . import cs_chat
-        text = str(body.get('text') or '').strip()[:2000]
+        actions = {'contact_owner':'找老板','export':'出表','confirm':'确认'}
+        text = actions.get(body.get('action')) or str(body.get('text') or '').strip()[:2000]
         if not text:
             raise HTTPException(400, '消息不能为空')
         def turn():
@@ -1315,7 +1335,7 @@ def register_routes(app: FastAPI):
             visitor = str(body.get('visitor') or '')
             session = _session(request, visitor)
             return cs_chat.text_turn_transaction(
-                request_conn(), session['owner_id'], text, llm, validate=lambda:guest_sessions.validate(request_conn(),visitor))
+                request_conn(), session['owner_id'], text, llm, validate=lambda:guest_sessions.validate(request_conn(),visitor), language=request.headers.get('x-customer-language') or request.query_params.get('lang'))
         reply = await run_request_worker(request, turn, model=True)
         return {'reply': reply}
 
@@ -1338,6 +1358,7 @@ def register_routes(app: FastAPI):
         if current['photo_mode'] != mode:
             raise HTTPException(409,'photo_mode_changed')
         cust = cs_chat.ensure_visitor(bot, session['owner_id'])
+        cs_chat.set_language(request_conn(),cust,cs_i18n.request_language(request))
         if rule:
             reply = bot._handoff(dict(cust),'客户发送照片', '命中商家已确认的转人工条件',rule)
         elif mode == 'search':
@@ -1349,6 +1370,14 @@ def register_routes(app: FastAPI):
         if pending_path:
             request_conn().execute("UPDATE guest_sessions SET pending_photo='' WHERE token_hash=? AND pending_photo=?",(session['token_hash'],pending_path))
         request_conn().execute("INSERT INTO cs_link(token,customer_id) VALUES(?,?)", (secrets.token_urlsafe(24),cust['id']))
+        lang=cs_i18n.request_language(request)
+        if lang!='zh':
+            if rule:
+                from . import cs
+                profile=cs.get_shop(request_conn())
+                reply='\n'.join([cs_i18n.t('contactOwner',lang), *[str(profile[k]) for k in ('owner_tg_username','owner_wechat') if profile[k]]])
+            elif mode=='notes': reply=cs_i18n.receipt(items,cards,lang)
+            else: reply=cs_i18n.t('findProduct' if found else 'noMatchingProducts',lang)+'\n'+'\n'.join(f'{i}: {p["name"]}' for i,p in enumerate(found,1))
         return {'reply':reply,'photo_mode':mode,'batches':note_batches.listing(request_conn(),'guest',cust['id'])}
 
     @app.post('/cs/chat/{token}/mode')
@@ -1401,7 +1430,7 @@ def register_routes(app: FastAPI):
             changed = request_conn().execute("UPDATE guest_sessions SET pending_photo=? WHERE token_hash=? AND pending_photo='' AND photo_mode='' AND state='active'",(path,session['token_hash']))
             if not changed.rowcount:
                 raise HTTPException(409,'pending_photo_requires_intent')
-            return {'status':'intent_required','photo_mode':'','reply':'这张照片要查商品，还是记笔记？请选择模式。'}
+            return {'status':'intent_required','photo_mode':'','reply':cs_i18n.t('photoIntentPrompt',cs_i18n.request_language(request))}
         return await run_request_worker(request,lambda:_process_guest_photo(request,visitor,data,session['photo_mode']),model=True)
 
     @app.get('/cs/chat/{token}/list-token')
@@ -1480,15 +1509,9 @@ def register_routes(app: FastAPI):
         from .shop_link import snapshot
         lang = request_conn().execute(
             'SELECT lang FROM cs_customer WHERE id=?', (row['customer_id'],)).fetchone()
-        lang = (lang[0] if lang and lang[0] else '') or ''
-        from . import llm as _llm, cs_i18n
-        # 请求线程内同步翻译：未缓存条数超限直接回退中文表，别把 HTTP 请求拖死。
-        def _texts(texts, **kw):
-            return cs_i18n.translate_texts(request_conn(), _llm, lang, texts, max_missing=200, **kw)
-        content = render_notes([snapshot(request_conn(),n) for n in notes], include_status=True,
-                               lang=lang, conn=request_conn(), llm=_llm,
-                               texts=_texts if lang and lang != '中文' else None)
-        title = _texts(['采购清单'])[0] if lang and lang != '中文' else '采购清单'
+        lang = cs_i18n.request_language(request, (lang[0] if lang and lang[0] else '') or '')
+        content = render_notes([snapshot(request_conn(),n) for n in notes], include_status=True, lang=lang)
+        title = cs_i18n.t('myList',lang)
         from urllib.parse import quote
         fname = quote(f"{title}-{row['customer_id'][:6]}.xlsx")
         return Response(content=content,

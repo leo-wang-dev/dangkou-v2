@@ -1,28 +1,24 @@
 <template>
-  <view class="page">
+  <view class="page" :style="{ direction: dir }">
+    <language-picker @change="pickLang" />
     <!-- 页内操作条（标题栏由 pages.json 提供；token 从链接带入） -->
     <view class="header">
-      <button class="hbtn ghost" @click="openList">📋 我的清单</button>
+      <button class="hbtn ghost" @click="openList">📋 {{ t('myShortList') }}</button>
       <button class="hbtn ghost" @click="photo">📷</button>
-      <button class="hbtn boss" @click="send('找老板')">找老板</button>
+      <button class="hbtn boss" @click="sendAction('contact_owner')">{{ t('contactOwner') }}</button>
     </view>
 
     <!-- 首访语言选择 -->
-    <view v-if="langBar" class="langbar">
-      <text class="langtip">语言 / Language:</text>
-      <button class="langbtn" @click="pickLang('中文')">中文</button>
-      <button class="langbtn" @click="pickLang('English')">English</button>
-    </view>
 
     <!-- 消息区 -->
     <view class="session-controls">
-      <text>图片模式：{{ photoMode === 'search' ? '查商品' : photoMode === 'notes' ? '记笔记' : '待选择' }}</text>
-      <button @click="setMode('search')">查商品</button><button @click="setMode('notes')">记笔记</button>
-      <button @click="newSession(true)">结束当前会话</button><button @click="manualBatch">手动切换档口</button>
-      <label v-for="n in unassigned" :key="n.id"><checkbox :checked="selected.includes(n.id)" @click="toggleNote(n.id)" />关联待归属条目 {{ n.id }} {{ n.fields['型号或品名'] }}</label>
-      <button v-for="b in batches.filter(x=>['pending','confirmed'].includes(x.state))" :key="b.id" @click="confirmBatch(b.id)">{{ b.active ? '当前档口：' : '确认切换：' }}{{ b.fields['档口名称'] || '未命名档口' }}</button>
-      <button v-for="b in batches.filter(x=>x.state==='pending')" :key="'decline'+b.id" @click="confirmBatch(b.id,null,'decline')">不切换此名片：{{ b.fields['档口名称'] }}</button>
-      <view v-if="hasPending"><text>有一张照片待处理。请选择模式后重试，或明确放弃。</text><button @click="retryPhoto">重试待处理照片</button><button @click="discardPhoto">放弃待处理照片</button></view>
+      <text>{{ t('activeMode', { mode: photoMode === 'search' ? t('findProduct') : photoMode === 'notes' ? t('takeNotes') : t('choosePhotoIntentAgain') }) }}</text>
+      <button @click="setMode('search')">{{ t('findProduct') }}</button><button @click="setMode('notes')">{{ t('takeNotes') }}</button>
+      <button @click="newSession(true)">{{ t('endSession') }}</button><button @click="manualBatch">{{ t('manualSwitchShop') }}</button>
+      <label v-for="n in unassigned" :key="n.id"><checkbox :checked="selected.includes(n.id)" @click="toggleNote(n.id)" />{{ t('attachNotes') }} {{ n.id }} {{ n.fields['型号或品名'] }}</label>
+      <button v-for="b in batches.filter(x=>['pending','confirmed'].includes(x.state))" :key="b.id" @click="confirmBatch(b.id)">{{ b.active ? t('currentShop') : t('confirmSwitch') }}{{ b.fields['档口名称'] || t('shopPending') }}</button>
+      <button v-for="b in batches.filter(x=>x.state==='pending')" :key="'decline'+b.id" @click="confirmBatch(b.id,null,'decline')">{{ t('declineCard') }}: {{ b.fields['档口名称'] }}</button>
+      <view v-if="hasPending"><text>{{ t('pendingPhoto') }}</text><button @click="retryPhoto">{{ t('retryPhoto') }}</button><button @click="discardPhoto">{{ t('discardPhoto') }}</button></view>
     </view>
     <scroll-view class="log" scroll-y :scroll-top="tail" scroll-with-animation>
       <view v-for="(m, i) in messages" :key="i" class="msg" :class="m.role === 'me' ? 'me' : 'bot'">
@@ -33,7 +29,7 @@
 
     <!-- 输入区 -->
     <view class="form">
-      <input v-model="input" class="text" placeholder="发消息，或点 📷 拍照整理采购清单" confirm-type="send" @confirm="send()" />
+      <input v-model="input" class="text" :placeholder="t('chatInputHint')" confirm-type="send" @confirm="send()" />
       <button class="send" @click="send()">➤</button>
     </view>
 
@@ -42,10 +38,10 @@
       <view class="mask" @click="drawer = false" />
       <view class="aside">
         <view class="dhead">
-          <text class="dtitle">📋 我的清单</text>
-          <button class="hbtn" @click="drawer = false">✕ 关闭</button>
+          <text class="dtitle">📋 {{ t('myShortList') }}</text>
+          <button class="hbtn" @click="drawer = false">✕ {{ t('close') }}</button>
         </view>
-        <view v-if="listEmpty" class="dempty">还没有清单——在对话里发照片整理条目，然后说「出表」生成清单。</view>
+        <view v-if="listEmpty" class="dempty">{{ t('chatListEmpty') }}</view>
         <scroll-view v-else class="dbody" scroll-y>
           <note-table v-if="listK" :k="listK" />
         </scroll-view>
@@ -55,6 +51,10 @@
 </template>
 
 <script setup>
+import { useCustomerLanguage } from '../../use-language.js'
+import LanguagePicker from '../../components/language-picker.vue'
+const { locale, dir, t, label, display, changeLanguage } = useCustomerLanguage('chatTitle')
+
 import { ref, nextTick } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { csApi, choosePhoto } from '../../api.js'
@@ -96,7 +96,7 @@ function onSegment(seg) {
   window.open(seg.v, '_blank', 'noopener')
   // #endif
   // #ifdef MP-WEIXIN
-  uni.setClipboardData({ data: seg.v, success: () => tip('链接已复制，可在浏览器打开') })
+  uni.setClipboardData({ data: seg.v, success: () => tip(t('linkCopied')) })
   // #endif
 }
 
@@ -111,7 +111,7 @@ async function send(override) {
     bubble('bot', (r.data && r.data.reply) || '…')
     await refreshSession()
   } else {
-    tip((r.data && r.data.detail) || '网络异常，请重试')
+    tip((r.data && r.data.detail) || t('networkError'))
   }
 }
 
@@ -120,26 +120,26 @@ async function photo() {
   let filePath = ''
   try { filePath = await choosePhoto() } catch (e) { return }
   if (!filePath) return
-  bubble('me', '📷 照片')
-  tip('识别中…')
+  bubble('me',t('photoMessage',{filename:t('photo')}))
+  tip(t('recognizing'))
   const r = await csApi.uploadPhoto(token.value, visitor.value, filePath)
   if (r.ok) {
     bubble('bot', (r.data && r.data.reply) || '…')
     await refreshSession()
   } else {
-    tip((r.data && r.data.detail) || '上传失败，请重试')
+    tip((r.data && r.data.detail) || t('uploadError'))
   }
 }
 
 async function pickLang(lang) {
+  changeLanguage(lang)
   await ready
-  await csApi.setLang(token.value, lang, visitor.value)
-  langBar.value = false
-  storage.set('dk_lang_done', '1')
-  bubble('bot', lang === '中文'
-    ? '您好！可以查询商品、发照片整理采购清单，需要联系商家可点右上角「找老板」。'
-    : 'Hello! You can search products or send photos to build a purchase list. Tap "找老板" to reach the owner.')
+  const r=await csApi.setLang(token.value,lang,visitor.value)
+  if(!r.ok){tip(r.data?.detail||t('networkError'));return}
+  storage.set('dk_lang_done','1')
+  bubble('bot',t('chatWelcome'))
 }
+async function sendAction(action){await ready;const r=await csApi.send(token.value,'',visitor.value,action);bubble('bot',r.data?.reply||r.data?.detail||t('networkError'));await refreshSession()}
 
 // 我的清单抽屉：按访客取最近 cs_link token，交给 note-table 渲染/编辑/导出
 async function openList() {
@@ -156,34 +156,34 @@ async function openList() {
 }
 
 function toggleNote(id){selected.value=selected.value.includes(id)?selected.value.filter(x=>x!==id):[...selected.value,id]}
-async function refreshSession(){const r=await csApi.session(token.value,visitor.value);if(!r.ok){tip(r.status===410?'会话已失效，请开始新会话':'会话加载失败');return}photoMode.value=r.data.photo_mode;hasPending.value=!!r.data.intent_required;batches.value=r.data.batches||[];unassigned.value=(r.data.notes||[]).filter(n=>['unassigned','legacy_unassigned'].includes(n.batch_state))}
+async function refreshSession(){const r=await csApi.session(token.value,visitor.value);if(!r.ok){tip(r.status===410?t('guestSessionExpired'):t('loadError'));return}photoMode.value=r.data.photo_mode;hasPending.value=!!r.data.intent_required;batches.value=r.data.batches||[];unassigned.value=(r.data.notes||[]).filter(n=>['unassigned','legacy_unassigned'].includes(n.batch_state))}
 async function newSession(end=false){
   try{
     if(end&&visitor.value){
       const r=await csApi.endSession(token.value,visitor.value)
-      if(!r.ok&&![401,410].includes(r.status)){tip('结束会话失败');return}
+      if(!r.ok&&![401,410].includes(r.status)){tip(t('networkError'));return}
       visitor.value='';storage.remove('h5v:'+token.value)
     }
     const r=await csApi.newSession(token.value)
-    if(!r.ok||!r.data?.visitor){tip('初始化失败');return}
+    if(!r.ok||!r.data?.visitor){tip(t('initError'));return}
     visitor.value=r.data.visitor;storage.set('h5v:'+token.value,visitor.value);messages.value=[];drawer.value=false;selected.value=[];await refreshSession()
-  }catch(e){tip('网络异常，请重试')}
+  }catch(e){tip(t('networkError'))}
 }
 async function setMode(mode){
   await ready
-  try{const r=await csApi.setMode(token.value,visitor.value,mode);if(r.data?.reply||r.data?.detail)bubble('bot',r.data.reply||r.data.detail);if(!r.ok)tip('照片处理失败，可重试或放弃待处理照片')}
-  catch(e){tip('网络异常，请重试')}
+  try{const r=await csApi.setMode(token.value,visitor.value,mode);if(r.data?.reply||r.data?.detail)bubble('bot',r.data.reply||r.data.detail);if(!r.ok)tip(t('pendingPhoto'))}
+  catch(e){tip(t('networkError'))}
   finally{await refreshSession()}
 }
-async function retryPhoto(){if(!photoMode.value){tip('请先选择查商品或记笔记');return}await setMode(photoMode.value)}
+async function retryPhoto(){if(!photoMode.value){tip(t('photoIntentPrompt'));return}await setMode(photoMode.value)}
 async function discardPhoto(){
   await ready
-  try{const r=await csApi.discardPhoto(token.value,visitor.value);if(!r.ok)tip('放弃失败，请重试')}
-  catch(e){tip('网络异常，请重试')}
+  try{const r=await csApi.discardPhoto(token.value,visitor.value);if(!r.ok)tip(t('networkError'))}
+  catch(e){tip(t('networkError'))}
   finally{await refreshSession()}
 }
-async function confirmBatch(id,fields=null,action='confirm'){const r=await csApi.confirmBatch(token.value,visitor.value,id,selected.value,fields,action);if(!r.ok){tip(r.data?.detail||'切换失败');return}selected.value=[];await refreshSession()}
-function manualBatch(){uni.showModal({title:'新档口名称',editable:true,success:r=>{if(r.confirm&&r.content)confirmBatch(null,{'档口名称':r.content})}})}
+async function confirmBatch(id,fields=null,action='confirm'){const r=await csApi.confirmBatch(token.value,visitor.value,id,selected.value,fields,action);if(!r.ok){tip(r.data?.detail||t('networkError'));return}selected.value=[];await refreshSession()}
+function manualBatch(){uni.showModal({title:t('newShopName'),editable:true,success:r=>{if(r.confirm&&r.content)confirmBatch(null,{'档口名称':r.content})}})}
 
 onLoad((options) => {
   options = options || {}
@@ -202,12 +202,14 @@ onLoad((options) => {
   if (!storage.get('dk_lang_done')) {
     langBar.value = true
   } else {
-    bubble('bot', '您好，有什么可以帮您？')
+    bubble('bot', t('chatReturnWelcome'))
   }
 })
 </script>
 
 <style scoped>
+.page,.nt{text-align:start}.cell-input,.nf-text{unicode-bidi:plaintext}.msg{unicode-bidi:plaintext}
+
 .session-controls { display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; background:#fff; max-height:180px; overflow:auto; flex-shrink:0; font-size:13px; }
 .session-controls button { margin:0; font-size:13px; line-height:2; padding:0 10px; color:#245b9c; }
 .session-controls label { width:100%; }

@@ -1,21 +1,21 @@
 <template>
   <view class="nt">
     <view class="bar">
-      <button class="primary" :disabled="!notes.length || exporting" @click="exportXlsx">⬇️ 导出 Excel</button>
-      <button class="ghost" @click="load">↻ 刷新</button>
+      <button class="primary" :disabled="!notes.length || exporting" @click="exportXlsx">⬇️ {{ t('exportExcel') }}</button>
+      <button class="ghost" @click="load">↻ {{ t('refresh') }}</button>
     </view>
 
     <view v-if="error" class="empty">{{ error }}</view>
-    <view v-else-if="loading" class="empty">加载中…</view>
-    <view v-else-if="!notes.length" class="empty">清单还是空的——先在客服页拍照发给我吧</view>
+    <view v-else-if="loading" class="empty">{{ t('loading') }}</view>
+    <view v-else-if="!notes.length" class="empty">{{ t('listEmpty') }}</view>
 
     <scroll-view v-else scroll-x class="table-scroll">
       <view class="table" :style="{ width: tableWidth + 'px' }">
         <view class="tr th">
           <view class="td idx">#</view>
-          <view v-for="key in keys" :key="key" class="td field">{{ key }}</view>
-          <view class="td status">确认状态</view>
-          <view class="td photo-col">商品照片</view>
+          <view v-for="key in keys" :key="key" class="td field">{{ label(key) }}</view>
+          <view class="td status">{{ t('statusHeader') }}</view>
+          <view class="td photo-col">{{ t('photoHeader') }}</view>
         </view>
         <view v-for="(n, i) in notes" :key="n.id" class="tr">
           <view class="td idx">{{ i + 1 }}</view>
@@ -36,7 +36,7 @@
               @blur="onEdit(n, key, $event)"
               @confirm="onEdit(n, key, $event)" />
           </view>
-          <view class="td status">{{ n.status === 'draft' ? '待确认' : '已确认' }}</view>
+          <view class="td status">{{ n.status === 'draft' ? t('statusDraft') : t('statusConfirmed') }}</view>
           <view class="td photo-col">
             <image
               v-if="n.photo && !photoFailed['row-' + n.id]"
@@ -49,11 +49,15 @@
       </view>
     </scroll-view>
 
-    <view class="saved">提示：待确认条目已包含在清单及导出中；档口信息待补充时请直接编辑对应列，或在客服对话里发送“清单第1、2条 档口：A档口”。核对后可回复“确认”。左右滑动查看全部字段；点击单元格修改，改完自动保存</view>
+    <view class="saved">{{ t('listEditingHelp') }}</view>
   </view>
 </template>
 
 <script setup>
+import { useCustomerLanguage } from '../use-language.js'
+import LanguagePicker from '../components/language-picker.vue'
+const { locale, dir, t, label, display, changeLanguage } = useCustomerLanguage()
+
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { csApi } from '../api.js'
 
@@ -79,7 +83,7 @@ function photoUrl(n) {
 
 function text(n, key) {
   const v = n.fields ? n.fields[key] : ''
-  return v === null || v === undefined ? '' : String(v)
+  return v === null || v === undefined ? '' : String(display(v))
 }
 
 function isPhotoKey(key) {
@@ -88,7 +92,7 @@ function isPhotoKey(key) {
 
 async function load() {
   if (!props.k) {
-    error.value = '链接无效或已过期，请找商家重新生成'
+    error.value = t('linkExpiredContact')
     notes.value = []
     return
   }
@@ -98,7 +102,7 @@ async function load() {
   loading.value = false
   if (!r.ok) {
     notes.value = []
-    error.value = (r.data && r.data.detail) || '链接无效或已过期，请找商家重新生成'
+    error.value = (r.data && r.data.detail) || t('linkExpiredContact')
     return
   }
   const list = (r.data && r.data.notes) || []
@@ -122,9 +126,9 @@ async function onEdit(note, key, ev) {
       const target = notes.value.find((n) => n.id === note.id)
       if (target) target.fields = fields
     }
-    uni.showToast({ title: '已保存 ✓', icon: 'none' })
+    uni.showToast({ title: t('saved'), icon: 'none' })
   } else {
-    uni.showToast({ title: (r.data && r.data.detail) || '保存失败', icon: 'none' })
+    uni.showToast({ title: (r.data && r.data.detail) || t('saveError'), icon: 'none' })
   }
 }
 
@@ -132,13 +136,15 @@ async function exportXlsx() {
   exporting.value = true
   const r = await csApi.exportXlsx(props.k)
   exporting.value = false
-  if (!r.ok) uni.showToast({ title: r.error || '导出失败', icon: 'none' })
+  if (!r.ok) uni.showToast({ title: r.error || t('exportError'), icon: 'none' })
 }
 
 defineExpose({ load })
 </script>
 
 <style scoped>
+.page,.nt{text-align:start}.cell-input,.nf-text{unicode-bidi:plaintext}.msg{unicode-bidi:plaintext}
+
 .nt { padding: 0 12px; }
 .bar { display: flex; gap: 10px; margin: 12px 0; }
 .bar button { margin: 0; flex: 1; border-radius: 8px; font-size: 15px; line-height: 2.2; }

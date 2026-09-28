@@ -12,7 +12,7 @@ export const storage = {
       try { return (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(key) : sessionMemory.get(key)) || fallback } catch (e) { return fallback }
     }
     try {
-      const v = uni.getStorageSync(key)
+      const v = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : uni.getStorageSync(key)
       return (v === '' || v === null || v === undefined) ? fallback : v
     } catch (e) {
       return fallback
@@ -23,13 +23,13 @@ export const storage = {
       try { if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(key, value); else sessionMemory.set(key, value) } catch (e) {}
       return
     }
-    try { uni.setStorageSync(key, value) } catch (e) { /* 存储满等异常忽略 */ }
+    try { if(typeof localStorage !== 'undefined')localStorage.setItem(key,value);else uni.setStorageSync(key, value) } catch (e) { /* 存储满等异常忽略 */ }
   },
   remove(key) {
     if (transient(key)) {
       try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(key); sessionMemory.delete(key) } catch (e) {}
       return
     }
-    try { uni.removeStorageSync(key) } catch (e) { /* 同上 */ }
+    try { if(typeof localStorage !== 'undefined')localStorage.removeItem(key);else uni.removeStorageSync(key) } catch (e) { /* 同上 */ }
   }
 }

@@ -94,18 +94,14 @@ def _export(conn, bot, cust, workbook=False):
 
 # ---------- 语言候选（删A：只留中文/English，检测与翻译机制保留） ----------
 
-def test_language_candidates_are_mandarin_and_english_only():
+def test_language_candidates_cover_all_thirteen_with_legacy_aliases():
     from catalog import cs_i18n
-    assert cs_i18n.detect_language('中文') == '中文'
-    assert cs_i18n.detect_language('English') == 'English'
-    assert cs_i18n.detect_language('en') == 'English'
-    assert cs_i18n.detect_language('我想转英文') is None        # 整句交给 parse_language_request
-    assert cs_i18n.parse_language_request('我想转英文') == ('switch', 'English')
-    for gone in ('Español', 'Français', 'Русский', '日本語', '한국어', 'العربية',
-                 '俄语', '日语', '西班牙语', '阿拉伯语'):
-        assert cs_i18n.detect_language(gone) is None
-    assert cs_i18n.LANGUAGE_PROMPT.count('·') == 1             # 只列中文 · English 两项
-    assert 'Español' not in cs_i18n.LANGUAGE_PROMPT
+    for code,name in cs_i18n.LANGUAGES.items():
+        assert cs_i18n.detect_language(code)==code
+        assert cs_i18n.detect_language(name)==code
+    assert cs_i18n.parse_language_request('我想转英文') == ('switch','en')
+    assert cs_i18n.detect_language('我想转英文') is None
+    assert cs_i18n.LANGUAGE_PROMPT.count('·')==12
 
 
 # ---------- 拍照整理 ----------

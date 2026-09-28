@@ -158,12 +158,15 @@ def test_h5_text_replans_when_same_visitor_language_changes(h5, monkeypatch):
                 json={'visitor': app.state.test_guests['same'], 'lang': 'English'}), 1.5)
             assert change.status_code == 200
             release.set()
-            assert (await slow).status_code == 200
+            response=await slow
+            assert response.status_code == 200
+            from catalog.cs_i18n import t
+            assert response.json()['reply'] == t('unknownAnswer','en')
 
     asyncio.run(exercise())
-    assert any('English' in prompt for prompt in prompts)
+    assert prompts  # Fixed translated fallback needs no additional translation model call.
     with sqlite3.connect(database) as connection:
-        assert connection.execute("SELECT lang FROM cs_customer WHERE tg_id=(SELECT owner_id FROM guest_sessions WHERE token_hash=?)",(userapp._hash(app.state.test_guests['same']),)).fetchone()[0] == 'English'
+        assert connection.execute("SELECT lang FROM cs_customer WHERE tg_id=(SELECT owner_id FROM guest_sessions WHERE token_hash=?)",(userapp._hash(app.state.test_guests['same']),)).fetchone()[0] == 'en'
 
 
 def test_h5_remote_catalog_wait_allows_other_write_and_reuses_result(h5, monkeypatch):

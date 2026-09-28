@@ -14,7 +14,32 @@ from .csbot import CsBot
 
 
 class H5Bot(CsBot):
-    """H5 直调内核：与 CsBot 完全同体，仅约定 api=None（无外发传输）。"""
+    """Translate inside the planned/replayed turn, never with a live model under a writer."""
+
+    def _text_turn(self, cust, text):
+        switch = cs_i18n.parse_language_request(text)
+        if switch and switch[0] == 'switch':
+            lang = set_language(self.conn, cust, switch[1])
+            return cs_i18n.t('chatWelcome',lang)
+        reply = super()._text_turn(cust,text)
+        lang = cs_i18n.normalize_language(self._cust_lang(cust))
+        if lang == 'zh': return reply
+        from . import cs
+        if cs_i18n.wants_boss(text) or reply==cs.contact_reply(self.conn):
+            profile=cs.get_shop(self.conn)
+            return '\n'.join([cs_i18n.t('contactOwner',lang), *[str(profile[k]) for k in ('owner_tg_username','owner_wechat') if profile[k]]])
+        if cs_i18n.wants_export(text):
+            import re
+            links=re.findall(r'https?://[^\s]+',reply)
+            return '\n'.join([cs_i18n.t('exportReady' if links else 'emptyExport',lang),*links])
+        if cs_i18n.wants_confirm(text):
+            if reply.startswith('目前没有'): return cs_i18n.t('toolListEmpty',lang)
+            import re
+            count=re.search(r'\d+',reply)
+            return cs_i18n.t('statusConfirmed',lang)+((': '+count[0]) if count else '')
+        protected = cs_i18n.protected_values(self.conn)
+        return cs_i18n.translate_text(self.conn,self.llm,self._cust_lang(cust),reply,commit=False,protected=protected)
+
 
 
 class _ReplayMiss(BaseException):
@@ -82,7 +107,7 @@ class _CachedConnection:
         return result
 
 
-def text_turn_transaction(conn, visitor: str, text: str, model, attempts=3, validate=None) -> str:
+def text_turn_transaction(conn, visitor: str, text: str, model, attempts=3, validate=None, language=None) -> str:
     """Plan model calls on a private snapshot; atomically replay on current data.
 
     The real connection takes its writer lock only after all model calls finish.
@@ -106,6 +131,9 @@ def text_turn_transaction(conn, visitor: str, text: str, model, attempts=3, vali
                         llm=_CachedModel(model, model_cache))
             bot._processing = True
             cust = ensure_visitor(bot, visitor)
+            if language is not None:
+                set_language(bot.conn,cust,language)
+                cust = lookup_visitor(bot.conn,visitor)
             bot._text_turn(cust, text)
         finally:
             snapshot.close()
@@ -128,6 +156,9 @@ def text_turn_transaction(conn, visitor: str, text: str, model, attempts=3, vali
                         llm=_CachedModel(model, model_cache, replay=True))
             bot._processing = True
             cust = ensure_visitor(bot, visitor)
+            if language is not None:
+                set_language(bot.conn,cust,language)
+                cust = lookup_visitor(bot.conn,visitor)
             return bot._text_turn(cust, text)
         except _ReplayMiss:
             conn.rollback()
@@ -158,6 +189,6 @@ def lookup_visitor(conn, visitor: str):
 
 
 def set_language(conn, cust: dict, lang: str) -> str:
-    lang = lang if lang in ('中文', 'English') else '中文'
+    lang = cs_i18n.normalize_language(lang)
     cs_i18n.set_language(conn, cust['id'], lang, commit=False)
     return lang
