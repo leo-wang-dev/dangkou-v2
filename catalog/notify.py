@@ -44,7 +44,19 @@ def render_import(payload):
                 '请再次上传同一份商品 Excel，系统才会开始解析和导入商品。')
     if stats.get('phase') == 'template':
         categories = '、'.join(str(value) for value in (stats.get('categories') or [])) or '新分类'
+        image_hints = [h for h in stats.get('review_hints') or []
+                       if h.get('kind') == 'unlabeled_image_column']
+        caution = ''
+        if image_hints:
+            from openpyxl.utils import get_column_letter
+            locations = '、'.join(f'{h.get("source_sheet") or "Sheet"} 的 {get_column_letter(int(h["column"]))} 列'
+                                 for h in image_hints[:5])
+            missing = any(not h.get('mapped') for h in image_hints)
+            caution = (f'⚠️ {locations}有图片但没有文字表头；'
+                       + ('请在模板审批卡补“图片”字段并选图片类型。\n' if missing
+                          else 'AI 已建议“图片”字段，请在审批卡核对类型和可见性。\n'))
         return (f'🧩 分类模板已识别：{categories}\n'
+                + caution +
                 '请打开审批入口确认字段和客户可见性；模板审批通过后，请再次上传同一份商品 Excel，系统才会导入商品。\n'
                 f'模板审批入口：{link}')
     if stats.get('phase') == 'products':

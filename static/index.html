@@ -301,6 +301,11 @@ async function refreshDetail(tid){
 function selectOptions(values, current){
   return values.map(([value,label])=>`<option value="${esc(value)}" ${value===current?'selected':''}>${esc(label)}</option>`).join('');
 }
+function excelColumn(number){
+  let value=Number(number), name='';
+  while(value>0 && value<=200){value--;name=String.fromCharCode(65+value%26)+name;value=Math.floor(value/26);}
+  return name || String(number);
+}
 function renderTemplateImport(tid, payload, box){
   const productPhase = payload.phase === 'products';
   templateDrafts[tid] = {};
@@ -310,12 +315,21 @@ function renderTemplateImport(tid, payload, box){
     const tpl = section.template;
     templateDrafts[tid][tpl.key] = tpl;
     const counts = section.drafts||{};
+    const imageHints = productPhase ? '' : (section.review_hints||[])
+      .filter(h=>h.kind==='unlabeled_image_column')
+      .map(h=>`<div role="alert" class="card" style="background:#fff8e8;border:1px solid #e9ce8a">
+        <b>图片列需要人工确认</b>：${esc(excelColumn(h.column))} 列没有文字表头，但有 ${esc(h.image_count)} 张内嵌图片。
+        ${h.mapped?'AI 已建议“图片”字段；请核对下方字段类型为“图片”、客户可见性符合预期。':
+          '<b>当前模板缺少对应图片字段。</b>请先补上并把类型选为“图片”，再批准模板。<button class="btn o s" onclick="addTemplateImageField(this)">＋ 补图片字段</button>'}
+        <span class="muted">也可以先手工建立分类，再上传商品。模板批准后须再次上传 Excel 才会导入商品。</span>
+      </div>`).join('');
     html += `<section class="card template-section" data-ticket-id="${tid}" data-template-key="${esc(tpl.key)}">
       <div class="row" style="justify-content:space-between"><div>
         <span class="tag ${section.template_action==='create'?'new':'upd'}">${productPhase?'模板已确认 · 商品导入':section.template_action==='create'?'新建分类':section.template_action==='update'?'更新模板':'沿用模板'}</span>
         <b>文件：${esc(cleanSrc(payload.filename || payload.source_key))}</b>
         <b>Sheet：${esc(section.source_sheet||tpl.source_sheet||tpl.name)}</b>
       </div><span class="muted">表头第 ${section.header_row||'-'} 行 · ${section.image_count||0} 张图</span></div>
+      ${imageHints}
       ${productPhase?'<p class="muted">本次使用已审批模板解析商品；模板字段不再重复确认。</p>':`<p class="muted">本工单只建立分类模板，不导入商品。模板审批通过后，请再次上传同一份商品 Excel。</p><div class="fg" style="margin-top:12px"><label>分类名称</label>
         <input data-template-name value="${esc(tpl.name)}"></div>
       <div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>
@@ -364,6 +378,15 @@ function addTemplateField(btn){
     <td style="padding:7px"><button class="btn d s" onclick="this.closest('tr').remove()">✕</button></td>`;
   tbody.appendChild(tr);
   tr.querySelector('[data-field-label]').focus();
+}
+function addTemplateImageField(btn){
+  const section=btn.closest('.template-section');
+  addTemplateField(btn);
+  const row=section.querySelector('tbody tr:last-child');
+  row.querySelector('[data-field-label]').value='图片';
+  row.querySelector('[data-template-type]').value='image';
+  row.querySelector('[data-template-visibility]').value='public';
+  btn.disabled=true;
 }
 function collectTemplateDecisions(tid){
   const result = {};

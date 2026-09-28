@@ -218,7 +218,10 @@ def _run_owned(conn, doc_id, callback=None, *, owner=None):
             if phase == 'template':
                 payload = dynamic_import.build_template_payload(conn, path, work_dir, **kwargs)
                 stats = {'phase': phase, 'template_doc_id': doc_id,
-                    'categories': [s['template']['name'] for s in payload['sheets']], 'next_action': 'upload_products'}
+                    'categories': [s['template']['name'] for s in payload['sheets']],
+                    'review_hints': [dict(hint, source_sheet=s['source_sheet'])
+                                     for s in payload['sheets'] for hint in s.get('review_hints', [])],
+                    'next_action': 'upload_products'}
             else:
                 payload = dynamic_import.build_product_payload(conn, path, work_dir,
                     template_doc_id=row['template_doc_id'], **kwargs)

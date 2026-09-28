@@ -504,6 +504,35 @@ def _template_sections(conn, discovered_sheets: list[dict], *, source_key: str,
     return sections
 
 
+def _attach_image_header_hints(sections: list[dict], discovered: list[dict], xlsx_path: str) -> None:
+    """Expose image columns without header text for human template review."""
+    try:
+        evidence = {item['title']: item for item in workbook_templates.extract_header_evidence(xlsx_path)}
+    except (OSError, ValueError):
+        return
+    by_sheet = {item['source_sheet']: item for item in discovered}
+    for section in sections:
+        source_sheet = section.get('source_discovered_sheet') or section.get('source_sheet')
+        item = evidence.get(source_sheet)
+        draft = by_sheet.get(source_sheet)
+        if not item or not draft:
+            continue
+        header = max(1, int(draft.get('header_row') or 1))
+        hints = []
+        for raw_col, count in sorted(item.get('图片锚点列', {}).items()):
+            col = int(raw_col)
+            # A title or a printed header already names this column.
+            if any(col <= len(row) and row[col - 1].strip()
+                   for row in item['grid'][:header]):
+                continue
+            mapped = any(field.get('role') == 'image' and field.get('source_column') == col
+                         for field in draft.get('fields', []))
+            hints.append({'kind': 'unlabeled_image_column', 'column': col,
+                          'image_count': count, 'mapped': mapped})
+        if hints:
+            section['review_hints'] = hints
+
+
 def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
                            doc_id: int | None = None, mode: str | None = None,
                            category_key: str | None = None) -> dict:
@@ -540,6 +569,7 @@ def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
         source_key or os.path.basename(xlsx_path), [d.get('title') or '' for d in discovered])
     sections = _template_sections(conn, discovered, source_key=source_key,
                                   doc_id=doc_id, mode=mode, category_key=category_key)
+    _attach_image_header_hints(sections, discovered, xlsx_path)
     if not sections:
         raise ValueError('Excel 中没有识别到有效 Sheet 和表头')
     if supplier_guess:

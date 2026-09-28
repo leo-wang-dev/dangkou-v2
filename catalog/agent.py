@@ -187,13 +187,16 @@ def _run_container_owned(prompt, xlsx_path, work_dir, *, out_name):
             command,
             capture_output=True, text=True, timeout=config.AGENT_TIMEOUT,
             env=env, cwd=work_dir, pass_fds=slot.fds)
-        completed=process.returncode==0
+        # A returned docker CLI is no longer running, even when Claude exits
+        # nonzero. Reconcile still checks the exact owned container/label;
+        # an already removed --rm container is safe to release here.
+        completed=True
     except subprocess.TimeoutExpired:
         timed_out = True   # 超时拯救：产物已写出则收用
     finally:
         slot.clear_child(completed=completed)
     if not timed_out and process.returncode != 0:
-        raise RuntimeError('Agent 解析进程失败，请重试')
+        raise RuntimeError(f'Agent 解析进程失败（退出码 {process.returncode}），请重试')
     if not os.path.exists(out_json):
         raise RuntimeError(f'Agent 未产出结果文件(timed_out={timed_out})')
     if timed_out:
