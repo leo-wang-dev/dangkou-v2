@@ -104,6 +104,7 @@ def register_routes(app: FastAPI):
         expose_headers=['Content-Disposition'])
     import asyncio
     import anyio
+    import threading
     from contextvars import ContextVar
     from . import db
     current_connection = ContextVar('catalog_request_connection', default=None)
@@ -113,20 +114,37 @@ def register_routes(app: FastAPI):
     def request_conn():
         return current_connection.get() or app.state.conn
 
+    async def run_request_worker(request, work, *, model=False):
+        done = threading.Event()
+        request.state.database_worker_done = done
+        try:
+            return await anyio.to_thread.run_sync(
+                work, limiter=model_limiter if model else None)
+        finally:
+            done.set()
+
     @app.middleware('http')
     async def database_request(request, call_next):
         database = app.state.conn.execute('PRAGMA database_list').fetchone()[2]
         conn = db.connect(database) if database else app.state.conn
         context = current_connection.set(conn)
 
+        async def wait_for_worker():
+            done = getattr(request.state, 'database_worker_done', None)
+            if done is not None:
+                with anyio.CancelScope(shield=True):
+                    await anyio.to_thread.run_sync(done.wait)
+
         async def respond():
             try:
                 response = await call_next(request)
+                await wait_for_worker()
                 if response.status_code >= 400:
                     conn.rollback()
                 else:
                     conn.commit()
-            except Exception:
+            except BaseException:
+                await wait_for_worker()
                 conn.rollback()
                 raise
             response.headers['Referrer-Policy'] = 'no-referrer'
@@ -1184,35 +1202,37 @@ def register_routes(app: FastAPI):
         return FileResponse(os.path.join(os.path.dirname(__file__), '..', 'static', 'cs', 'chat.html'))
 
     @app.post('/cs/chat/{token}/lang')
-    def cs_chat_lang(token: str, body: dict, request: Request):
+    async def cs_chat_lang(token: str, body: dict, request: Request):
         from . import cs_chat
-        _chat_conn(token)
-        bot = cs_chat.H5Bot(request_conn(), api=None)
-        cust = cs_chat.ensure_visitor(bot, str(body.get('visitor') or ''))
-        return {'lang': cs_chat.set_language(request_conn(), cust, str(body.get('lang') or ''))}
-
-    @app.post('/cs/chat/{token}/message')
-    async def cs_chat_message(token: str, body: dict, request: Request):
-        from . import cs_chat
-        _chat_conn(token)
-        text = str(body.get('text') or '').strip()[:2000]
-        if not text:
-            raise HTTPException(400, '消息不能为空')
-        def turn():
+        def set_lang():
+            _chat_conn(token)
             bot = cs_chat.H5Bot(request_conn(), api=None)
             bot._processing = True
             try:
                 cust = cs_chat.ensure_visitor(bot, str(body.get('visitor') or ''))
-                return bot._text_turn(cust, text)
+                return {'lang': cs_chat.set_language(
+                    request_conn(), cust, str(body.get('lang') or ''))}
             finally:
                 bot._processing = False
-        reply = await anyio.to_thread.run_sync(turn, limiter=model_limiter)
+        return await run_request_worker(request, set_lang)
+
+    @app.post('/cs/chat/{token}/message')
+    async def cs_chat_message(token: str, body: dict, request: Request):
+        from . import cs_chat
+        text = str(body.get('text') or '').strip()[:2000]
+        if not text:
+            raise HTTPException(400, '消息不能为空')
+        def turn():
+            _chat_conn(token)
+            from . import llm
+            return cs_chat.text_turn_transaction(
+                request_conn(), str(body.get('visitor') or ''), text, llm)
+        reply = await run_request_worker(request, turn, model=True)
         return {'reply': reply}
 
     @app.post('/cs/chat/{token}/photo')
     async def cs_chat_photo(token: str, request: Request):
         from . import cs_chat
-        _chat_conn(token)
         form = await request.form()
         up = form.get('file')
         visitor = str(form.get('visitor') or '')
@@ -1222,6 +1242,7 @@ def register_routes(app: FastAPI):
         if not data:
             raise HTTPException(400, '文件为空')
         def turn():
+            _chat_conn(token)
             bot = cs_chat.H5Bot(request_conn(), api=None)
             bot._processing = True
             try:
@@ -1232,7 +1253,7 @@ def register_routes(app: FastAPI):
                 return bot._on_photo(cust, None, prepared=prepared)
             finally:
                 bot._processing = False
-        reply = await anyio.to_thread.run_sync(turn, limiter=model_limiter)
+        reply = await run_request_worker(request, turn, model=True)
         return {'reply': reply}
 
     @app.get('/cs/chat/{token}/list-token')
@@ -1272,7 +1293,6 @@ def register_routes(app: FastAPI):
 
     @app.patch('/cs/link/{token}/note/{note_id}')
     async def cs_link_edit(token: str, note_id: int, request: Request):
-        link = _link_conn(token)
         try:
             body = await request.json()
         except ValueError:
@@ -1282,19 +1302,22 @@ def register_routes(app: FastAPI):
         field, value = str(body.get('field', '')), str(body.get('value', ''))
         if not field:
             raise HTTPException(400, 'field 不能为空')
-        row = request_conn().execute(
-            "SELECT * FROM cs_note WHERE id=? AND customer_id=? AND status IN ('draft','confirmed')",
-            (note_id, link['customer_id'])).fetchone()
-        if row is None:
-            raise HTTPException(404, '条目不存在')
-        from . import shop_link
-        try:
-            shop_link.set_field(request_conn(),row,field,value)
-        except ValueError as exc:
-            raise HTTPException(400,str(exc))
-        request_conn().commit()
-        updated=request_conn().execute('SELECT * FROM cs_note WHERE id=?',(note_id,)).fetchone()
-        return {'saved': True, 'fields': shop_link.customer_fields(request_conn(),updated)}
+        def edit():
+            link = _link_conn(token)
+            row = request_conn().execute(
+                "SELECT * FROM cs_note WHERE id=? AND customer_id=? AND status IN ('draft','confirmed')",
+                (note_id, link['customer_id'])).fetchone()
+            if row is None:
+                raise HTTPException(404, '条目不存在')
+            from . import shop_link
+            try:
+                shop_link.set_field(request_conn(), row, field, value)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            updated = request_conn().execute(
+                'SELECT * FROM cs_note WHERE id=?', (note_id,)).fetchone()
+            return {'saved': True, 'fields': shop_link.customer_fields(request_conn(), updated)}
+        return await run_request_worker(request, edit)
 
     @app.get('/cs/link/{token}/export.xlsx')
     def cs_link_export(token: str):

@@ -15,6 +15,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 from contextvars import ContextVar
 
 import anyio
@@ -111,20 +112,38 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     def request_conn():
         return current_connection.get() or conn
 
+    async def run_request_worker(request, work, *, model=False):
+        done = threading.Event()
+        request.state.database_worker_done = done
+        try:
+            return await anyio.to_thread.run_sync(
+                work, limiter=model_limiter if model else None)
+        finally:
+            done.set()
+
     @app.middleware('http')
     async def database_request(request, call_next):
         connection = sqlite3.connect(db_path, check_same_thread=False, timeout=5)
         connection.row_factory = sqlite3.Row
         context = current_connection.set(connection)
+
+        async def wait_for_worker():
+            done = getattr(request.state, 'database_worker_done', None)
+            if done is not None:
+                with anyio.CancelScope(shield=True):
+                    await anyio.to_thread.run_sync(done.wait)
+
         try:
             try:
                 response = await call_next(request)
+                await wait_for_worker()
                 if response.status_code >= 400:
                     connection.rollback()
                 else:
                     connection.commit()
                 return response
-            except Exception:
+            except BaseException:
+                await wait_for_worker()
                 connection.rollback()
                 raise
         finally:
@@ -225,7 +244,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
                     (kind, owner_id, note_photo, json.dumps(fields, ensure_ascii=False)))
             return {'reply': _receipt(items, cards), 'added': len(items)}
 
-        return await anyio.to_thread.run_sync(process_photo, limiter=model_limiter)
+        return await run_request_worker(request, process_photo, model=True)
 
     # ---------- 清单 / 导出 ----------
 
@@ -279,13 +298,15 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         email = str((body or {}).get('email') or '').strip().lower()
         if not EMAIL_RE.fullmatch(email):
             raise HTTPException(400, '邮箱格式不正确')
-        code = f'{secrets.randbelow(1000000):06d}'
-        request_conn().execute(
-            "INSERT INTO auth_codes(email, code_hash, expires_at) "
-            "VALUES(?,?,datetime('now', ?))",
-            (email, _hash(f'{email}:{code}'), f'+{CODE_TTL_MINUTES} minutes'))
-        _send_code_stub(email, code, codes_log)
-        return {'sent': True}   # 不回显验证码，统一“已发送”
+        def send_code():
+            code = f'{secrets.randbelow(1000000):06d}'
+            request_conn().execute(
+                "INSERT INTO auth_codes(email, code_hash, expires_at) "
+                "VALUES(?,?,datetime('now', ?))",
+                (email, _hash(f'{email}:{code}'), f'+{CODE_TTL_MINUTES} minutes'))
+            _send_code_stub(email, code, codes_log)
+            return {'sent': True}   # 不回显验证码，统一“已发送”
+        return await run_request_worker(request, send_code)
 
     @app.post('/auth/verify')
     async def auth_verify(request: Request):
@@ -297,24 +318,26 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         email = str(body.get('email') or '').strip().lower()
         code = str(body.get('code') or '').strip()
         guest = str(body.get('guest') or '').strip()
-        row = request_conn().execute(
-            "SELECT rowid FROM auth_codes WHERE email=? AND code_hash=? AND used_at IS NULL "
-            "AND datetime(expires_at)>datetime('now') ORDER BY rowid DESC LIMIT 1",
-            (email, _hash(f'{email}:{code}'))).fetchone()
-        if row is None:
-            raise HTTPException(400, '验证码错误或已过期')
-        request_conn().execute("UPDATE auth_codes SET used_at=datetime('now') WHERE rowid=?",
-                     (row['rowid'],))
-        request_conn().execute('INSERT OR IGNORE INTO users(email) VALUES(?)', (email,))
-        # 合并：当前游客的记录迁到账号名下（guest 行随之清空）。
-        if GUEST_RE.fullmatch(guest):
-            request_conn().execute(
-                "UPDATE notes SET owner_kind='user', owner_id=? WHERE owner_kind='guest' AND owner_id=?",
-                (email, guest))
-        token = secrets.token_urlsafe(32)
-        request_conn().execute('INSERT INTO session_tokens(token_hash, email) VALUES(?,?)',
-                     (_hash(token), email))
-        return {'token': token, 'email': email}
+        def verify_code():
+            row = request_conn().execute(
+                "SELECT rowid FROM auth_codes WHERE email=? AND code_hash=? AND used_at IS NULL "
+                "AND datetime(expires_at)>datetime('now') ORDER BY rowid DESC LIMIT 1",
+                (email, _hash(f'{email}:{code}'))).fetchone()
+            if row is None:
+                raise HTTPException(400, '验证码错误或已过期')
+            request_conn().execute("UPDATE auth_codes SET used_at=datetime('now') WHERE rowid=?",
+                         (row['rowid'],))
+            request_conn().execute('INSERT OR IGNORE INTO users(email) VALUES(?)', (email,))
+            # 合并：当前游客的记录迁到账号名下（guest 行随之清空）。
+            if GUEST_RE.fullmatch(guest):
+                request_conn().execute(
+                    "UPDATE notes SET owner_kind='user', owner_id=? WHERE owner_kind='guest' AND owner_id=?",
+                    (email, guest))
+            token = secrets.token_urlsafe(32)
+            request_conn().execute('INSERT INTO session_tokens(token_hash, email) VALUES(?,?)',
+                         (_hash(token), email))
+            return {'token': token, 'email': email}
+        return await run_request_worker(request, verify_code)
 
     @app.get('/me')
     def me(request: Request):

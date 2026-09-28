@@ -26,6 +26,13 @@ def local_catalog(conn):
 
 
 def remote(conn, path, body=None):
+    cached = getattr(conn, 'customer_catalog_remote', None)
+    if cached is not None:
+        return cached(path, body)
+    return _remote_uncached(conn, path, body)
+
+
+def _remote_uncached(conn, path, body=None):
     base = os.environ.get('CATALOG_CS_API_URL', '').rstrip('/')
     token = os.environ.get('CATALOG_CS_SERVICE_TOKEN', '')
     if not base or not token:

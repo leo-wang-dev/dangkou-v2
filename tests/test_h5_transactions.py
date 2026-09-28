@@ -2,7 +2,11 @@
 import io
 import json
 import sqlite3
+import asyncio
+import threading
+import time
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -132,3 +136,130 @@ def test_userapp_failed_photo_is_not_committed_by_later_request(tmp_path, monkey
     assert response.status_code == 500
     assert later.status_code == 200
     assert _count(database, 'notes') == 0
+
+
+def test_text_replay_failure_rolls_back_visitor_and_log(h5, monkeypatch):
+    from catalog.cs_chat import H5Bot
+
+    app, database, _ = h5
+    original = H5Bot._text_turn
+
+    def fail_on_real_connection(self, cust, text):
+        if self.conn.execute('PRAGMA database_list').fetchone()[2]:
+            self._log(cust['id'], 'user', text)
+            raise RuntimeError('apply failed after logging')
+        return original(self, cust, text)
+
+    monkeypatch.setattr(H5Bot, '_text_turn', fail_on_real_connection)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post('/cs/chat/test-shop/message',
+                               json={'visitor': 'replay-failure', 'text': '找老板'})
+    assert response.status_code == 500
+    assert _count(database, 'cs_customer') == 0
+    assert _count(database, 'cs_conversation_log') == 0
+    assert _count(database, 'cs_outbox') == 0
+
+
+def test_overlapping_failed_turn_does_not_undo_success(h5, monkeypatch):
+    from catalog import llm
+    from catalog.cs_chat import H5Bot
+
+    app, database, _ = h5
+    started, release = threading.Event(), threading.Event()
+    original = H5Bot._text_turn
+
+    def delayed_model(*args, **kwargs):
+        started.set()
+        assert release.wait(5)
+        return '{"actions":[]}'
+
+    def fail_only_bad_replay(self, cust, text):
+        if text == 'FAIL':
+            if self.conn.execute('PRAGMA database_list').fetchone()[2]:
+                self._log(cust['id'], 'user', text)
+                raise RuntimeError('failed after writing')
+            return 'planned'
+        return original(self, cust, text)
+
+    monkeypatch.setattr(llm, 'chat_text', delayed_model)
+    monkeypatch.setattr(H5Bot, '_text_turn', fail_only_bad_replay)
+
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+                                    base_url='http://test') as client:
+            good = asyncio.create_task(client.post(
+                '/cs/chat/test-shop/message',
+                json={'visitor': 'good', 'text': '请记录一个黑色型号ABC'}))
+            assert await asyncio.to_thread(started.wait, 2)
+            bad = await asyncio.wait_for(client.post(
+                '/cs/chat/test-shop/message',
+                json={'visitor': 'bad', 'text': 'FAIL'}), 1.5)
+            assert bad.status_code == 500
+            release.set()
+            assert (await good).status_code == 200
+
+    asyncio.run(exercise())
+    with sqlite3.connect(database) as connection:
+        visitors = {row[0] for row in connection.execute('SELECT tg_id FROM cs_customer')}
+        assert 'h5-good' in visitors
+        assert 'h5-bad' not in visitors
+        assert connection.execute('SELECT COUNT(*) FROM cs_conversation_log').fetchone()[0] >= 1
+
+
+def test_text_turn_returns_conflict_after_bounded_replans(h5, monkeypatch):
+    from catalog.cs_chat import H5Bot
+
+    app, database, _ = h5
+    plans = []
+
+    def keep_changing_database(self, cust, text):
+        assert not self.conn.execute('PRAGMA database_list').fetchone()[2]
+        plans.append(1)
+        with db.connect(str(database)) as writer:
+            writer.execute('UPDATE shop_profile SET shop_name=? WHERE id=1',
+                           (f'changed-{len(plans)}',))
+        return 'planned'
+
+    monkeypatch.setattr(H5Bot, '_text_turn', keep_changing_database)
+    with TestClient(app) as client:
+        response = client.post('/cs/chat/test-shop/message',
+                               json={'visitor': 'conflict', 'text': 'hello'})
+    assert response.status_code == 409
+    assert len(plans) == 3
+    assert _count(database, 'cs_customer') == 0
+
+
+def test_failed_language_change_rolls_back_visitor(h5, monkeypatch):
+    from catalog import cs_chat
+
+    app, database, _ = h5
+    original = cs_chat.set_language
+
+    def fail_after_update(conn, cust, lang):
+        original(conn, cust, lang)
+        raise RuntimeError('failed after language update')
+
+    monkeypatch.setattr(cs_chat, 'set_language', fail_after_update)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post('/cs/chat/test-shop/lang',
+                               json={'visitor': 'bad-language', 'lang': 'English'})
+    assert response.status_code == 500
+    assert _count(database, 'cs_customer') == 0
+
+
+def test_text_turn_reports_retriable_conflict_when_writer_is_busy(h5):
+    app, database, _ = h5
+    writer = sqlite3.connect(database)
+    writer.execute('BEGIN IMMEDIATE')
+    try:
+        started = time.monotonic()
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post('/cs/chat/test-shop/message',
+                                   json={'visitor': 'busy', 'text': '找老板'})
+        elapsed = time.monotonic() - started
+    finally:
+        writer.rollback()
+        writer.close()
+    assert response.status_code == 409
+    assert elapsed < 3
+    assert _count(database, 'cs_customer') == 0
