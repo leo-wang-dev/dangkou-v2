@@ -134,13 +134,13 @@ def register(app):
         if request.method=='GET':
             asset=public_language_asset(path)
             if asset is not None:return asset
-        chat = re.fullmatch(r'cs/chat/[A-Za-z0-9_-]{16,100}(?:/(session(?:/end)?|message|photo|lang|mode|pending-photo/discard|batches/confirm|list-token))?', path)
+        chat = re.fullmatch(r'cs/chat/[A-Za-z0-9_-]{16,100}(?:/(session(?:/(?:end|claim))?|history|message|photo|lang|mode|pending-photo/discard|batches/confirm|list-token))?', path)
         link = re.fullmatch(r'cs/link/[A-Za-z0-9_-]{16,100}(?:/(export\.xlsx|note/[0-9]+(?:/photo)?))?', path)
         allowed = path == 'cs/list.html' and request.method == 'GET'
         if chat:
             action = chat[1]
-            allowed = (request.method == 'GET' and action in (None, 'session', 'list-token') or
-                       request.method == 'POST' and action in ('session', 'session/end', 'message', 'photo', 'lang', 'mode', 'pending-photo/discard', 'batches/confirm'))
+            allowed = (request.method == 'GET' and action in (None, 'session', 'history', 'list-token') or
+                       request.method == 'POST' and action in ('session', 'session/end', 'session/claim', 'message', 'photo', 'lang', 'mode', 'pending-photo/discard', 'batches/confirm'))
         if link:
             action = link[1]
             allowed = (request.method == 'GET' and (action is None or action == 'export.xlsx' or action.endswith('/photo')) or
@@ -156,6 +156,8 @@ def register(app):
         language=request.headers.get('X-Customer-Language') or request.query_params.get('lang')
         headers={'Content-Type':request.headers.get('content-type','application/json')}
         if language:headers['X-Customer-Language']=cs_i18n.normalize_language(language)
+        authorization=request.headers.get('authorization','')
+        if authorization:headers['Authorization']=authorization
         photo = bool(chat and chat[1] == 'photo')
         limit = int(os.environ.get('CATALOG_UPLOAD_MAX_BYTES',20*1024*1024)) + 65536 if photo else 20000
         body = bytearray()
