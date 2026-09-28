@@ -16,7 +16,9 @@ def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> di
     wbtools.preflight_workbook(path)
     book = load_workbook(path, data_only=False, read_only=False)
     try:
-        visible = [ws for ws in book.worksheets if ws.sheet_state == 'visible' and (not sheet or ws.title == sheet)]
+        visible = [ws for ws in book.worksheets if ws.sheet_state == 'visible' and
+                   (not sheet or ws.title == sheet) and
+                   (any(wbtools._text(cell.value) for cell in ws._cells.values()) or ws._images)]
         if len(visible) != 1:
             return None
         ws = visible[0]
@@ -30,17 +32,22 @@ def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> di
                      for col in range(1, min(ws.max_column, 200) + 1)]
             found = [(col, label) for col, label in found if label]
             if [label for _, label in found] == expected:
-                matches.append((row, [col for col, _ in found]))
+                matches.append((row, [col for col, _ in found], False))
+            elif (len(found) == len(expected) - 1 and [label for _, label in found] == expected[:-1]
+                  and fields[-1]['role'] != 'image' and found
+                  and not wbtools._text(ws.cell(row, found[-1][0] + 1).value)
+                  and any(wbtools._text(ws.cell(r, found[-1][0] + 1).value)
+                          for r in range(row + 1, ws.max_row + 1))):
+                matches.append((row, [col for col, _ in found] + [found[-1][0] + 1], True))
         if len(matches) != 1:
             return None
-        header, columns = matches[0]
+        header, columns, unlabeled_tail = matches[0]
         key_col = next((columns[i] for i, f in enumerate(fields)
                         if f['role'] != 'image' and any(term in f['label'] for term in ('名称', '品名'))), None)
         model_col = next((columns[i] for i, f in enumerate(fields) if f['role'] == 'model'), None)
-        # A missing model can be a continuation or another product. Only a
-        # populated name column gives an unambiguous boundary here.
-        if key_col is None:
+        if key_col is None and model_col is None:
             return None
+        model_only = key_col is None
         source_map, _ = wbtools._merged_sources(ws)
         unmapped_rows = {r for (r, c), cell in ws._cells.items()
                          if r > header and c not in columns and wbtools._text(cell.value)}
@@ -53,6 +60,9 @@ def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> di
                 starts.append(row)
             elif direct.get(model_col, ''):
                 starts.append(row)
+            elif model_only and any(direct[col] for field, col in zip(fields, columns)
+                                    if field['role'] != 'image'):
+                return None  # Unknown product boundary: let the agent decide.
             elif any(direct.values()) and not starts:
                 return None
         if not starts:
@@ -92,6 +102,9 @@ def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> di
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
         failures = []
+        if unlabeled_tail:
+            failures.append({'source_sheet': ws.title, 'source_rows': [header],
+                             'reason': f'末列原表头为空，按已审核模板映射为“{fields[-1]["label"]}”，请核对'})
         for field, col in zip(fields, columns):
             if field['role'] != 'image':
                 continue
@@ -113,7 +126,13 @@ def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> di
             row = anchor.row + 1
             position = bisect_right(starts, row) - 1
             if position < 0:
-                return None
+                failures.append({'source_sheet': ws.title, 'source_rows': [row],
+                                 'reason': '表头前或商品行前的图片未归属商品，请核对'})
+                continue
+            image_columns = {col for field, col in zip(fields, columns) if field['role'] == 'image'}
+            if anchor.col + 1 not in image_columns:
+                failures.append({'source_sheet': ws.title, 'source_rows': [row],
+                                 'reason': '图片锚点不在模板图片列，已按同一商品行归属，请核对'})
             extension = str(getattr(image, 'format', '') or 'png').lower()
             if extension not in {'png', 'jpeg', 'jpg', 'webp', 'gif'}:
                 extension = 'png'

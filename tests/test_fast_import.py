@@ -69,3 +69,40 @@ def test_product_import_uses_fast_path_and_keeps_coverage(tmp_path, monkeypatch)
     assert rows[0]['data']['note'] == '首行\n补充'
     assert rows.coverage['uncertain'] is False
     assert rows.coverage['logical_products'] == 2
+
+
+def test_model_per_row_with_unlabelled_last_column_is_reviewable(tmp_path):
+    book = Workbook()
+    sheet = book.active
+    sheet.title = 'Sheet1'
+    sheet.append(['型号', '图片', '价格', '产品规格', '起订量', None])
+    sheet.append(['KZ-228', None, '28.5元/台', '1300w', 1000, '24台装'])
+    sheet.append(['KZ-3366', None, '35元/台', '2000w', 1000, '30台装'])
+    book.create_sheet('Sheet2')
+    path = tmp_path / 'kesen.xlsx'
+    book.save(path)
+    result = parse_structured({'fields': [
+        {'key': 'model', 'label': '型号', 'role': 'model'},
+        {'key': 'image', 'label': '图片', 'role': 'image'},
+        {'key': 'price', 'label': '价格', 'role': 'price'},
+        {'key': 'spec', 'label': '产品规格', 'role': 'spec'},
+        {'key': 'stock', 'label': '起订量', 'role': 'stock'},
+        {'key': 'note', 'label': '备注', 'role': 'spec'},
+    ]}, path, tmp_path / 'out', sheet='Sheet1')
+    assert [item['model'] for item in result['products']] == ['KZ-228', 'KZ-3366']
+    assert result['products'][0]['note'] == '24台装'
+    assert result['failures'][0]['source_rows'] == [1]
+
+
+def test_model_only_sheet_with_unidentified_data_row_uses_agent(tmp_path):
+    book = Workbook()
+    sheet = book.active
+    sheet.append(['型号', '价格'])
+    sheet.append(['A1', '10元'])
+    sheet.append([None, '20元'])
+    path = tmp_path / 'ambiguous.xlsx'
+    book.save(path)
+    assert parse_structured({'fields': [
+        {'key': 'model', 'label': '型号', 'role': 'model'},
+        {'key': 'price', 'label': '价格', 'role': 'price'},
+    ]}, path, tmp_path / 'out') is None

@@ -58,6 +58,23 @@ def build_dynamic_prompt(template: dict, xlsx_path: str, out_json: str, sheet: s
 def parse_dynamic(template: dict, xlsx_path: str, work_dir: str, *, sheet: str = '') -> dict:
     """动态分类的商品解析：提示词由已审批模板字段现场生成，同一容器链路执行。"""
     prompt = build_dynamic_prompt(template, '/input/source.xlsx', '/work/products.json', sheet)
+    # Give the agent exact small-sheet facts up front. It still decides product
+    # boundaries and ambiguous image ownership; it need not repeatedly explore
+    # the ZIP and write extraction scripts for every straightforward upload.
+    try:
+        from .agent_evidence import prepare
+        evidence = prepare(xlsx_path, work_dir, sheet=sheet)
+    except (OSError, ValueError):
+        evidence = None
+    if evidence:
+        prompt += ('\n\n# 已预提取的工作簿事实（以此为准）\n'
+                   '下面 JSON 保留了原单元格行列、文本、合并区及全部内嵌图片锚点。'
+                   '图片文件已经放在 /work，images 中的 name 可直接填入商品图片清单。'
+                   '请直接按这些事实做语义分组和图片归属，写 /work/products.json；'
+                   '无需再次扫描 Excel、解压图片或运行探索脚本。'
+                   '表头缺字、图片锚点偏列、跨行规格仍须按语义判断；'
+                   '不能确定的区域写入 failures，禁止猜测。\n'
+                   + json.dumps(evidence, ensure_ascii=False, separators=(',', ':')))
     data = _run_container(prompt, xlsx_path, work_dir)
     if not isinstance(data.get('products'), list):
         raise RuntimeError('Agent 输出必须包含 products 数组')
