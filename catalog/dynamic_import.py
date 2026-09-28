@@ -305,8 +305,9 @@ def _agent_rows(template: dict, xlsx_path: str, work_dir, sheet: str = '') -> li
             continue  # Reparse when a checkpoint or its artifacts are incomplete.
     # Structural rows are evidence, never a fallback source of product data.
     manifest = workbook_templates.discover_workbook(xlsx_path, include_images=False)
-    evidence = {d['source_sheet']: {r['source_row'] for r in d['rows']}
+    evidence = {d['source_sheet']: set(d.get('observed_rows', [r['source_row'] for r in d['rows']]))
                 for d in manifest if not sheet or d['source_sheet'] == sheet}
+    source_bounds = {d['source_sheet']: d['source_max_row'] for d in manifest if d['source_sheet'] in evidence}
     started = time.monotonic()
     parse_dir = root / identity[:16]; parse_dir.mkdir(exist_ok=True)
     try:
@@ -334,7 +335,7 @@ def _agent_rows(template: dict, xlsx_path: str, work_dir, sheet: str = '') -> li
         reason = ''
         if not isinstance(refs, list) or any(type(r) is not int or r < 1 for r in refs):
             reason, refs = '来源行号格式无效', []
-        if refs and (source_sheet not in evidence or any(r not in evidence[source_sheet] for r in refs)):
+        if refs and (source_sheet not in source_bounds or any(r > source_bounds[source_sheet] for r in refs)):
             reason = '来源行不在已观察到的数据区域，请核对表头或商品分组'
         if not refs:
             uncertain = True
@@ -516,6 +517,7 @@ def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
         raise ValueError('并入已有分类时必须提供 category_key')
     if mode != 'existing' and category_key:
         raise ValueError('只有 existing 模式可以提供 category_key')
+    workbook_templates.preflight_workbook(xlsx_path)
     # 表头发现三级链：qwen 快路（5-8 秒，证据=网格+图片锚点+合并区）→ 子代理
     # （约 4 分钟，稳）→ 代码按行猜（最后兜底）。多级表头/无标头图片列靠语义找齐。
     discovered = _qwen_template_sheets(xlsx_path)

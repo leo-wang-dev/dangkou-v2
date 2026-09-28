@@ -478,7 +478,13 @@ def register_routes(app: FastAPI):
     async def do_import(body: ImportIn, request: Request):
         done = threading.Event()
         request.state.database_worker_done = done
+        dispatch_lock = threading.Lock()
+        dispatch = {'state': 'pending'}
         def work():
+            with dispatch_lock:
+                if dispatch['state'] == 'cancelled':
+                    return  # Cancelled before dispatch: never touch request resources.
+                dispatch['state'] = 'running'
             try:
                 return _do_import(body, request)
             finally:
@@ -486,6 +492,12 @@ def register_routes(app: FastAPI):
         try:
             return await anyio.to_thread.run_sync(work)
         finally:
+            with dispatch_lock:
+                if dispatch['state'] == 'pending':
+                    # Fence even an already-submitted, not-yet-started callback.
+                    # Cancellation alone does not establish that a thread stopped.
+                    dispatch['state'] = 'cancelled'
+                    done.set()
             await drain_worker(done)
 
     def _do_import(body: ImportIn, request: Request):

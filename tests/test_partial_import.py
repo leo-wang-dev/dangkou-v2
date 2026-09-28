@@ -5,6 +5,9 @@ from openpyxl.styles import PatternFill
 from catalog import agent, db, dynamic_import, workbook_templates
 from tests.conftest import seed_category
 
+# Capture before the autouse offline fake: these regressions exercise real validation.
+_REAL_PARSE_DYNAMIC = agent.parse_dynamic
+
 
 def book(tmp_path):
     path = tmp_path / 'rows.xlsx'
@@ -179,4 +182,80 @@ def test_malformed_failure_coordinates_remain_renderable(tmp_path, monkeypatch):
     rows = dynamic_import._agent_rows(template, book(tmp_path), tmp_path / 'work')
     assert rows.failures[0]['source_rows'] == []
     assert '位置' in rows.failures[0]['reason']
+    conn.close()
+
+
+def test_product_spanning_image_only_row_survives_real_agent_boundary(tmp_path, monkeypatch):
+    from PIL import Image
+    from openpyxl.drawing.image import Image as ExcelImage
+    from pathlib import Path
+    conn = db.connect(':memory:'); db.init_db(conn); template = seed_category(conn)
+    path = tmp_path / 'image-support.xlsx'; wb = Workbook(); ws = wb.active
+    ws.title = '测试品类'; ws.append(['型号', '价格']); ws.append(['A', 2])
+    photo = tmp_path / 'source.png'; Image.new('RGB', (8, 9), 'red').save(photo)
+    ws.add_image(ExcelImage(photo), 'B3'); wb.save(path)
+    def container(prompt, source, work):
+        (Path(work) / 'a.png').write_bytes(photo.read_bytes())
+        return {'products': [{'model': 'A', 'source_sheet': '测试品类', 'source_rows': [2, 3], 'images': ['a.png']}]}
+    monkeypatch.setattr(agent, 'parse_dynamic', _REAL_PARSE_DYNAMIC)
+    monkeypatch.setattr(agent, '_run_container', container)
+    rows = dynamic_import._agent_rows(template, path, tmp_path / 'work')
+    assert len(rows) == 1
+    assert rows[0]['source_rows'] == [2, 3] and rows[0]['images']
+    assert rows.coverage['uncertain'] is False
+    conn.close()
+
+
+def test_mixed_malformed_product_keeps_valid_sibling_at_real_agent_boundary(tmp_path, monkeypatch):
+    conn = db.connect(':memory:'); db.init_db(conn); template = seed_category(conn)
+    monkeypatch.setattr(agent, 'parse_dynamic', _REAL_PARSE_DYNAMIC)
+    monkeypatch.setattr(agent, '_run_container', lambda *a, **kw: {
+        'products': [{'model': 'A', 'source_rows': [2]}, None]})
+    rows = dynamic_import._agent_rows(template, book(tmp_path), tmp_path / 'work')
+    assert [row['data']['model'] for row in rows] == ['A']
+    assert any('第 2 个结果不是商品对象' in f['reason'] for f in rows.failures)
+    conn.close()
+
+
+@pytest.mark.parametrize('discovery', ['qwen', 'agent', 'fallback'])
+def test_template_preflight_precedes_every_discovery_path(tmp_path, monkeypatch, discovery):
+    from catalog import ai_extract
+    from openpyxl import load_workbook
+    path = book(tmp_path); wb = load_workbook(path); wb.active.cell(3, 257, 'forbidden value'); wb.save(path)
+    conn = db.connect(':memory:'); db.init_db(conn)
+    response = [{'title': '测试品类', 'header_row': 1, 'columns': [
+        {'col': 1, 'label': '型号', 'role': 'model'}, {'col': 2, 'label': '价格', 'role': 'price'}]}]
+    calls = []
+    monkeypatch.setattr(ai_extract, 'discover_headers', lambda *a: calls.append('qwen') or (response if discovery == 'qwen' else None))
+    monkeypatch.setattr(agent, 'parse_dynamic_template', lambda *a: calls.append('agent') or {'sheets': response if discovery == 'agent' else []})
+    with pytest.raises(ValueError, match='200'):
+        dynamic_import.build_template_payload(conn, path, tmp_path / 'work', source_key='source')
+    assert calls == []
+    conn.close()
+
+
+def test_header_evidence_preflights_before_openpyxl(tmp_path, monkeypatch):
+    from openpyxl import load_workbook
+    path = book(tmp_path); wb = load_workbook(path); wb.active.cell(3, 257, 'forbidden value'); wb.save(path)
+    loads = []
+    original = workbook_templates.load_workbook
+    monkeypatch.setattr(workbook_templates, 'load_workbook', lambda *a, **kw: loads.append(1) or original(*a, **kw))
+    with pytest.raises(ValueError, match='200'):
+        workbook_templates.extract_header_evidence(path)
+    assert loads == []
+
+
+@pytest.mark.parametrize('discovery', ['qwen', 'agent'])
+def test_template_preflight_keeps_style_only_tail_on_successful_model_path(tmp_path, monkeypatch, discovery):
+    from catalog import ai_extract
+    from openpyxl import load_workbook
+    path = book(tmp_path); wb = load_workbook(path)
+    wb.active.cell(3, 257).fill = PatternFill('solid', fgColor='FFFF00'); wb.save(path)
+    conn = db.connect(':memory:'); db.init_db(conn)
+    response = [{'title': '测试品类', 'header_row': 1, 'columns': [
+        {'col': 1, 'label': '型号', 'role': 'model'}, {'col': 2, 'label': '价格', 'role': 'price'}]}]
+    monkeypatch.setattr(ai_extract, 'discover_headers', lambda *a: response if discovery == 'qwen' else None)
+    monkeypatch.setattr(agent, 'parse_dynamic_template', lambda *a: {'sheets': response})
+    payload = dynamic_import.build_template_payload(conn, path, tmp_path / 'work', source_key='source')
+    assert payload['sheets'][0]['template']['name'] == '测试品类'
     conn.close()

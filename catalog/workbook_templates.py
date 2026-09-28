@@ -165,14 +165,8 @@ def substantive_extents(path):
     return extents
 
 
-def discover_workbook(path, image_dir=None, *, include_rows=True, include_images=True) -> list[dict]:
-    """Return one template/product draft for every visible worksheet.
-
-    Template-only imports use ``include_rows=False`` and ``include_images=False``:
-    the workbook is validated and its schema is discovered without materializing
-    product rows or decoding embedded images.  The default remains the original
-    full discovery path for compatibility with direct callers.
-    """
+def preflight_workbook(path):
+    """Check file, archive, sparse cell and drawing bounds before any loader/model."""
     path = Path(path)
     # 91MB/378图的真实目录实测：解析<1s、峰值内存130MB。默认上限放宽到
     # 200MB/750MB（解压上限保持约3.5倍压缩比余量防zip炸弹），需要更紧可环境变量覆盖。
@@ -186,10 +180,24 @@ def discover_workbook(path, image_dir=None, *, include_rows=True, include_images
                 raise ValueError('Excel 解压内容过大，请删除无关图片或拆分后导入')
     except zipfile.BadZipFile as exc:
         raise ValueError('Excel 文件损坏或不是有效的 xlsx') from exc
-    # A schema-only pass can stream worksheet XML and avoid constructing the
-    # cell/image graph for the entire workbook.  Full product discovery keeps
-    # normal mode because merged cells and embedded image anchors are needed.
     substantive_extents(path)
+    with zipfile.ZipFile(path) as archive:
+        metadata = ET.fromstring(archive.read('xl/workbook.xml'))
+        if len(metadata.findall('.//{*}sheet')) > 20:
+            raise ValueError('Excel Sheet 超过 20 个，请拆分后导入')
+
+
+def discover_workbook(path, image_dir=None, *, include_rows=True, include_images=True) -> list[dict]:
+    """Return one template/product draft for every visible worksheet.
+
+    Template-only imports use ``include_rows=False`` and ``include_images=False``:
+    the workbook is validated and its schema is discovered without materializing
+    product rows or decoding embedded images.  The default remains the original
+    full discovery path for compatibility with direct callers.
+    """
+    path = Path(path)
+    preflight_workbook(path)
+    # Schema-only discovery streams cells; rows/images require normal mode.
     workbook = load_workbook(path, data_only=False,
                              read_only=not (include_rows or include_images))
     if len(workbook.worksheets) > 20:
@@ -224,6 +232,22 @@ def discover_workbook(path, image_dir=None, *, include_rows=True, include_images
         if not fields:
             continue
         key = _category_key(ws.title)
+        observed_rows = set()
+        source_max_row = ws.max_row
+        if include_rows:
+            # Supporting image/merged rows need no image-byte extraction. A
+            # product can legitimately span these rows even without text cells.
+            observed_rows.update(row for (row, col), cell in ws._cells.items()
+                                 if _text(cell.value))
+            anchors = {(anchor.row + 1, anchor.col + 1)
+                       for image in getattr(ws, '_images', ())
+                       if (anchor := getattr(image.anchor, '_from', None)) is not None}
+            observed_rows.update(row for row, col in anchors)
+            for merged in ws.merged_cells.ranges:
+                if _text(ws.cell(merged.min_row, merged.min_col).value) or (merged.min_row, merged.min_col) in anchors:
+                    observed_rows.update(range(merged.min_row, merged.max_row + 1))
+            source_max_row = max([source_max_row, *observed_rows])
+            observed_rows = {row for row in observed_rows if row > header_row}
         sources, _ = _merged_sources(ws) if include_rows else ({}, {})
         if include_images:
             images_by_row, image_count = _extract_images(ws, key, Path(image_dir) if image_dir else None)
@@ -255,7 +279,8 @@ def discover_workbook(path, image_dir=None, *, include_rows=True, include_images
         drafts.append({'key': key, 'name': ws.title.strip() or key,
                        'source_sheet': ws.title, 'title': title_values[0] if title_values else '',
                        'header_row': header_row, 'fields': fields, 'rows': rows,
-                       'image_count': image_count})
+                       'image_count': image_count, 'observed_rows': sorted(observed_rows),
+                       'source_max_row': source_max_row})
     workbook.close()
     return drafts
 
@@ -266,6 +291,7 @@ def extract_header_evidence(path, max_rows=8, max_cols=25) -> list:
     表头判断交给 LLM，结构事实（单元格内容/锚点/合并）由代码提供——锚点是
     xlsx drawings 里的确定数据，无标头图片列靠它识别。
     """
+    preflight_workbook(path)
     wb = load_workbook(path, read_only=False)
     out = []
     for ws in wb.worksheets:

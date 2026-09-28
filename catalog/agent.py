@@ -59,8 +59,10 @@ def parse_dynamic(template: dict, xlsx_path: str, work_dir: str, *, sheet: str =
     """动态分类的商品解析：提示词由已审批模板字段现场生成，同一容器链路执行。"""
     prompt = build_dynamic_prompt(template, '/input/source.xlsx', '/work/products.json', sheet)
     data = _run_container(prompt, xlsx_path, work_dir)
-    if not isinstance(data.get('products'), list) or not all(isinstance(p, dict) for p in data['products']):
-        raise RuntimeError('Agent 输出必须包含 products 对象数组')
+    if not isinstance(data.get('products'), list):
+        raise RuntimeError('Agent 输出必须包含 products 数组')
+    # Per-item validation belongs to dynamic_import so malformed siblings do
+    # not erase valid products from the same model response.
     return data
 
 

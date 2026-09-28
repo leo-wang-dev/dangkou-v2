@@ -114,3 +114,49 @@ def test_cancelled_wait_keeps_connection_until_worker_and_completion_durable(cli
     assert ingest.join_workers(timeout=5)
     assert app.state.conn.execute('SELECT status FROM import_doc').fetchone()[0] == 'ticketed'
     assert app.state.conn.execute('SELECT count(*) FROM cs_outbox').fetchone()[0] == 1
+
+
+def test_cancel_before_dispatch_does_not_leave_unfinishable_worker(client, tmp_path):
+    import asyncio
+    import anyio
+    from starlette.requests import Request
+    from openpyxl import Workbook
+    source = tmp_path / 'queued.xlsx'; wb = Workbook(); wb.active.append(['型号', '价格']); wb.save(source)
+    endpoint = next(route.endpoint for route in app.routes if getattr(route, 'path', '') == '/import')
+    request = Request({'type': 'http', 'method': 'POST', 'path': '/import',
+                       'headers': [(b'x-service-token', b'T0KEN')], 'state': {}})
+    async def exercise():
+        limiter = anyio.to_thread.current_default_thread_limiter()
+        previous = limiter.total_tokens; limiter.total_tokens = 1
+        await limiter.acquire()
+        try:
+            task = asyncio.create_task(endpoint(catalog_api.ImportIn(
+                path=str(source), phase='template', mode='new', wait=True), request))
+            for _ in range(200):
+                if getattr(request.state, 'database_worker_done', None) is not None:
+                    break
+                await asyncio.sleep(.005)
+            done = request.state.database_worker_done
+            task.cancel()
+            await asyncio.sleep(.03)
+            task.cancel()
+            limiter.release()
+            finished, _ = await asyncio.wait([task], timeout=.5)
+            safe_done = done.is_set()
+            # Regression cleanup only: never leave the known old drain hung.
+            if not finished:
+                done.set()
+                await asyncio.wait([task], timeout=1)
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            assert finished and safe_done, 'cancelled undispatched request retained an unfinishable completion event'
+            await asyncio.sleep(.03)
+        finally:
+            if limiter.borrowed_tokens:
+                limiter.release()
+            limiter.total_tokens = previous
+    asyncio.run(exercise())
+    assert app.state.conn.execute('SELECT count(*) FROM import_doc').fetchone()[0] == 0
+    assert app.state.conn.execute('SELECT count(*) FROM cs_outbox').fetchone()[0] == 0
