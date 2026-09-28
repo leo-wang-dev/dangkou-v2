@@ -38,6 +38,7 @@ EMAIL_RE = re.compile(r'[^\s@]+@[^\s@]+\.[^\s@]+\Z')
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS users(
   email TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL DEFAULT '',
   created_at TEXT DEFAULT (datetime('now')));
 CREATE TABLE IF NOT EXISTS auth_codes(
   email TEXT NOT NULL,
@@ -109,6 +110,11 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     for table in ('users','guest_sessions'):
         if 'lang' not in {r[1] for r in conn.execute(f'PRAGMA table_info({table})')}:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN lang TEXT NOT NULL DEFAULT 'zh'")
+    if 'account_id' not in {r[1] for r in conn.execute('PRAGMA table_info(users)')}:
+        conn.execute("ALTER TABLE users ADD COLUMN account_id TEXT NOT NULL DEFAULT ''")
+    for row in conn.execute("SELECT email FROM users WHERE account_id='' "):
+        conn.execute('UPDATE users SET account_id=? WHERE email=?', (secrets.token_hex(16), row['email']))
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_account_id ON users(account_id) WHERE account_id!=''")
     conn.commit()
 
     app = FastAPI(title='dangkou user tool')
@@ -423,7 +429,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         guest = str(body.get('guest') or '').strip()
         def verify_code():
             auth_codes.consume(request_conn(), email, code)
-            request_conn().execute('INSERT OR IGNORE INTO users(email) VALUES(?)', (email,))
+            request_conn().execute('INSERT OR IGNORE INTO users(email,account_id) VALUES(?,?)', (email,secrets.token_hex(16)))
             # 合并：当前游客的记录迁到账号名下（guest 行随之清空）。
             if guest:
                 session = guest_sessions.revoke(request_conn(), guest, 'merged')
@@ -445,7 +451,9 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     @app.get('/me')
     def me(request: Request):
         kind, owner_id = _identity(request, '')
-        return {'kind': kind, 'email': owner_id if kind == 'user' else '', 'lang':cs_i18n.normalize_language(request.state.customer_language)}
+        account_id = request_conn().execute('SELECT account_id FROM users WHERE email=?',(owner_id,)).fetchone()[0] if kind == 'user' else ''
+        return {'kind': kind, 'email': owner_id if kind == 'user' else '', 'account_id':account_id,
+                'lang':cs_i18n.normalize_language(request.state.customer_language)}
 
     # ---------- 页面（nginx 经 /tool/ 反代，前缀剥掉后落到这里的根路由） ----
 

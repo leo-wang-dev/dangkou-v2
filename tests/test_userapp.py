@@ -6,6 +6,7 @@
 import io
 import json
 import re
+import sqlite3
 
 import openpyxl
 import pytest
@@ -215,6 +216,41 @@ def test_bad_email_and_bad_token(client):
     assert client.post('/auth/code', json={'email': 'not-an-email'}).status_code == 400
     assert client.get('/me', headers={'Authorization': 'Bearer nope'}).status_code == 401
     assert client.get('/me').status_code == 401
+
+
+def test_existing_email_and_token_gain_stable_opaque_account_id(tmp_path, monkeypatch):
+    monkeypatch.setenv('USER_APP_ENV', 'development')
+    monkeypatch.setenv('USER_APP_DEV_EMAIL_LOG', '1')
+    database = tmp_path / 'legacy.db'
+    email, token = 'legacy@example.com', 'legacy-token'
+    conn = sqlite3.connect(database)
+    conn.executescript('''
+        CREATE TABLE users(email TEXT PRIMARY KEY, created_at TEXT DEFAULT (datetime('now')));
+        CREATE TABLE session_tokens(token_hash TEXT PRIMARY KEY, email TEXT NOT NULL,
+                                    created_at TEXT DEFAULT (datetime('now')));
+    ''')
+    conn.execute('INSERT INTO users(email) VALUES(?)', (email,))
+    conn.execute('INSERT INTO session_tokens(token_hash,email) VALUES(?,?)',
+                 (userapp._hash(token), email))
+    conn.commit()
+    conn.close()
+
+    kwargs = dict(db_path=str(database), photo_dir=str(tmp_path / 'photos'),
+                  codes_log=str(tmp_path / 'codes.log'), llm=FakeLlm())
+    first = TestClient(userapp.build_app(**kwargs))
+    body = first.get('/me', headers={'Authorization': f'Bearer {token}'}).json()
+    account_id = body['account_id']
+    assert body['email'] == email
+    assert re.fullmatch(r'[0-9a-f]{32}', account_id)
+    assert email not in account_id
+
+    second = TestClient(userapp.build_app(**kwargs))
+    assert second.get('/me', headers={'Authorization': f'Bearer {token}'}).json()['account_id'] == account_id
+    assert second.post('/auth/code', json={'email': email}).status_code == 200
+    code = _last_code(second, email)
+    login = second.post('/auth/verify', json={'email': email, 'code': code})
+    assert login.status_code == 200
+    assert second.get('/me', headers={'Authorization': f"Bearer {login.json()['token']}"}).json()['account_id'] == account_id
 
 
 # ---------- 页面 ----------
