@@ -1510,7 +1510,9 @@ def register_routes(app: FastAPI):
         lang = request_conn().execute(
             'SELECT lang FROM cs_customer WHERE id=?', (row['customer_id'],)).fetchone()
         lang = cs_i18n.request_language(request, (lang[0] if lang and lang[0] else '') or '')
-        content = render_notes([snapshot(request_conn(),n) for n in notes], include_status=True, lang=lang)
+        from . import llm as translation_model
+        content = render_notes([snapshot(request_conn(),n) for n in notes], include_status=True,
+                               lang=lang, conn=request_conn(), llm=translation_model)
         title = cs_i18n.t('myList',lang)
         from urllib.parse import quote
         fname = quote(f"{title}-{row['customer_id'][:6]}.xlsx")

@@ -3,6 +3,7 @@ import io
 import json
 import os
 import re
+import sqlite3
 import openpyxl
 from .cs_supplier import normalize
 from . import cs_i18n
@@ -24,8 +25,8 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
     """客户采购清单 Excel。
 
     - 只保留有实际内容的列（全空/未拍到/待补充的列删掉，档口归属依据等内部字段不导出）。
-    - Fixed headers use the shared locale catalog; raw evidence cells are never translated.
-    - texts/conn/llm remain compatibility parameters for older outbox callers.
+    - Fixed labels use local resources; eligible descriptive output uses protected translation.
+    - All worksheets are translated together before rendering/cache writes; stored evidence is unchanged.
     """
     lang = cs_i18n.normalize_language(lang)
     notes = list(notes)
@@ -35,8 +36,13 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
     for note in notes:
         from .note_batches import export_group
         groups.setdefault(export_group(note) if isinstance(note, dict) else ('batch','legacy'), []).append(note)
+    prepared = []
     for group in groups.values():
+        items, keys = _sheet_data(group)
         card = group[0].get('batch_fields', {}) if isinstance(group[0], dict) else {}
+        prepared.append((group, card, items, keys))
+    translations = _display_translations(prepared, lang, conn, llm)
+    for group, card, items, keys in prepared:
         title = re.sub(r'[\\/*?:\[\]]', '_', str(card.get('档口名称') or cs_i18n.t('shopPending',lang))).strip(" '")[:31] or '采购清单'
         original, number = title, 1
         while title.casefold() in {x.casefold() for x in wb.sheetnames}:
@@ -44,7 +50,7 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
             suffix = f' ({number})'
             title = original[:31-len(suffix)] + suffix
         ws = wb.create_sheet(title)
-        _render_sheet(group, ws, card, lang, texts)
+        _render_sheet(group, ws, card, lang, translations, items, keys)
     if not wb.worksheets:
         wb.create_sheet(cs_i18n.t('myList',lang)[:31])
     buf = io.BytesIO()
@@ -52,7 +58,7 @@ def render_notes(notes, include_status=False, lang='', conn=None, llm=None, text
     return buf.getvalue()
 
 
-def _render_sheet(notes, ws, card, lang, texts):
+def _sheet_data(notes):
     items = [normalize(json.loads(n['fields_json'])) for n in notes]
     # Old durable outbox snapshots may predate the public projection. Strip
     # binding metadata again at render time so retries cannot disclose it.
@@ -69,14 +75,78 @@ def _render_sheet(notes, ws, card, lang, texts):
             if k not in keys:
                 keys.append(k)
     keys = [k for k in keys if _column_useful(k, [f.get(k, '') for f in items])]
-    # Fields contain customer/supplier evidence, identifiers and numeric literals.
-    # Translate the schema labels locally; never send raw evidence to a translator.
-    headers = [cs_i18n.fixed(k,lang) for k in ['序号', *keys, '商品照片']]
-    rows = [[cs_i18n.display_value(f.get(k, ''),lang) for k in keys] for f in items]
+    return items, keys
+
+
+_LITERAL_FIELDS = frozenset({
+    '型号或品名', '型号', '产品型号', '货号', '品牌', '档口名称', '店铺名称',
+    '供应商', '供应商名称', '供应商联系人', '联系人', '供应商联系方式',
+    '联系方式', '电话', '手机', '邮箱', '网址', '档口号地址', '地址',
+    '价格', '单价', '金额', '数量', '装箱数', '体积或尺寸',
+    'model', 'modelid', 'modelnumber', 'sku', 'productid', 'itemno', 'id', 'brand',
+    'supplier', 'suppliername', 'shopname', 'contact', 'contactperson',
+    'phone', 'telephone', 'email', 'url', 'website', 'address',
+    'price', 'unitprice', 'amount', 'quantity', 'qty', 'cartons', 'pcsctn', 'dimensions',
+})
+
+
+def _literal_field(key):
+    return re.sub(r'[\W_]', '', str(key).casefold()) in _LITERAL_FIELDS
+
+
+def _display_translations(prepared, lang, conn, llm):
+    """Plan every worksheet together before any translation cache writes."""
+    if lang == 'zh':
+        return {}
+    sources = ['序号', '商品照片']
+    protected = []
+    for _, card, items, keys in prepared:
+        sources.extend([*keys, *card.keys()])
+        protected.extend(str(v) for v in card.values() if v not in EMPTY_TOKENS)
+        for item in items:
+            for key in keys:
+                value = item.get(key, '')
+                if _literal_field(key):
+                    if value not in EMPTY_TOKENS:
+                        protected.append(str(value))
+                elif isinstance(value, str) and cs_i18n.display_value(value, lang) == value:
+                    sources.append(value)
+    sources = list(dict.fromkeys(sources))
+    # Standalone renders still show an honest fallback without a provider/cache.
+    private = conn is None
+    if private:
+        conn = sqlite3.connect(':memory:')
+        conn.row_factory = sqlite3.Row
+    try:
+        # A caller already holding a writer may consume cache only. Normal HTTP
+        # exports reach here after read-only ownership/snapshot queries.
+        translated = cs_i18n.translate_texts(
+            conn, llm, lang, sources, protected=protected, commit=False,
+            max_missing=0 if conn.in_transaction or llm is None else None)
+        return dict(zip(sources, translated))
+    finally:
+        if private:
+            conn.close()
+
+
+def _render_sheet(notes, ws, card, lang, translations, items, keys):
+    def label(value):
+        return translations.get(value, cs_i18n.fixed(value, lang))
+
+    def display(key, value):
+        if _literal_field(key):
+            return cs_i18n.display_value(value, lang)
+        localized = cs_i18n.display_value(value, lang)
+        if not isinstance(value, str) or localized != value:
+            return localized
+        return translations.get(value, value)
+
+    headers = [label(k) for k in ['序号', *keys, '商品照片']]
+    rows = [[display(k, f.get(k, '')) for k in keys] for f in items]
     ws.sheet_view.rightToLeft = lang == 'ar'
     from openpyxl.drawing.image import Image as XlImage
     for key, value in card.items():
-        ws.append([cs_i18n.fixed(key,lang), value])
+        ws.append([label(key), value])
     offset = len(card)
     ws.append(headers)
     for i, values in enumerate(rows, 1):

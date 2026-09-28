@@ -376,7 +376,8 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         if not rows:
             raise HTTPException(409, '暂无可导出条目，请先上传照片')
         content = render_notes(
-            [{**note_batches.project(request_conn(), n), 'photo': n['photo_path']} for n in rows],lang=cs_i18n.request_language(request))
+            [{**note_batches.project(request_conn(), n), 'photo': n['photo_path']} for n in rows],lang=cs_i18n.request_language(request),
+            conn=request_conn(),llm=request.app.state.llm)
         fname = f'tool-list-{owner_id.split("@")[0][:16]}.xlsx'
         return Response(
             content=content,
