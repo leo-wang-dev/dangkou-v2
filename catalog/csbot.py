@@ -464,6 +464,10 @@ class CsBot:
 
     @staticmethod
     def _matching_products(text, candidates):
+        def by_supplier(matches):
+            suppliers = [p for p in matches if p.get('supplier') and str(p['supplier']) in text]
+            return suppliers or matches
+
         def boundary(name):
             return re.search(r'(?<![A-Za-z0-9_-])' + re.escape(name) + r'(?![A-Za-z0-9_-])', text, re.I)
         def hit(name):
@@ -478,8 +482,7 @@ class CsBot:
         matches = [product for product in candidates
                    if product.get('name') and hit(str(product['name']))]
         if matches:
-            suppliers = [p for p in matches if p.get('supplier') and str(p['supplier']) in text]
-            return suppliers or matches
+            return by_supplier(matches)
         # 第二优先：型号主体匹配。导入商品的名称常是“KS-0276\n铝合金”这种
         # “型号+换行+规格”格式，客户只会说型号，按首行（型号主体）匹配。
         bases = {str(product['name']).split('\n')[0].strip()
@@ -487,8 +490,8 @@ class CsBot:
         hits = {base for base in bases if len(base) >= 2 and re.search(r'[A-Za-z0-9]', base) and hit(base)}
         if not hits:
             return []
-        return [product for product in candidates
-                if product.get('name') and str(product['name']).split('\n')[0].strip() in hits]
+        return by_supplier([product for product in candidates
+                            if product.get('name') and str(product['name']).split('\n')[0].strip() in hits])
 
     def _format_catalog_variants(self, products, text):
         """Describe duplicate-model variants without binding the customer to one row."""

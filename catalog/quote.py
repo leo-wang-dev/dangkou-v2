@@ -142,6 +142,7 @@ def _dynamic_extractor(conn, category_key):
         if qmap.get('dims_field'):
             ctn.update({k: v for k, v in parse_ctn_spec(val(qmap['dims_field'])).items() if k in {'dims', 'meas'}})
         return {'item': val(qmap['model_field']),
+                'supplier': p['supplier'] or template.get('supplier', ''),
                 'desc': ' / '.join(v for v in (val(f['key']) for f in desc_fields) if v),
                 'color': val(qmap.get('color_field')),
                 'price': val(qmap['price_field']),
@@ -212,7 +213,7 @@ def generate_generic(conn, storage, items, price_adjustment_pct, out_path, depos
             qty = pcs * ctns          # 整箱口径：QUANTITY = 每箱数×箱数（100台/60箱装→2箱=120台）
         if details is not None:
             details.append({'category': p['category_key'], 'product_id': p['id'],
-                            'supplier': p['supplier'], 'model': row['item'],
+                            'supplier': row['supplier'], 'model': row['item'],
                             'requested_quantity': requested_qty, 'quoted_quantity': qty,
                             'pcs_per_carton': pcs, 'unit_price': float(unit), 'amount': float(unit * qty)})
         tgw = round(ctns * gw, 2) if (ctns is not None and gw) else None

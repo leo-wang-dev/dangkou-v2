@@ -197,3 +197,38 @@ def test_repeated_incoming_variant_cannot_choose_an_arbitrary_update():
     old = [{**draft(fp='old'),'id':'a'}]
     with pytest.raises(ValueError, match='无法确定'):
         di._classify_rows(old,[draft(fp='one'),draft(fp='two')],['model'],['color'])
+
+
+def test_multiline_model_supplier_selection_uses_first_line(conn):
+    from catalog.csbot import CsBot
+    seed(conn)
+    dc.upsert_approved_products(conn, 'hairdryer', [
+        {'id': product_id, 'supplier': supplier,
+         'data': {'model': 'M1\n铝合金'}, 'cs_visible': 1}
+        for product_id, supplier in [('a', '厂甲'), ('b', '厂乙')]])
+    products = customer_catalog.local_catalog(conn)['products']
+    assert {p['id'] for p in CsBot._matching_products('M1', products)} == {'a', 'b'}
+    assert [p['id'] for p in CsBot._matching_products('厂乙 M1', products)] == ['b']
+    assert [p['id'] for p in CsBot._matching_products('厂甲 M1', products)] == ['a']
+
+
+def test_quote_details_and_notification_resolve_legacy_supplier_default(conn, client, monkeypatch):
+    from catalog import notify
+    from tests.conftest import DYNAMIC_FIELDS
+    notices = []
+    monkeypatch.setattr(notify, 'push_file', lambda message, path, **kw: notices.append(message))
+    dc.approve_template(conn, {'key': 'legacy', 'name': '旧商品', 'supplier': '默认厂',
+                              'fields': DYNAMIC_FIELDS})
+    dc.upsert_approved_products(conn, 'legacy', [
+        {'id': 'legacy-product', 'supplier': '', 'cs_visible': 1,
+         'data': {'model': 'M1', 'price': '65', 'ctn': '40件/箱'}}])
+    conn.commit()
+    assert conn.execute("SELECT supplier FROM product_dynamic WHERE id='legacy-product'").fetchone()[0] == ''
+    assert client.get('/products/legacy', headers=AUTH).json()['products'][0]['supplier'] == '默认厂'
+    response = client.post('/quote', headers=AUTH, json={
+        'items': [{'category': 'legacy', 'product_id': 'legacy-product', 'quantity': 50}],
+        'price_adjustment_pct': 3})
+    assert response.status_code == 200
+    assert response.json()['items'][0]['supplier'] == '默认厂'
+    assert '默认厂 M1' in response.json()['quantity_adjustment_note']
+    assert '默认厂 M1' in notices[0]
