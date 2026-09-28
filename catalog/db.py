@@ -23,6 +23,8 @@ def init_db(conn):
     from . import guest_sessions, note_batches
     guest_sessions.migrate(conn)
     note_batches.migrate(conn, "cs_note")
+    from . import shop_account
+    shop_account.migrate(conn)
     _seed_cs(conn)
     conn.commit()
 

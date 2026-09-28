@@ -228,7 +228,8 @@ class CsBot:
         preset = shop_link.supplier_values(profile) if profile['shop_name'] and profile['tg_bot_id'] else None
         if any(shop_link.origin(self.conn, item)[2] == 'photo' for item in items):
             preset = None
-        batch_id, pending = note_batches.prepare(self.conn, 'guest', cust['id'], cards, preset=preset)
+        batch_kind = 'user' if 'account_id' in cust.keys() and cust['account_id'] else 'guest'
+        batch_id, pending = note_batches.prepare(self.conn, batch_kind, cust['id'], cards, preset=preset)
         card_lines = ['已识别名片，待确认切换档口：' + json.dumps(c,ensure_ascii=False) for c in cards]
         start = self.conn.execute("SELECT COUNT(*) FROM cs_note WHERE customer_id=? AND status='draft'", (cust['id'],)).fetchone()[0] + 1
         for i, fields in enumerate(items, start):

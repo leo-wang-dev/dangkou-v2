@@ -1221,9 +1221,9 @@ def register_routes(app: FastAPI):
         if not active:
             raise HTTPException(410, '链接已过期')
         session = request_conn().execute('SELECT s.* FROM guest_sessions s JOIN cs_customer c ON c.tg_id=s.owner_id WHERE c.id=?',(row['customer_id'],)).fetchone()
-        if session:
+        if session and session['state'] != 'account':
             request.state.guest_hash = session['token_hash']
-        if session and (session['state'] != 'active' or session['expires_at'] <= __import__('time').time()):
+        if session and session['state'] != 'account' and (session['state'] != 'active' or session['expires_at'] <= __import__('time').time()):
             raise HTTPException(410,'session_expired')
         return row
 
@@ -1252,6 +1252,17 @@ def register_routes(app: FastAPI):
         return FileResponse(os.path.join(os.path.dirname(__file__), '..', 'static', 'cs', 'chat.html'))
 
     def _session(request, visitor):
+        from . import buyer_identity, shop_account
+        if buyer_identity.has_bearer(request):
+            account_id = getattr(request.state, 'account_id', None)
+            if account_id is None:
+                account_id = buyer_identity.verify(request)
+                request.state.account_id = account_id
+            session = shop_account.account_session(request_conn(), account_id)
+            from .cs_chat import lookup_visitor
+            cust = lookup_visitor(request_conn(),session['owner_id'])
+            request.state.customer_language = cs_i18n.normalize_language(cust['lang'] if cust else '')
+            return session
         session = guest_sessions.validate(request_conn(), visitor)
         request.state.guest_capability = visitor
         from .cs_chat import lookup_visitor
@@ -1259,16 +1270,40 @@ def register_routes(app: FastAPI):
         request.state.customer_language = cs_i18n.normalize_language(cust['lang'] if cust else '')
         return session
 
+    async def _session_async(request, visitor):
+        from . import buyer_identity
+        if buyer_identity.has_bearer(request):
+            return await anyio.to_thread.run_sync(lambda: _session(request, visitor))
+        return _session(request, visitor)
+
     @app.post('/cs/chat/{token}/session')
-    def cs_new_session(token: str):
+    def cs_new_session(token: str, request: Request):
         _chat_conn(token)
+        from . import buyer_identity
+        if buyer_identity.has_bearer(request):
+            session = _session(request, '')
+            return {'visitor':'', 'photo_mode':session['photo_mode'], 'account':True}
         return {'visitor':guest_sessions.issue(request_conn()), 'photo_mode':'', 'idle_seconds':guest_sessions.ttl()}
 
     @app.post('/cs/chat/{token}/session/end')
-    def cs_end_session(token: str, body: dict):
+    def cs_end_session(token: str, body: dict, request: Request):
         _chat_conn(token)
+        from . import buyer_identity
+        if buyer_identity.has_bearer(request):
+            session = _session(request, '')
+            request_conn().execute("UPDATE guest_sessions SET photo_mode='',pending_photo='' WHERE token_hash=?",(session['token_hash'],))
+            return {'ended':True,'account':True}
         guest_sessions.revoke(request_conn(), str(body.get('visitor') or ''))
         return {'ended':True}
+
+    @app.post('/cs/chat/{token}/session/claim')
+    def cs_claim_session(token: str, body: dict, request: Request):
+        from . import buyer_identity, shop_account
+        _chat_conn(token)
+        account_id = buyer_identity.verify(request)
+        customer_id = shop_account.claim(request_conn(), account_id, str(body.get('visitor') or ''))
+        request.state.account_id = account_id
+        return {'claimed':True,'customer_id':customer_id}
 
     @app.get('/cs/chat/{token}/session')
     def cs_session_state(token: str, request: Request, visitor: str = ''):
@@ -1277,15 +1312,30 @@ def register_routes(app: FastAPI):
         session = _session(request,visitor)
         cust = cs_chat.lookup_visitor(request_conn(),session['owner_id'])
         notes = request_conn().execute("SELECT * FROM cs_note WHERE customer_id=? AND status IN ('draft','confirmed') ORDER BY id",(cust['id'],)).fetchall() if cust else []
+        kind = 'user' if getattr(request.state,'account_id',None) else 'guest'
         return {'lang':cs_i18n.request_language(request), 'photo_mode':session['photo_mode'], 'intent_required':bool(session['pending_photo']),
-                'batches':note_batches.listing(request_conn(),'guest',cust['id']) if cust else [],
+                'batches':note_batches.listing(request_conn(),kind,cust['id']) if cust else [],
                 'notes':[{'id':n['id'],'batch_state':note_batches.project(request_conn(),n)['batch_state'],'fields':shop_link.customer_fields(request_conn(),n)} for n in notes]}
+
+    @app.get('/cs/chat/{token}/history')
+    def cs_chat_history(token: str, request: Request, visitor: str = '', before: int = 0):
+        from . import cs_chat
+        _chat_conn(token)
+        session = _session(request, visitor)
+        cust = cs_chat.lookup_visitor(request_conn(),session['owner_id'])
+        if not cust:
+            return {'messages':[], 'next_before':0}
+        rows = request_conn().execute(
+            'SELECT id,role,content,kind,created_at FROM cs_conversation_log WHERE customer_id=? AND (?=0 OR id<?) ORDER BY id DESC LIMIT 50',
+            (cust['id'],max(0,before),max(0,before))).fetchall()
+        return {'messages':[dict(row) for row in reversed(rows)], 'next_before':rows[-1]['id'] if len(rows)==50 else 0}
 
     @app.post('/cs/chat/{token}/batches/confirm')
     def cs_confirm_batch(token: str, body: dict, request: Request):
         from . import cs_chat
         _chat_conn(token)
         session = _session(request, str(body.get('visitor') or ''))
+        kind = 'user' if getattr(request.state,'account_id',None) else 'guest'
         cust = cs_chat.lookup_visitor(request_conn(),session['owner_id'])
         if not cust and body.get('fields'):
             bot = cs_chat.H5Bot(request_conn(),api=None)
@@ -1295,11 +1345,11 @@ def register_routes(app: FastAPI):
             raise HTTPException(404,'batch_not_found')
         bid = body.get('batch_id')
         if body.get('fields'):
-            bid = note_batches.create(request_conn(),'guest',cust['id'],body['fields'],'pending','manual')
+            bid = note_batches.create(request_conn(),kind,cust['id'],body['fields'],'pending','manual')
         if body.get('action') == 'decline':
-            note_batches.decline(request_conn(),'guest',cust['id'],bid)
+            note_batches.decline(request_conn(),kind,cust['id'],bid)
             return {'declined':True}
-        note_batches.confirm(request_conn(),'guest',cust['id'],bid,body.get('note_ids') or [],'cs_note')
+        note_batches.confirm(request_conn(),kind,cust['id'],bid,body.get('note_ids') or [],'cs_note')
         return {'confirmed':True}
 
     @app.post('/cs/chat/{token}/lang')
@@ -1331,7 +1381,7 @@ def register_routes(app: FastAPI):
             visitor = str(body.get('visitor') or '')
             session = _session(request, visitor)
             return cs_chat.text_turn_transaction(
-                request_conn(), session['owner_id'], text, llm, validate=lambda:guest_sessions.validate(request_conn(),visitor), language=request.headers.get('x-customer-language') or request.query_params.get('lang'))
+                request_conn(), session['owner_id'], text, llm, validate=lambda:_session(request,visitor), language=request.headers.get('x-customer-language') or request.query_params.get('lang'))
         reply = await run_request_worker(request, turn, model=True)
         return {'reply': reply}
 
@@ -1352,7 +1402,7 @@ def register_routes(app: FastAPI):
         from . import llm as translation_model
         display_reply = cs_i18n.receipt(items,cards,lang,conn=request_conn(),llm=translation_model) if lang!='zh' and mode=='notes' and not rule else None
         request_conn().execute('BEGIN IMMEDIATE')
-        current = guest_sessions.validate(request_conn(),visitor)
+        current = _session(request,visitor)
         if not pending_path and current['pending_photo']:
             raise HTTPException(409,'pending_photo_requires_resolution')
         if pending_path and current['pending_photo'] != pending_path:
@@ -1380,13 +1430,14 @@ def register_routes(app: FastAPI):
                 reply='\n'.join([cs_i18n.t('contactOwner',lang), *[str(profile[k]) for k in ('owner_tg_username','owner_wechat') if profile[k]]])
             elif mode=='notes': reply=display_reply
             else: reply=cs_i18n.t('findProduct' if found else 'noMatchingProducts',lang)+'\n'+'\n'.join(f'{i}: {p["name"]}' for i,p in enumerate(found,1))
-        return {'reply':reply,'photo_mode':mode,'batches':note_batches.listing(request_conn(),'guest',cust['id'])}
+        kind = 'user' if getattr(request.state,'account_id',None) else 'guest'
+        return {'reply':reply,'photo_mode':mode,'batches':note_batches.listing(request_conn(),kind,cust['id'])}
 
     @app.post('/cs/chat/{token}/mode')
     async def cs_photo_mode(token: str, body: dict, request: Request):
         _chat_conn(token)
         visitor = str(body.get('visitor') or '')
-        session = _session(request,visitor)
+        session = await _session_async(request,visitor)
         mode = body.get('mode')
         if mode not in ('search','notes'):
             raise HTTPException(400,'invalid_photo_mode')
@@ -1414,7 +1465,7 @@ def register_routes(app: FastAPI):
         _chat_conn(token)
         form = await request.form(max_files=1, max_fields=8)
         visitor = str(form.get('visitor') or '')
-        session = _session(request,visitor)
+        session = await _session_async(request,visitor)
         up = form.get('file')
         if up is None or not hasattr(up,'read'):
             raise HTTPException(400,'请上传 file 文件')
@@ -1428,7 +1479,7 @@ def register_routes(app: FastAPI):
             path = os.path.join(bot.img_dir,'pending_'+secrets.token_hex(16)+'.jpg')
             open(path,'wb').write(data)
             request.state.created_photos = [path]
-            changed = request_conn().execute("UPDATE guest_sessions SET pending_photo=? WHERE token_hash=? AND pending_photo='' AND photo_mode='' AND state='active'",(path,session['token_hash']))
+            changed = request_conn().execute("UPDATE guest_sessions SET pending_photo=? WHERE token_hash=? AND pending_photo='' AND photo_mode='' AND state IN ('active','account')",(path,session['token_hash']))
             if not changed.rowcount:
                 raise HTTPException(409,'pending_photo_requires_intent')
             return {'status':'intent_required','photo_mode':'','reply':cs_i18n.t('photoIntentPrompt',cs_i18n.request_language(request))}
@@ -1446,6 +1497,12 @@ def register_routes(app: FastAPI):
         row = request_conn().execute(
             "SELECT token FROM cs_link WHERE customer_id=? AND datetime(expires_at)>datetime('now') "
             'ORDER BY rowid DESC LIMIT 1', (cust['id'],)).fetchone()
+        if row is None and getattr(request.state,'account_id',None):
+            exists = request_conn().execute('SELECT 1 FROM cs_note WHERE customer_id=? LIMIT 1',(cust['id'],)).fetchone()
+            if exists:
+                new_token = secrets.token_urlsafe(24)
+                request_conn().execute('INSERT INTO cs_link(token,customer_id) VALUES(?,?)',(new_token,cust['id']))
+                return {'token':new_token}
         return {'token': row['token'] if row else ''}
 
     @app.get('/cs/link/{token}')
