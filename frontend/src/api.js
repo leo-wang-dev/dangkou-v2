@@ -235,25 +235,27 @@ export const toolApi = {
 // ---------- 客服 / 清单（商家运行时）API ----------
 
 export const csApi = {
-  newSession: (token) => request('cs/chat/'+token+'/session',{method:'POST',base:getBases().cs}),
-  session: (token,visitor) => request('cs/chat/'+token+'/session?visitor='+encodeURIComponent(visitor),{base:getBases().cs}),
-  endSession: (token,visitor) => request('cs/chat/'+token+'/session/end',{method:'POST',base:getBases().cs,data:{visitor}}),
-  discardPhoto: (token,visitor) => request('cs/chat/'+token+'/pending-photo/discard',{method:'POST',base:getBases().cs,data:{visitor}}),
-  setMode: (token,visitor,mode) => request('cs/chat/'+token+'/mode',{method:'POST',base:getBases().cs,data:{visitor,mode}}),
-  confirmBatch: (token,visitor,batch_id,note_ids=[],fields=null,action='confirm') => request('cs/chat/'+token+'/batches/confirm',{method:'POST',base:getBases().cs,data:{visitor,batch_id,note_ids,fields,action}}),
+  newSession: (token) => request('cs/chat/'+token+'/session',{method:'POST',base:getBases().cs,headers:toolAuthHeaders()}),
+  session: (token,visitor) => request('cs/chat/'+token+'/session?visitor='+encodeURIComponent(visitor),{base:getBases().cs,headers:toolAuthHeaders()}),
+  claim: (token,visitor) => request('cs/chat/'+token+'/session/claim',{method:'POST',base:getBases().cs,headers:toolAuthHeaders(),data:{visitor}}),
+  history: (token,visitor,before=0) => request('cs/chat/'+token+'/history?visitor='+encodeURIComponent(visitor)+'&before='+before,{base:getBases().cs,headers:toolAuthHeaders()}),
+  endSession: (token,visitor) => request('cs/chat/'+token+'/session/end',{method:'POST',base:getBases().cs,headers:toolAuthHeaders(),data:{visitor}}),
+  discardPhoto: (token,visitor) => request('cs/chat/'+token+'/pending-photo/discard',{method:'POST',base:getBases().cs,headers:toolAuthHeaders(),data:{visitor}}),
+  setMode: (token,visitor,mode) => request('cs/chat/'+token+'/mode',{method:'POST',base:getBases().cs,headers:toolAuthHeaders(),data:{visitor,mode}}),
+  confirmBatch: (token,visitor,batch_id,note_ids=[],fields=null,action='confirm') => request('cs/chat/'+token+'/batches/confirm',{method:'POST',base:getBases().cs,headers:toolAuthHeaders(),data:{visitor,batch_id,note_ids,fields,action}}),
   send: (token, text, visitor, action) =>
-    request('cs/chat/' + token + '/message', { method: 'POST', base: getBases().cs, data: { text, visitor, action } }),
+    request('cs/chat/' + token + '/message', { method: 'POST', base: getBases().cs, headers:toolAuthHeaders(), data: { text, visitor, action } }),
   uploadPhoto: (token, visitor, filePath) =>
-    upload('cs/chat/' + token + '/photo', filePath, { visitor }, { base: getBases().cs }),
+    upload('cs/chat/' + token + '/photo', filePath, { visitor }, { base: getBases().cs,headers:toolAuthHeaders() }),
   setLang: (token, lang, visitor) =>
-    request('cs/chat/' + token + '/lang', { method: 'POST', base: getBases().cs, data: { lang, visitor } }),
+    request('cs/chat/' + token + '/lang', { method: 'POST', base: getBases().cs,headers:toolAuthHeaders(), data: { lang, visitor } }),
   listToken: (token, visitor) =>
-    request('cs/chat/' + token + '/list-token?visitor=' + encodeURIComponent(visitor), { base: getBases().cs }),
-  linkNotes: (k) => request('cs/link/' + k, { base: getBases().cs }),
+    request('cs/chat/' + token + '/list-token?visitor=' + encodeURIComponent(visitor), { base: getBases().cs,headers:toolAuthHeaders() }),
+  linkNotes: (k) => request('cs/link/' + k, { base: getBases().cs,headers:toolAuthHeaders() }),
   editNote: (k, noteId, field, value) =>
-    request('cs/link/' + k + '/note/' + noteId, { method: 'PATCH', base: getBases().cs, data: { field, value } }),
+    request('cs/link/' + k + '/note/' + noteId, { method: 'PATCH', base: getBases().cs,headers:toolAuthHeaders(), data: { field, value } }),
   photoUrl: (p) => assetUrl(joinUrl(getBases().cs, p)),
   exportXlsx: (k) => downloadFile('cs/link/' + k + '/export.xlsx', {
-    base: getBases().cs, fallbackName: '采购清单.xlsx'
+    base: getBases().cs,headers:toolAuthHeaders(), fallbackName: '采购清单.xlsx'
   })
 }

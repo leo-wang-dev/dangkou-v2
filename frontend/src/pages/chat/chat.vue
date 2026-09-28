@@ -1,12 +1,21 @@
 <template>
-  <view class="page" :style="{ direction: dir }">
+  <view class="page" :class="{ 'compact-viewport': compactViewport }" :style="{ direction: dir, height: viewportHeight ? viewportHeight + 'px' : '' }">
     <language-picker @change="pickLang" />
     <!-- 页内操作条（标题栏由 pages.json 提供；token 从链接带入） -->
     <view class="header">
+      <text class="who">{{ accountToken ? accountEmail : t('guestMode') }}</text>
+      <button class="hbtn ghost" @click="toggleLogin">{{ accountToken ? t('logoutShort') : t('login') }}</button>
       <button class="hbtn ghost" @click="openList">📋 {{ t('myShortList') }}</button>
       <button class="hbtn ghost" @click="photo">📷</button>
       <button class="hbtn boss" @click="sendAction('contact_owner')">{{ t('contactOwner') }}</button>
     </view>
+
+    <view v-if="loginBar" class="loginbar">
+      <view class="row"><input v-model="loginEmail" class="inp" type="text" :placeholder="t('email')" /><button class="hbtn" :disabled="sending" @click="sendCode">{{ t('sendCodeShort') }}</button></view>
+      <view class="row"><input v-model="loginCode" class="inp" type="number" :placeholder="t('verificationCode')" /><button class="hbtn" :disabled="!codeSent || loggingIn" @click="doLogin">{{ t('login') }}</button></view>
+      <text class="hint">{{ t('loginHint') }}</text>
+    </view>
+    <view v-if="claimPending" class="loginbar"><button class="hbtn" @click="retryClaim">{{ t('refresh') }}</button><text class="hint">{{ t('networkError') }}</text></view>
 
     <!-- 首访语言选择 -->
 
@@ -34,7 +43,7 @@
     </view>
 
     <!-- 我的清单抽屉：内嵌 note-table 组件承接（小程序无 iframe） -->
-    <view v-if="drawer" class="drawer">
+    <view v-if="drawer" class="drawer" :style="{ height: viewportHeight ? viewportHeight + 'px' : '' }">
       <view class="mask" @click="drawer = false" />
       <view class="aside">
         <view class="dhead">
@@ -56,14 +65,34 @@ import LanguagePicker from '../../components/language-picker.vue'
 const { locale, dir, t, label, display, changeLanguage } = useCustomerLanguage('chatTitle')
 
 import { ref, nextTick } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onUnload } from '@dcloudio/uni-app'
 import { setCustomerTenant, customerSessionKey } from '../../api.js'
-import { csApi, choosePhoto } from '../../api.js'
+import { csApi, toolApi, choosePhoto } from '../../api.js'
 import { storage } from '../../storage.js'
 import NoteTable from '../../components/note-table.vue'
 
 const token = ref('')
 const visitor = ref('')
+const accountToken = ref(''), accountEmail = ref('')
+const viewportHeight = ref(0), compactViewport = ref(false)
+function updateViewport(){
+  if(typeof window==='undefined')return
+  const height=window.visualViewport?.height||window.innerHeight
+  viewportHeight.value=height>=100?height:0
+  compactViewport.value=height<400
+}
+function attachViewport(){
+  if(typeof window==='undefined')return
+  updateViewport();window.visualViewport?.addEventListener('resize',updateViewport)
+  window.visualViewport?.addEventListener('scroll',updateViewport);window.addEventListener('resize',updateViewport)
+}
+function detachViewport(){
+  if(typeof window==='undefined')return
+  window.visualViewport?.removeEventListener('resize',updateViewport)
+  window.visualViewport?.removeEventListener('scroll',updateViewport);window.removeEventListener('resize',updateViewport)
+}
+const loginBar = ref(false), loginEmail = ref(''), loginCode = ref(''), codeSent = ref(false)
+const sending = ref(false), loggingIn = ref(false), claimPending = ref(false)
 let ready = Promise.resolve()
 const hasPending=ref(false)
 const photoMode=ref(''), batches=ref([]),unassigned=ref([]),selected=ref([])
@@ -81,6 +110,52 @@ function bubble(role, text) {
 }
 
 function tip(t) { uni.showToast({ title: t, icon: 'none' }) }
+
+async function toggleLogin(){
+  if(accountToken.value){
+    const r=await toolApi.endSession()
+    if(!r.ok){tip(r.data?.detail||t('networkError'));return}
+    accountToken.value='';accountEmail.value='';storage.remove('ut_token');storage.remove('ut_email')
+    const unclaimed=claimPending.value&&!!visitor.value
+    claimPending.value=false
+    if(unclaimed){await refreshSession();await loadHistory()}else await newSession()
+    return
+  }
+  loginBar.value=!loginBar.value
+}
+async function sendCode(){
+  const address=loginEmail.value.trim();if(!address){tip(t('enterEmail'));return}
+  sending.value=true
+  try{const r=await toolApi.sendCode(address);if(!r.ok){tip(r.data?.detail||t('sendError'));return}codeSent.value=true;tip(t('codeSent'))}
+  finally{sending.value=false}
+}
+async function claimCurrentGuest(){
+  if(!accountToken.value||!visitor.value)return true
+  const r=await csApi.claim(token.value,visitor.value)
+  if(!r.ok){claimPending.value=true;tip(r.data?.detail||t('networkError'));return false}
+  visitor.value='';storage.remove(customerSessionKey(token.value));claimPending.value=false
+  return true
+}
+async function loadHistory(){
+  const r=await csApi.history(token.value,visitor.value)
+  if(!r.ok){tip(r.data?.detail||t('loadError'));return}
+  messages.value=(r.data?.messages||[]).map(m=>({role:m.role==='user'?'me':'bot',text:m.content||''}))
+  nextTick(()=>{tail.value+=10000})
+}
+async function retryClaim(){if(await claimCurrentGuest()){await refreshSession();await loadHistory()}}
+async function doLogin(){
+  const address=loginEmail.value.trim(),code=loginCode.value.trim()
+  if(!address||!code){tip(t('enterEmailCode'));return}
+  loggingIn.value=true
+  try{
+    const r=await toolApi.verify(address,code,storage.get('ut_guest'))
+    if(!r.ok){tip(r.data?.detail||t('loginError'));return}
+    accountToken.value=r.data.token;accountEmail.value=r.data.email
+    storage.set('ut_token',accountToken.value);storage.set('ut_email',accountEmail.value);storage.remove('ut_guest')
+    if(!await claimCurrentGuest())return
+    loginBar.value=false;await refreshSession();await loadHistory();tip(t('loginMergedDetailed',{email:accountEmail.value}))
+  }finally{loggingIn.value=false}
+}
 
 // 回复里的清单链接可点：H5 直接打开；小程序无法外链，点击复制
 function segments(text) {
@@ -160,6 +235,10 @@ function toggleNote(id){selected.value=selected.value.includes(id)?selected.valu
 async function refreshSession(){const r=await csApi.session(token.value,visitor.value);if(!r.ok){tip(r.status===410?t('guestSessionExpired'):t('loadError'));return}photoMode.value=r.data.photo_mode;hasPending.value=!!r.data.intent_required;batches.value=r.data.batches||[];unassigned.value=(r.data.notes||[]).filter(n=>['unassigned','legacy_unassigned'].includes(n.batch_state))}
 async function newSession(end=false){
   try{
+    if(accountToken.value){
+      if(end){const r=await csApi.endSession(token.value,'');if(!r.ok){tip(t('networkError'));return}}
+      messages.value=[];drawer.value=false;selected.value=[];await refreshSession();return
+    }
     if(end&&visitor.value){
       const r=await csApi.endSession(token.value,visitor.value)
       if(!r.ok&&![401,410].includes(r.status)){tip(t('networkError'));return}
@@ -187,6 +266,7 @@ async function confirmBatch(id,fields=null,action='confirm'){const r=await csApi
 function manualBatch(){uni.showModal({title:t('newShopName'),editable:true,success:r=>{if(r.confirm&&r.content)confirmBatch(null,{'档口名称':r.content})}})}
 
 onLoad((options) => {
+  attachViewport()
   options = options || {}
   setCustomerTenant(options.mid || '')
   token.value = options.token || ''
@@ -199,14 +279,24 @@ onLoad((options) => {
   // #endif
   if (!token.value) token.value = 'invalid-token'
   visitor.value = storage.get(customerSessionKey(token.value))
-  ready = visitor.value ? refreshSession() : newSession()
+  accountToken.value = storage.get('ut_token')
+  accountEmail.value = storage.get('ut_email')
+  ready = (async()=>{
+    if(accountToken.value){
+      const me=await toolApi.me()
+      if(me.ok){accountEmail.value=me.data.email;storage.set('ut_email',accountEmail.value)
+        if(await claimCurrentGuest()){await refreshSession();await loadHistory()}return}
+      if(me.status!==401){tip(me.data?.detail||t('networkError'));return}
+      accountToken.value='';accountEmail.value='';storage.remove('ut_token');storage.remove('ut_email')
+    }
+    if(visitor.value){await refreshSession();await loadHistory()}else await newSession()
+  })()
   // 首访先选语言；老访客直接欢迎（旧页用 sessionStorage，小程序无此能力，改持久标记）
   if (!storage.get('dk_lang_done')) {
     langBar.value = true
-  } else {
-    bubble('bot', t('chatReturnWelcome'))
-  }
+  } else ready.then(()=>{if(!messages.value.length)bubble('bot', t('chatReturnWelcome'))})
 })
+onUnload(detachViewport)
 </script>
 
 <style scoped>
@@ -215,8 +305,12 @@ onLoad((options) => {
 .session-controls { display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; background:#fff; max-height:180px; overflow:auto; flex-shrink:0; font-size:13px; }
 .session-controls button { margin:0; font-size:13px; line-height:2; padding:0 10px; color:#245b9c; }
 .session-controls label { width:100%; }
-.page { display: flex; flex-direction: column; height: 100vh; background: #f5f6f8; }
+.page { display: flex; flex-direction: column; height: 100dvh; min-height:0; overflow:hidden; background: #f5f6f8; }
+.compact-viewport .session-controls,.compact-viewport :deep(.language-picker){display:none}
 .header { background: #fff; border-bottom: 1px solid #eee; padding: 8px 12px; display: flex; gap: 8px; align-items: center; }
+.who{font-size:12px;max-width:24%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.loginbar{padding:8px 12px;background:#fff;display:flex;flex-direction:column;gap:6px}
+.loginbar .row{display:flex;gap:6px}.loginbar .inp{flex:1;min-width:0;border:1px solid #ddd;border-radius:8px;padding:8px}.loginbar .hint{font-size:12px;color:#777}
 .hbtn { margin: 0; border: 0; border-radius: 6px; padding: 0 12px; font-size: 13px; line-height: 2; background: #1677ff; color: #fff; }
 .hbtn::after { border: 0; }
 .hbtn.ghost { background: #fff; color: #1677ff; border: 1px solid #1677ff; }
@@ -225,16 +319,16 @@ onLoad((options) => {
 .langtip { align-self: center; color: #888; font-size: 13px; margin-right: 4px; }
 .langbtn { margin: 0; border: 1px solid #ddd; background: #fff; border-radius: 14px; font-size: 13px; line-height: 1.8; padding: 0 14px; }
 .langbtn::after { border: 0; }
-.log { flex: 1; overflow-y: auto; padding: 14px; box-sizing: border-box; }
+.log { flex: 1; min-height:0; overflow-y: auto; padding: 14px; box-sizing: border-box; }
 .msg { max-width: 82%; padding: 9px 12px; border-radius: 12px; font-size: 15px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; margin-bottom: 10px; }
 .bot { background: #fff; align-self: flex-start; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
 .me { background: #1677ff; color: #fff; align-self: flex-end; }
 .link { color: #1677ff; text-decoration: underline; }
-.form { display: flex; gap: 8px; padding: 10px; background: #fff; border-top: 1px solid #eee; align-items: center; }
+.form { display: flex; gap: 8px; padding: 10px; padding-bottom:calc(10px + env(safe-area-inset-bottom,0px)); background: #fff; border-top: 1px solid #eee; align-items: center; flex-shrink:0; }
 .text { flex: 1; border: 1px solid #ddd; border-radius: 20px; padding: 8px 14px; font-size: 15px; background: #fff; }
 .send { margin: 0; border: 0; border-radius: 50%; width: 40px; height: 40px; font-size: 18px; line-height: 40px; padding: 0; background: #1677ff; color: #fff; }
 .send::after { border: 0; }
-.drawer { position: fixed; left: 0; right: 0; top: 0; bottom: 0; z-index: 20; }
+.drawer { position: fixed; left: 0; right: 0; top: 0; bottom: auto; height:100dvh; z-index: 20; }
 .mask { position: absolute; left: 0; right: 0; top: 0; bottom: 0; background: rgba(0, 0, 0, 0.35); }
 .aside { position: absolute; left: 0; right: 0; top: 10%; bottom: 0; background: #f5f6f8; border-radius: 12px 12px 0 0; display: flex; flex-direction: column; overflow: hidden; }
 .dhead { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #fff; border-bottom: 1px solid #eee; }

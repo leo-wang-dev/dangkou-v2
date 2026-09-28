@@ -1,5 +1,5 @@
 <template>
-  <view class="page" :style="{ direction: dir }">
+  <view class="page" :class="{ 'compact-viewport': compactViewport }" :style="{ direction: dir, height: viewportHeight ? viewportHeight + 'px' : '' }">
     <language-picker @change="pickLang" />
     <!-- 页头：身份 + 登录/退出（标题栏由 pages.json 提供） -->
     <view class="header">
@@ -40,7 +40,7 @@
     </view>
 
     <!-- 清单抽屉（H5 与小程序共用组件实现；小程序无 iframe，直接内嵌表格/列表） -->
-    <view v-if="drawer" class="drawer">
+    <view v-if="drawer" class="drawer" :style="{ height: viewportHeight ? viewportHeight + 'px' : '' }">
       <view class="mask" @click="drawer = false" />
       <view class="aside">
         <view class="dhead">
@@ -85,13 +85,30 @@ import LanguagePicker from '../../components/language-picker.vue'
 const { locale, dir, t, label, display, changeLanguage } = useCustomerLanguage('photoTool')
 
 import { ref, nextTick } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onUnload } from '@dcloudio/uni-app'
 import { toolApi, getBases, setBases, choosePhoto } from '../../api.js'
 import { storage } from '../../storage.js'
 
 async function pickLang(lang){changeLanguage(lang);const r=await toolApi.setLang(lang);if(!r.ok)tip(r.data?.detail||t('networkError'));if(drawer.value)await openList()}
 
 const guest = ref('')
+const viewportHeight = ref(0), compactViewport = ref(false)
+function updateViewport(){
+  if(typeof window==='undefined')return
+  const height=window.visualViewport?.height||window.innerHeight
+  viewportHeight.value=height>=100?height:0
+  compactViewport.value=height<400
+}
+function attachViewport(){
+  if(typeof window==='undefined')return
+  updateViewport();window.visualViewport?.addEventListener('resize',updateViewport)
+  window.visualViewport?.addEventListener('scroll',updateViewport);window.addEventListener('resize',updateViewport)
+}
+function detachViewport(){
+  if(typeof window==='undefined')return
+  window.visualViewport?.removeEventListener('resize',updateViewport)
+  window.visualViewport?.removeEventListener('scroll',updateViewport);window.removeEventListener('resize',updateViewport)
+}
 const token = ref('')
 const email = ref('')
 const code = ref('')
@@ -232,6 +249,7 @@ function saveBases() {
 }
 
 onLoad(() => {
+  attachViewport()
   guest.value = storage.get('ut_guest')
   token.value = storage.get('ut_token')
   email.value = storage.get('ut_email')
@@ -240,6 +258,7 @@ onLoad(() => {
   cfgCs.value = bases.value.cs
   init()
 })
+onUnload(detachViewport)
 </script>
 
 <style scoped>
@@ -248,7 +267,8 @@ onLoad(() => {
 .session-controls { display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; background:#fff; max-height:180px; overflow:auto; flex-shrink:0; font-size:13px; }
 .session-controls button { margin:0; font-size:13px; line-height:2; padding:0 10px; color:#245b9c; }
 .session-controls label { width:100%; }
-.page { display: flex; flex-direction: column; height: 100vh; background: #f5f6f8; }
+.page { display: flex; flex-direction: column; height: 100dvh; min-height:0; overflow:hidden; background: #f5f6f8; }
+.compact-viewport .session-controls,.compact-viewport :deep(.language-picker){display:none}
 .header { background: #fff; border-bottom: 1px solid #eee; padding: 8px 12px; display: flex; align-items: center; gap: 8px; }
 .who { flex: 1; font-size: 13px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hbtn { margin: 0; border: 0; border-radius: 6px; padding: 0 12px; font-size: 13px; line-height: 2; background: #1677ff; color: #fff; }
@@ -262,15 +282,15 @@ onLoad(() => {
 .btn[disabled] { background: #9ec4ff; color: #fff; }
 .hint { font-size: 12px; color: #888; }
 .cfg { font-size: 12px; color: #1677ff; padding: 2px 0; }
-.log { flex: 1; overflow-y: auto; padding: 14px; box-sizing: border-box; }
+.log { flex: 1; min-height:0; overflow-y: auto; padding: 14px; box-sizing: border-box; }
 .msg { max-width: 86%; padding: 9px 12px; border-radius: 12px; font-size: 15px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; margin-bottom: 10px; }
 .bot { background: #fff; align-self: flex-start; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
 .me { background: #1677ff; color: #fff; align-self: flex-end; }
-.nav { display: flex; gap: 8px; padding: 10px; background: #fff; border-top: 1px solid #eee; }
+.nav { display: flex; gap: 8px; padding: 10px; padding-bottom:calc(10px + env(safe-area-inset-bottom,0px)); background: #fff; border-top: 1px solid #eee; flex-shrink:0; }
 .navbtn { margin: 0; flex: 1; border: 0; border-radius: 8px; font-size: 15px; line-height: 2.4; background: #1677ff; color: #fff; }
 .navbtn::after { border: 0; }
 .navbtn.ghost { background: #fff; color: #1677ff; border: 1px solid #1677ff; }
-.drawer { position: fixed; left: 0; right: 0; top: 0; bottom: 0; z-index: 20; }
+.drawer { position: fixed; left: 0; right: 0; top: 0; bottom: auto; height:100dvh; z-index: 20; }
 .mask { position: absolute; left: 0; right: 0; top: 0; bottom: 0; background: rgba(0, 0, 0, 0.35); }
 .aside { position: absolute; left: 0; right: 0; top: 8%; bottom: 0; background: #f5f6f8; border-radius: 12px 12px 0 0; display: flex; flex-direction: column; overflow: hidden; }
 .dhead { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #fff; border-bottom: 1px solid #eee; }

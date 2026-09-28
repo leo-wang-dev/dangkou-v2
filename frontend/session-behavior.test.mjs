@@ -19,7 +19,7 @@ function harness(surface, endStatus) {
   async function end(){calls.push('end');if(endStatus==='network')throw Error('offline');return {ok:endStatus===200,status:endStatus}}
   async function issue(){calls.push('issue');return {ok:true,status:200,data:{guest:'fresh',visitor:'fresh'}}}
   async function state(){return {ok:true,status:200,data:{notes:[],batches:[],photo_mode:'',intent_required:false}}}
-  const context=vm.createContext({console,Promise,Map,ref:value=>({value}),nextTick:fn=>fn(),onLoad(){},storage:store,sessionStorage:store,localStorage:store,
+  const context=vm.createContext({console,Promise,Map,ref:value=>({value}),nextTick:fn=>fn(),onLoad(){},onUnload(){},storage:store,sessionStorage:store,localStorage:store,
     location:{pathname:'/cs/chat/shop'},setTimeout(){},clearTimeout(){},encodeURIComponent,
     document:{getElementById:id=>{if(!nodes.has(id))nodes.set(id,node());return nodes.get(id)},createElement:node,createTextNode:t=>t,querySelectorAll:()=>[]},
     uni:{showToast:x=>tips.push(x.title)},customerSessionKey:token=>'h5v:'+token,getBases:()=>({tool:'',cs:''}),
@@ -60,6 +60,93 @@ for(const surface of ['static-chat','uni-chat'])test(`${surface} exposes retaine
   assert.deepEqual(h.calls,['mode','mode','discard'])
 })
 
+test('static buyer chat verifies email, claims current guest and restores account history',async()=>{
+  const h=harness('static-chat',200), urls=[]
+  h.nodes.get('email')?.value
+  h.context.document.getElementById('email').value='buyer@example.com'
+  h.context.document.getElementById('code').value='123456'
+  h.context.fetch=async(url,opts={})=>{
+    urls.push(url)
+    let data={}
+    if(url==='/tool/auth/verify')data={token:'account-token',email:'buyer@example.com'}
+    else if(url.endsWith('/session/claim'))data={claimed:true,customer_id:'shop-buyer'}
+    else if(url.includes('/history'))data={messages:[{role:'user',content:'Find A'},{role:'assistant',content:'Found A'}]}
+    else if(url.includes('/session'))data={notes:[],batches:[],photo_mode:'',intent_required:false}
+    return {ok:true,status:200,json:async()=>data}
+  }
+  await vm.runInContext('doLogin()',h.context)
+  assert.ok(urls.includes('/tool/auth/verify'))
+  assert.ok(urls.some(x=>x.endsWith('/session/claim')))
+  assert.ok(urls.some(x=>x.includes('/history')))
+  assert.equal(h.values.get('ut_token'),'account-token')
+  assert.equal(h.identity(),'')
+  assert.equal(h.nodes.get('log').cleared,true)
+})
+
+test('static buyer chat keeps guest capability when shop claim fails',async()=>{
+  const h=harness('static-chat',200)
+  h.context.document.getElementById('email').value='buyer@example.com'
+  h.context.document.getElementById('code').value='123456'
+  h.context.fetch=async url=>{
+    const data=url==='/tool/auth/verify'?{token:'account-token',email:'buyer@example.com'}:{detail:'retry'}
+    return {ok:!url.endsWith('/session/claim'),status:url.endsWith('/session/claim')?503:200,json:async()=>data}
+  }
+  await vm.runInContext('doLogin()',h.context)
+  assert.equal(h.identity(),'stale')
+  assert.equal(h.values.get('h5v:shop'),'stale')
+  assert.equal(h.values.get('ut_token'),'account-token')
+  assert.equal(h.nodes.get('claimretry').style.display,'flex')
+  await vm.runInContext('toggleLogin()',h.context)
+  assert.equal(h.identity(),'stale')
+  assert.equal(h.values.get('h5v:shop'),'stale')
+  assert.equal(h.nodes.get('claimretry').style.display,'none')
+})
+
+test('uni buyer chat retains an unclaimed visitor when logging out',async()=>{
+  const h=harness('uni-chat',200)
+  h.context.csApi.history=async()=>({ok:true,status:200,data:{messages:[]}})
+  vm.runInContext("accountToken.value='account-token';accountEmail.value='buyer@example.com';claimPending.value=true",h.context)
+  await vm.runInContext('toggleLogin()',h.context)
+  assert.equal(h.identity(),'stale')
+  assert.equal(h.values.get('h5v:shop'),'stale')
+  assert.equal(vm.runInContext('claimPending.value',h.context),false)
+})
+
+test('uni buyer chat verifies email, claims guest and displays restored history',async()=>{
+  const h=harness('uni-chat',200)
+  h.context.toolApi.verify=async()=>({ok:true,status:200,data:{token:'account-token',email:'buyer@example.com'}})
+  h.context.csApi.claim=async()=>({ok:true,status:200,data:{claimed:true}})
+  h.context.csApi.history=async()=>({ok:true,status:200,data:{messages:[{role:'user',content:'Find B'}]}})
+  vm.runInContext("loginEmail.value='buyer@example.com';loginCode.value='123456'",h.context)
+  await vm.runInContext('doLogin()',h.context)
+  assert.equal(h.values.get('ut_token'),'account-token')
+  assert.equal(h.identity(),'')
+  assert.equal(vm.runInContext('messages.value[0].text',h.context),'Find B')
+})
+
+test('uni buyer chat follows the visual viewport as browser chrome and keyboard move',()=>{
+  const h=harness('uni-chat',200)
+  h.context.window={visualViewport:{height:460},innerHeight:844}
+  vm.runInContext('updateViewport()',h.context)
+  assert.equal(vm.runInContext('viewportHeight.value',h.context),460)
+  h.context.window.visualViewport.height=300
+  vm.runInContext('updateViewport()',h.context)
+  assert.equal(vm.runInContext('compactViewport.value',h.context),true)
+  h.context.window.visualViewport.height=650
+  vm.runInContext('updateViewport()',h.context)
+  assert.equal(vm.runInContext('compactViewport.value',h.context),false)
+})
+
+test('uni central tool follows the visual viewport for bottom actions',()=>{
+  const h=harness('uni-tool',200)
+  h.context.window={visualViewport:{height:460},innerHeight:844}
+  vm.runInContext('updateViewport()',h.context)
+  assert.equal(vm.runInContext('viewportHeight.value',h.context),460)
+  h.context.window.visualViewport.height=320
+  vm.runInContext('updateViewport()',h.context)
+  assert.equal(vm.runInContext('compactViewport.value',h.context),true)
+})
+
 test('customer APIs keep validated tenant context across static and uni routes',async()=>{
   const api=await import('./src/api.js')
   const previousFetch=globalThis.fetch, previousLocation=globalThis.location
@@ -83,6 +170,9 @@ test('customer APIs keep validated tenant context across static and uni routes',
     globalThis.location.pathname='/cs/chat/shop'
     assert.equal(api.getBases().cs,'')
     assert.equal(api.customerSessionKey('shop'),'h5v:shop')
+    values.set('ut_token','buyer-token')
+    await api.csApi.session('shop','')
+    assert.equal(calls.at(-1).options.headers.Authorization,'Bearer buyer-token')
   } finally {
     api.setCustomerTenant('');api.setBases({})
     globalThis.fetch=previousFetch;globalThis.location=previousLocation;globalThis.localStorage=previousStorage
