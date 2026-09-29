@@ -174,13 +174,17 @@ def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> di
                           next(f['label'] for f in fields if f['role'] == 'model'), re.I)))
         source_map, _ = wbtools._merged_sources(ws)
         companions = {}
-        if picture_model:
-            for field, col in zip(fields, columns):
-                if ('packing' in field['label'].casefold() or '包装' in field['label']):
-                    neighbor = col + 1
-                    if (neighbor not in columns and
-                            not wbtools._text(ws.cell(header, neighbor).value)):
-                        companions[col] = neighbor
+        for field, col in zip(fields, columns):
+            neighbor = col + 1
+            if (field['role'] not in {'spec', 'note'} or neighbor in columns
+                    or not any(mapped > neighbor for mapped in columns)
+                    or wbtools._text(ws.cell(header, neighbor).value)):
+                continue
+            populated = [row for row in range(header + 1, ws.max_row + 1)
+                         if wbtools._text(ws.cell(row, neighbor).value)]
+            if (populated and sum(bool(wbtools._text(ws.cell(row, col).value))
+                                  for row in populated) * 2 >= len(populated)):
+                companions[col] = neighbor
         unmapped_rows = {r for (r, c), cell in ws._cells.items()
                          if r > header and c not in columns and c not in companions.values()
                          and wbtools._text(cell.value)}
@@ -260,6 +264,10 @@ def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> di
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
         failures = []
+        for col, neighbor in companions.items():
+            failures.append({'source_sheet': ws.title, 'source_rows': [header],
+                             'reason': f'{get_column_letter(neighbor)}列无表头，已并入'
+                                       f'{get_column_letter(col)}列字段，请人工核对'})
         for row, value in supplementary:
             failures.append({'source_sheet': ws.title, 'source_rows': [row],
                              'reason': f'{get_column_letter(model_col)}列非型号文字：{value[:80]}，请核对'})

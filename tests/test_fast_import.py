@@ -14,16 +14,19 @@ def test_picture_column_with_skus_is_model_and_uses_structured_parser(tmp_path, 
     book = Workbook()
     sheet = book.active
     sheet.title = 'SDQ'
-    sheet.append(['PICTURE', 'DESCRIPTION', 'PACKING DETAILS', None, 'PRICE'])
-    sheet.append(['SDQ-101', 'Hair dryer', 'Product size', '20cm', 20])
-    sheet.append([None, '1200W', 'QTY:', '40pcs'])
+    sheet.append(['PICTURE', 'DESCRIPTION', '中文描述', '出厂价 EXW',
+                  'PACKING DETAILS', None, 'Remark'])
+    sheet.append(['SDQ-101', 'Hair dryer', '电吹风', 20, 'Product size', '20cm'])
+    sheet.append([None, '1200W', '1200瓦', None, 'QTY:', '40pcs'])
     sheet.append(['Photo is injection color'])
-    sheet.append(['SDQ-102', 'Hair dryer', 'Product size', '25cm', 25])
-    sheet.append([None, '1500W', 'QTY:', '50pcs'])
+    sheet.append(['SDQ-102', 'Hair dryer', '电吹风', 25, 'Product size', '25cm'])
+    sheet.append([None, '1500W', '1500瓦', None, 'QTY:', '50pcs'])
     sheet.append(['Remark'])
     sheet.append(['1. Payment term: deposit'])
     sheet.add_image(ExcelImage(photo), 'A2')
     sheet.add_image(ExcelImage(photo), 'A5')
+    sheet.add_image(ExcelImage(photo), 'G3')
+    sheet.add_image(ExcelImage(photo), 'G5')
     path = tmp_path / 'sdq.xlsx'
     book.save(path)
     monkeypatch.setattr(dynamic_import, '_qwen_template_sheets', lambda path: [{
@@ -33,9 +36,15 @@ def test_picture_column_with_skus_is_model_and_uses_structured_parser(tmp_path, 
              'visibility': 'public', 'searchable': False, 'source_column': None},
             {'key': 'description', 'label': 'DESCRIPTION', 'type': 'text', 'role': 'model',
              'visibility': 'public', 'searchable': True, 'source_column': None},
+            {'key': 'chinese', 'label': '中文描述', 'type': 'text', 'role': 'spec',
+             'visibility': 'public', 'searchable': False, 'source_column': None},
+            {'key': 'price', 'label': '出厂价 EXW', 'type': 'money', 'role': 'price',
+             'visibility': 'internal', 'searchable': False, 'source_column': None},
             {'key': 'packing', 'label': 'PACKING DETAILS', 'type': 'text', 'role': 'spec',
              'visibility': 'public', 'searchable': False, 'source_column': None},
-            {'key': 'price', 'label': 'PRICE', 'type': 'money', 'role': 'price',
+            {'key': 'packing_2', 'label': 'PACKING DETAILS', 'type': 'text', 'role': 'spec',
+             'visibility': 'public', 'searchable': False, 'source_column': None},
+            {'key': 'note', 'label': 'Remark', 'type': 'text', 'role': 'note',
              'visibility': 'internal', 'searchable': False, 'source_column': None}],
     }])
     monkeypatch.setattr(dynamic_import.ai_extract, 'guess_supplier', lambda *args: '')
@@ -52,6 +61,8 @@ def test_picture_column_with_skus_is_model_and_uses_structured_parser(tmp_path, 
         assert fields[0]['type'] == 'text'
         assert fields[0]['label'] == '型号'
         assert fields[1]['role'] == 'spec'
+        assert [field['label'] for field in fields].count('PACKING DETAILS') == 1
+        assert len(fields) == 6
         from catalog import dynamic_catalog
         approved = dynamic_catalog.approve_template(conn, payload['sheets'][0]['template'],
                                                     expected_version=0)
@@ -60,7 +71,7 @@ def test_picture_column_with_skus_is_model_and_uses_structured_parser(tmp_path, 
                             (_ for _ in ()).throw(AssertionError('slow agent called')))
         rows = dynamic_import._agent_rows(approved, str(path), tmp_path / 'products', sheet='SDQ')
         assert [row['data'][fields[0]['key']] for row in rows] == ['SDQ-101', 'SDQ-102']
-        assert all(len(row['images']) == 1 for row in rows)
+        assert all(len(row['images']) == 2 for row in rows)
         assert 'QTY: 40pcs' in rows[0]['data']['packing']
         assert any('Photo is injection color' in failure['reason'] for failure in rows.failures)
         assert any(8 in failure['source_rows'] for failure in rows.failures)

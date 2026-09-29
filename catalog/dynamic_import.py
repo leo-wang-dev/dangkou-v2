@@ -546,6 +546,48 @@ def _attach_image_header_hints(sections: list[dict], discovered: list[dict], xls
             section['review_hints'] = hints
 
 
+def _merge_adjacent_blank_subcolumns(discovered: list[dict], xlsx_path: str) -> None:
+    """Collapse an AI duplicate when its second column has no printed header."""
+    if not any(left.get('label', '').casefold() == right.get('label', '').casefold()
+               for item in discovered for left, right in zip(item.get('fields', []), item.get('fields', [])[1:])):
+        return
+    book = load_workbook(xlsx_path, read_only=True, data_only=False)
+    try:
+        for item in discovered:
+            if item.get('source_sheet') not in book.sheetnames:
+                continue
+            ws = book[item['source_sheet']]
+            fields = item.get('fields') or []
+            index = 0
+            while index + 1 < len(fields):
+                left, right = fields[index:index + 2]
+                if (left.get('label', '').casefold() != right.get('label', '').casefold()
+                        or left.get('role') not in {'spec', 'note'}
+                        or right.get('role') not in {'spec', 'note'}):
+                    index += 1
+                    continue
+                hits = [(cell.row, cell.column) for row in ws.iter_rows(
+                    min_row=1, max_row=min(ws.max_row, 30), max_col=min(ws.max_column, 200))
+                    for cell in row if workbook_templates._label(cell.value).casefold()
+                    == left['label'].casefold()]
+                if len(hits) != 1:
+                    index += 1
+                    continue
+                header, col = hits[0]
+                if ((type(left.get('source_column')) is int and left['source_column'] != col)
+                        or (type(right.get('source_column')) is int and right['source_column'] != col + 1)
+                        or workbook_templates._text(ws.cell(header, col + 1).value)
+                        or not any(workbook_templates._text(row[0].value) for row in ws.iter_rows(
+                            min_row=header + 1, max_row=ws.max_row,
+                            min_col=col + 1, max_col=col + 1))):
+                    index += 1
+                    continue
+                left['source_column'] = col
+                fields.pop(index + 1)
+    finally:
+        book.close()
+
+
 def _recover_picture_models(discovered: list[dict], xlsx_path: str) -> None:
     """Use source cells to resolve an image-labeled column containing SKUs."""
     if not any(field.get('role') == 'image' and
@@ -651,6 +693,7 @@ def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
             # 代码按行猜的结构不可靠，属性再由 qwen 修正。
             ai_extract.apply_field_attributes(discovered, ai_extract.infer_field_attributes(discovered))
             print('[dynamic_import] 模板阶段表头发现：代码 discover_workbook（兜底）', flush=True)
+    _merge_adjacent_blank_subcolumns(discovered, xlsx_path)
     _recover_picture_models(discovered, xlsx_path)
     # 供应商由 AI 从文件名/表名推断（判断不出留空，审批页可改）。
     supplier_guess = ai_extract.guess_supplier(
