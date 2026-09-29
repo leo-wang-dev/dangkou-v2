@@ -11,13 +11,17 @@
     for(const node of document.querySelectorAll('[data-i18n]'))node.textContent=(node.dataset.icon||'')+t(node.dataset.i18n);
     for(const node of document.querySelectorAll('[data-i18n-placeholder]'))node.placeholder=t(node.dataset.i18nPlaceholder);
     for(const node of document.querySelectorAll('[data-i18n-title]'))node.title=t(node.dataset.i18nTitle);
-    for(const node of document.querySelectorAll('[aria-label],[alt]'))for(const attr of ['aria-label','alt']){const value=node.getAttribute(attr);if(aliases[value])node.setAttribute(attr,t(aliases[value]))}
+    for(const node of document.querySelectorAll('[aria-label],[alt]'))for(const attr of ['aria-label','alt']){
+      const keyAttr=attr==='aria-label'?'i18nAriaLabel':'i18nAlt';
+      const key=node.dataset[keyAttr]||aliases[node.getAttribute(attr)];
+      if(key){node.dataset[keyAttr]=key;node.setAttribute(attr,t(key))}
+    }
   }
   function setLanguage(value){language=normalize(value);localStorage.setItem('dk_lang',language);apply();const picker=document.getElementById('customer-language');if(picker)picker.value=language}
   function mount(change){
     const holder=document.createElement('label');holder.className='customer-language';
     const span=document.createElement('span');span.dataset.i18n='languageLabel';span.textContent=t('languageLabel');holder.append(span);
-    const picker=document.createElement('select');picker.id='customer-language';picker.setAttribute('aria-label',t('chooseLanguage'));
+    const picker=document.createElement('select');picker.id='customer-language';picker.dataset.i18nAriaLabel='chooseLanguage';picker.setAttribute('aria-label',t('chooseLanguage'));
     for(const code of catalog.codes){const option=document.createElement('option');option.value=code;option.textContent=catalog.nativeNames[code];picker.append(option)}
     picker.value=language;picker.onchange=async()=>{language=normalize(picker.value);localStorage.setItem('dk_lang',language);apply();await change?.(language);location.reload()};holder.append(picker);
     document.body.prepend(holder);apply();

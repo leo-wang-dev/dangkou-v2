@@ -6,6 +6,85 @@ from catalog.fast_import import parse_structured
 from catalog.fast_import import parse_grouped
 
 
+def test_picture_column_with_skus_is_model_and_uses_structured_parser(tmp_path, monkeypatch):
+    from catalog import dynamic_import
+
+    photo = tmp_path / 'photo.png'
+    Image.new('RGB', (12, 12), 'red').save(photo)
+    book = Workbook()
+    sheet = book.active
+    sheet.title = 'SDQ'
+    sheet.append(['PICTURE', 'DESCRIPTION', 'PACKING DETAILS', None, 'PRICE'])
+    sheet.append(['SDQ-101', 'Hair dryer', 'Product size', '20cm', 20])
+    sheet.append([None, '1200W', 'QTY:', '40pcs'])
+    sheet.append(['Photo is injection color'])
+    sheet.append(['SDQ-102', 'Hair dryer', 'Product size', '25cm', 25])
+    sheet.append([None, '1500W', 'QTY:', '50pcs'])
+    sheet.append(['Remark'])
+    sheet.append(['1. Payment term: deposit'])
+    sheet.add_image(ExcelImage(photo), 'A2')
+    sheet.add_image(ExcelImage(photo), 'A5')
+    path = tmp_path / 'sdq.xlsx'
+    book.save(path)
+    monkeypatch.setattr(dynamic_import, '_qwen_template_sheets', lambda path: [{
+        'key': 'sdq', 'name': 'SDQ', 'source_sheet': 'SDQ', 'title': 'SDQ',
+        'header_row': 1, 'fields': [
+            {'key': 'image', 'label': 'PICTURE', 'type': 'image', 'role': 'image',
+             'visibility': 'public', 'searchable': False, 'source_column': 1},
+            {'key': 'description', 'label': 'DESCRIPTION', 'type': 'text', 'role': 'spec',
+             'visibility': 'public', 'searchable': False, 'source_column': 2},
+            {'key': 'packing', 'label': 'PACKING DETAILS', 'type': 'text', 'role': 'spec',
+             'visibility': 'public', 'searchable': False, 'source_column': 3},
+            {'key': 'price', 'label': 'PRICE', 'type': 'money', 'role': 'price',
+             'visibility': 'internal', 'searchable': False, 'source_column': 5}],
+    }])
+    monkeypatch.setattr(dynamic_import.ai_extract, 'guess_supplier', lambda *args: '')
+    import sqlite3
+    from catalog import db
+    conn = sqlite3.connect(':memory:')
+    conn.row_factory = sqlite3.Row
+    db.init_db(conn)
+    try:
+        payload = dynamic_import.build_template_payload(
+            conn, path, tmp_path / 'work', source_key='sdq')
+        fields = payload['sheets'][0]['template']['fields']
+        assert fields[0]['role'] == 'model'
+        assert fields[0]['type'] == 'text'
+        assert fields[0]['label'] == '型号'
+        from catalog import dynamic_catalog
+        approved = dynamic_catalog.approve_template(conn, payload['sheets'][0]['template'],
+                                                    expected_version=0)
+        assert approved['fields'][0]['label'] == '型号'
+        monkeypatch.setattr('catalog.agent.parse_dynamic', lambda *a, **kw:
+                            (_ for _ in ()).throw(AssertionError('slow agent called')))
+        rows = dynamic_import._agent_rows(approved, str(path), tmp_path / 'products', sheet='SDQ')
+        assert [row['data'][fields[0]['key']] for row in rows] == ['SDQ-101', 'SDQ-102']
+        assert all(len(row['images']) == 1 for row in rows)
+        assert 'QTY: 40pcs' in rows[0]['data']['packing']
+        assert any('Photo is injection color' in failure['reason'] for failure in rows.failures)
+        assert any(8 in failure['source_rows'] for failure in rows.failures)
+    finally:
+        conn.close()
+
+
+def test_picture_formula_references_are_not_promoted_to_models(tmp_path):
+    from catalog.dynamic_import import _recover_picture_models
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = 'Products'
+    sheet.append(['PICTURE', 'PRICE'])
+    sheet.append(['#NAME?', 20])
+    sheet.append(['=DISPIMG("id1")', 25])
+    path = tmp_path / 'formulas.xlsx'
+    book.save(path)
+    discovered = [{'source_sheet': 'Products', 'header_row': 1, 'fields': [
+        {'key': 'image', 'label': 'PICTURE', 'role': 'image', 'type': 'image',
+         'source_column': 1}]}]
+    _recover_picture_models(discovered, path)
+    assert discovered[0]['fields'][0]['role'] == 'image'
+
+
 def test_exact_header_groups_continuations_and_images(tmp_path):
     photo = tmp_path / 'photo.png'
     Image.new('RGB', (12, 12), 'red').save(photo)

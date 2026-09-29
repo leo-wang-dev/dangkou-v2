@@ -43,6 +43,25 @@ vm.runInContext(readFileSync(new URL('../static/customer-sources.js',import.meta
 assert.equal(JSON.stringify(classic.CustomerSources),JSON.stringify(aliases))
 console.log('13 locales, placeholders, language headers/actions, RTL and session-independent preference passed')
 
+// Static pages must keep accessibility labels in sync through repeated language changes.
+const element=(attributes,dataset={})=>({attributes:{...attributes},dataset,getAttribute(name){return this.attributes[name]??null},setAttribute(name,value){this.attributes[name]=value}})
+const searchInput=element({'aria-label':'搜索商品'})
+const viewerImage=element({alt:'商品大图'})
+const languageSelect=element({'aria-label':json.strings.chooseLanguage.zh},{i18nAriaLabel:'chooseLanguage'})
+const accessibilityNodes=[searchInput,viewerImage,languageSelect]
+const staticI18n=vm.createContext({CustomerCatalog:json,CustomerSources:aliases,
+  localStorage:{getItem:()=>null,setItem(){}},
+  document:{documentElement:{},querySelectorAll:selector=>selector==='[aria-label],[alt]'?accessibilityNodes:[],getElementById:()=>null}})
+vm.runInContext(readFileSync(new URL('../static/customer-i18n.js',import.meta.url),'utf8'),staticI18n)
+for(const code of ['fr','ar','en','zh']){
+  staticI18n.CustomerI18n.setLanguage(code)
+  assert.equal(searchInput.getAttribute('aria-label'),json.strings.searchProducts[code])
+  assert.equal(viewerImage.getAttribute('alt'),json.strings.largeProductImage[code])
+  assert.equal(languageSelect.getAttribute('aria-label'),json.strings.chooseLanguage[code])
+  assert.equal(staticI18n.document.documentElement.dir,code==='ar'?'rtl':'ltr')
+}
+console.log('Static accessibility labels track consecutive locale changes')
+
 // Execute the shipped merchant quote handler, including invalid quantity, download and failure.
 const html=readFileSync(new URL('../static/index.html',import.meta.url),'utf8')
 const quoteCode=html.slice(html.indexOf('async function submitQuote'),html.indexOf('async function toggleProductVisible'))

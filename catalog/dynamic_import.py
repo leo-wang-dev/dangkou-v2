@@ -6,8 +6,11 @@ import hashlib
 import os
 import secrets
 import shutil
+import re
 from pathlib import Path
 import time
+
+from openpyxl import load_workbook
 
 from . import agent, ai_extract, dynamic_catalog, inner_code, workbook_templates, fast_import
 
@@ -543,6 +546,50 @@ def _attach_image_header_hints(sections: list[dict], discovered: list[dict], xls
             section['review_hints'] = hints
 
 
+def _recover_picture_models(discovered: list[dict], xlsx_path: str) -> None:
+    """Keep SKU text in a picture column when it is the sheet's only model."""
+    pending = []
+    for item in discovered:
+        fields = item.get('fields') or []
+        if any(field.get('role') == 'model' for field in fields):
+            continue
+        candidates = [field for field in fields
+                      if field.get('role') == 'image'
+                      and re.search(r'picture|image|图片|照片', field.get('label', ''), re.I)
+                      and type(field.get('source_column')) is int]
+        if len(candidates) == 1:
+            pending.append((item, candidates[0]))
+    if not pending:
+        return
+    book = load_workbook(xlsx_path, read_only=True, data_only=False)
+    try:
+        for item, field in pending:
+            fields = item.get('fields') or []
+            if item.get('source_sheet') not in book.sheetnames:
+                continue
+            ws = book[item['source_sheet']]
+            first = max(1, int(item.get('header_row') or 1)) + 1
+            peer_cols = [other['source_column'] for other in fields if other is not field
+                         and type(other.get('source_column')) is int]
+            values = []
+            for row in ws.iter_rows(min_row=first, max_row=min(ws.max_row, first + 63)):
+                value = workbook_templates._text(row[field['source_column'] - 1].value)
+                if value and any(workbook_templates._text(row[col - 1].value) for col in peer_cols):
+                    values.append(value)
+            values = [value for value in values if value]
+            # A picture formula or caption is not a product identity. Require
+            # repeated row-aligned, short SKU tokens before changing the schema.
+            sku_values = [value for value in values if re.fullmatch(
+                r'[A-Za-z0-9][A-Za-z0-9._/+-]{0,39}', value)]
+            if (len(set(sku_values)) < 2 or len(sku_values) * 3 < len(values) * 2):
+                continue
+            field.update(key=workbook_templates._field_key('型号', 'model',
+                         {other['key'] for other in fields if other is not field}),
+                         label='型号', role='model', type='text', searchable=True)
+    finally:
+        book.close()
+
+
 def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
                            doc_id: int | None = None, mode: str | None = None,
                            category_key: str | None = None) -> dict:
@@ -574,6 +621,7 @@ def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
             # 代码按行猜的结构不可靠，属性再由 qwen 修正。
             ai_extract.apply_field_attributes(discovered, ai_extract.infer_field_attributes(discovered))
             print('[dynamic_import] 模板阶段表头发现：代码 discover_workbook（兜底）', flush=True)
+    _recover_picture_models(discovered, xlsx_path)
     # 供应商由 AI 从文件名/表名推断（判断不出留空，审批页可改）。
     supplier_guess = ai_extract.guess_supplier(
         source_key or os.path.basename(xlsx_path), [d.get('title') or '' for d in discovered])

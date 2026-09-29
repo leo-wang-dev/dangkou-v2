@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from pathlib import Path
+import re
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
@@ -143,30 +144,68 @@ def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> di
                      for col in range(1, min(ws.max_column, 200) + 1)]
             found = [(col, label) for col, label in found if label]
             if [label for _, label in found] == expected:
-                matches.append((row, [col for col, _ in found], False))
+                matches.append((row, [col for col, _ in found], False, False))
+            elif (len(found) == len(expected) and
+                  sum(field['role'] == 'model' and field['label'] == '型号' and
+                      label.casefold() in {'picture', 'image', '图片', '照片'}
+                      for (_, label), field in zip(found, fields)) == 1 and
+                  all(label == field['label'] or
+                      (field['role'] == 'model' and field['label'] == '型号' and
+                       label.casefold() in {'picture', 'image', '图片', '照片'})
+                      for (_, label), field in zip(found, fields))):
+                matches.append((row, [col for col, _ in found], False, True))
             elif (len(found) == len(expected) - 1 and [label for _, label in found] == expected[:-1]
                   and fields[-1]['role'] != 'image' and found
                   and not wbtools._text(ws.cell(row, found[-1][0] + 1).value)
                   and any(wbtools._text(ws.cell(r, found[-1][0] + 1).value)
                           for r in range(row + 1, ws.max_row + 1))):
-                matches.append((row, [col for col, _ in found] + [found[-1][0] + 1], True))
+                matches.append((row, [col for col, _ in found] + [found[-1][0] + 1], True, False))
         if len(matches) != 1:
             return None
-        header, columns, unlabeled_tail = matches[0]
+        header, columns, unlabeled_tail, picture_header = matches[0]
         key_col = next((columns[i] for i, f in enumerate(fields)
                         if f['role'] != 'image' and any(term in f['label'] for term in ('名称', '品名'))), None)
         model_col = next((columns[i] for i, f in enumerate(fields) if f['role'] == 'model'), None)
         if key_col is None and model_col is None:
             return None
         model_only = key_col is None
+        picture_model = (model_only and model_col is not None and
+                         (picture_header or re.search(r'picture|image|图片|照片',
+                          next(f['label'] for f in fields if f['role'] == 'model'), re.I)))
         source_map, _ = wbtools._merged_sources(ws)
+        companions = {}
+        if picture_model:
+            for field, col in zip(fields, columns):
+                if ('packing' in field['label'].casefold() or '包装' in field['label']):
+                    neighbor = col + 1
+                    if (neighbor not in columns and
+                            not wbtools._text(ws.cell(header, neighbor).value)):
+                        companions[col] = neighbor
         unmapped_rows = {r for (r, c), cell in ws._cells.items()
-                         if r > header and c not in columns and wbtools._text(cell.value)}
+                         if r > header and c not in columns and c not in companions.values()
+                         and wbtools._text(cell.value)}
         if unmapped_rows:
             return None
         starts = []
+        footer_start = None
+        supplementary = []
         for row in range(header + 1, ws.max_row + 1):
             direct = {col: wbtools._text(ws.cell(row, col).value) for col in columns}
+            if picture_model:
+                model = direct[model_col]
+                peers = any(value for col, value in direct.items() if col != model_col)
+                if (model and peers and
+                        re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/+-]{0,39}', model)):
+                    if footer_start is not None:
+                        return None
+                    starts.append(row)
+                elif model and not peers and model.casefold() in {'remark', 'remarks', 'terms', '条款', '备注'} and starts:
+                    footer_start = row
+                elif model and starts and footer_start is None:
+                    supplementary.append((row, model))
+                elif model and not starts:
+                    return None
+                continue
             if direct.get(key_col, ''):
                 starts.append(row)
             elif direct.get(model_col, ''):
@@ -188,6 +227,8 @@ def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> di
                     or any(anchor is not None and merged.min_row <= anchor.row + 1 <= merged.max_row
                            and merged.min_col <= anchor.col + 1 <= merged.max_col for anchor in anchors)):
                 meaningful_last = max(meaningful_last, merged.max_row)
+        if footer_start is not None:
+            meaningful_last = footer_start - 1
         products = []
         inherited_model = ''
         for index, start in enumerate(starts):
@@ -201,6 +242,12 @@ def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> di
                     raw = (wbtools._cell_value(ws, source_map, row, col) if row == start
                            else ws.cell(row, col).value)
                     value = wbtools._text(raw)
+                    if picture_model and field['role'] == 'model' and row != start:
+                        continue
+                    if col in companions:
+                        companion = wbtools._text(ws.cell(row, companions[col]).value)
+                        if companion:
+                            value = f'{value} {companion}'.strip()
                     if value and (not values or value != values[-1]):
                         values.append(value)
                 item[field['key']] = '\n'.join(values)
@@ -213,6 +260,13 @@ def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> di
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
         failures = []
+        for row, value in supplementary:
+            failures.append({'source_sheet': ws.title, 'source_rows': [row],
+                             'reason': f'{get_column_letter(model_col)}列非型号文字：{value[:80]}，请核对'})
+        if footer_start is not None:
+            failures.append({'source_sheet': ws.title,
+                             'source_rows': list(range(footer_start, ws.max_row + 1)),
+                             'reason': '表尾交易条款不作为商品，请人工核对'})
         if unlabeled_tail:
             failures.append({'source_sheet': ws.title, 'source_rows': [header],
                              'reason': f'末列原表头为空，按已审核模板映射为“{fields[-1]["label"]}”，请核对'})
@@ -235,12 +289,17 @@ def parse_structured(template: dict, path, output_dir, *, sheet: str = '') -> di
             if anchor is None:
                 return None
             row = anchor.row + 1
+            if footer_start is not None and row >= footer_start:
+                failures.append({'source_sheet': ws.title, 'source_rows': [row],
+                                 'reason': '表尾图片未归属商品，请核对'})
+                continue
             position = bisect_right(starts, row) - 1
             if position < 0:
                 failures.append({'source_sheet': ws.title, 'source_rows': [row],
                                  'reason': '表头前或商品行前的图片未归属商品，请核对'})
                 continue
-            image_columns = {col for field, col in zip(fields, columns) if field['role'] == 'image'}
+            image_columns = {col for field, col in zip(fields, columns)
+                             if field['role'] == 'image' or (picture_model and col == model_col)}
             if anchor.col + 1 not in image_columns:
                 failures.append({'source_sheet': ws.title, 'source_rows': [row],
                                  'reason': '图片锚点不在模板图片列，已按同一商品行归属，请核对'})
