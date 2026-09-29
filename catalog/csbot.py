@@ -320,7 +320,9 @@ class CsBot:
             return '整理好了，请核对：\n' + '\n'.join(receipts) + inquiry
         if found:
             inquiry += '\n可能对应以下本店商品，请先确认型号：\n' + '\n'.join(
-                f'询价{i}：{p["name"]}' + (f'（供应商：{p["supplier"]}）' if p.get('supplier') else '') for i,p in enumerate(found,1))
+                f'询价{i}：{p["name"]}' + (f'（供应商：{p["supplier"]}）' if p.get('supplier') else '') for i,p in enumerate(found[:3],1))
+            if len(found) > 3:
+                inquiry += '\n还有更多候选，可回复“换一批”。'
             inquiry += ('\n回复“选1”加入采购清单；回复“询价1”查看对应商品资料，需要联系商家可回复“找老板”。' if merchant_policy.read(self.conn) is not None else '\n价格及采购数量对应的报价均由老板处理；回复“询价1”即可转人工。')
         else:
             inquiry += '\n尚未匹配到本店在线商品；需要询价可补充型号，或回复“找老板”。'

@@ -19,6 +19,31 @@ def conn():
     value.close()
 
 
+def test_template_independent_ai_calls_overlap(conn, tmp_path, monkeypatch):
+    from catalog import dynamic_import, workbook_templates
+
+    path = blowdryer_fixture(tmp_path)
+    discovered = workbook_templates.discover_workbook(path, include_rows=False, include_images=False)
+
+    def discover(_path):
+        time.sleep(0.3)
+        return discovered
+
+    def supplier(_name, _sheets):
+        time.sleep(0.3)
+        return '测试供应商'
+
+    monkeypatch.setattr(dynamic_import, '_qwen_template_sheets', discover)
+    monkeypatch.setattr(dynamic_import.ai_extract, 'guess_supplier', supplier)
+    start = time.monotonic()
+    payload = dynamic_import.build_template_payload(
+        conn, path, tmp_path / 'work', source_key='测试供应商报价表.xlsx', mode='new')
+    elapsed = time.monotonic() - start
+
+    assert payload['supplier_guess'] == '测试供应商'
+    assert elapsed < 0.5, f'independent AI calls were sequential: {elapsed:.3f}s'
+
+
 def test_first_workbook_builds_one_template_import_section(conn, tmp_path):
     from catalog.dynamic_import import build_ticket_payload
 

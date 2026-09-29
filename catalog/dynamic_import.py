@@ -9,6 +9,7 @@ import shutil
 import re
 from pathlib import Path
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from openpyxl import load_workbook
 
@@ -680,24 +681,32 @@ def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
     workbook_templates.preflight_workbook(xlsx_path)
     # 表头发现三级链：qwen 快路（5-8 秒，证据=网格+图片锚点+合并区）→ 子代理
     # （约 4 分钟，稳）→ 代码按行猜（最后兜底）。多级表头/无标头图片列靠语义找齐。
-    discovered = _qwen_template_sheets(xlsx_path)
-    if discovered is not None:
-        print(f'[dynamic_import] 模板阶段表头发现：qwen 快路（{len(discovered)} 个 Sheet）', flush=True)
-    else:
-        discovered = _agent_template_sheets(xlsx_path, work_dir)
+    # Filename/sheet-name supplier inference does not depend on field discovery.
+    # Run the two model calls together instead of adding their network latencies.
+    book = load_workbook(xlsx_path, read_only=True)
+    try:
+        visible_sheets = [sheet.title for sheet in book.worksheets if sheet.sheet_state == 'visible']
+    finally:
+        book.close()
+    with ThreadPoolExecutor(max_workers=1) as supplier_pool:
+        supplier_future = supplier_pool.submit(
+            ai_extract.guess_supplier, source_key or os.path.basename(xlsx_path), visible_sheets)
+        discovered = _qwen_template_sheets(xlsx_path)
         if discovered is not None:
-            print(f'[dynamic_import] 模板阶段表头发现：子代理（{len(discovered)} 个 Sheet）', flush=True)
+            print(f'[dynamic_import] 模板阶段表头发现：qwen 快路（{len(discovered)} 个 Sheet）', flush=True)
         else:
-            discovered = workbook_templates.discover_workbook(
-                xlsx_path, None, include_rows=False, include_images=False)
-            # 代码按行猜的结构不可靠，属性再由 qwen 修正。
-            ai_extract.apply_field_attributes(discovered, ai_extract.infer_field_attributes(discovered))
-            print('[dynamic_import] 模板阶段表头发现：代码 discover_workbook（兜底）', flush=True)
-    _merge_adjacent_blank_subcolumns(discovered, xlsx_path)
-    _recover_picture_models(discovered, xlsx_path)
-    # 供应商由 AI 从文件名/表名推断（判断不出留空，审批页可改）。
-    supplier_guess = ai_extract.guess_supplier(
-        source_key or os.path.basename(xlsx_path), [d.get('title') or '' for d in discovered])
+            discovered = _agent_template_sheets(xlsx_path, work_dir)
+            if discovered is not None:
+                print(f'[dynamic_import] 模板阶段表头发现：子代理（{len(discovered)} 个 Sheet）', flush=True)
+            else:
+                discovered = workbook_templates.discover_workbook(
+                    xlsx_path, None, include_rows=False, include_images=False)
+                # 代码按行猜的结构不可靠，属性再由 qwen 修正。
+                ai_extract.apply_field_attributes(discovered, ai_extract.infer_field_attributes(discovered))
+                print('[dynamic_import] 模板阶段表头发现：代码 discover_workbook（兜底）', flush=True)
+        _merge_adjacent_blank_subcolumns(discovered, xlsx_path)
+        _recover_picture_models(discovered, xlsx_path)
+        supplier_guess = supplier_future.result()
     sections = _template_sections(conn, discovered, source_key=source_key,
                                   doc_id=doc_id, mode=mode, category_key=category_key)
     _attach_image_header_hints(sections, discovered, xlsx_path)

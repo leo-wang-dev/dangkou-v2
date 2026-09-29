@@ -1420,7 +1420,8 @@ def register_routes(app: FastAPI):
             reply = bot._handoff(dict(cust),'客户发送照片', '命中商家已确认的转人工条件',rule)
         elif mode == 'search':
             photo_inquiry.save(request_conn(),cust['id'],found)
-            reply = ('可能对应以下本店商品，请确认：\n' + '\n'.join(f'询价{i}：{p["name"]}' for i,p in enumerate(found,1))
+            reply = ('可能对应以下本店商品，请确认：\n' + '\n'.join(f'询价{i}：{p["name"]}' for i,p in enumerate(found[:3],1))
+                     + ('\n还有更多候选，可回复“换一批”。' if len(found) > 3 else '')
                      if found else '尚未匹配到本店在线商品，请补充型号或联系商家。')
         else:
             reply = bot._on_photo(cust,None,prepared=(path,items,[],cards), notes_only=True)
@@ -1434,7 +1435,7 @@ def register_routes(app: FastAPI):
                 profile=cs.get_shop(request_conn())
                 reply='\n'.join([cs_i18n.t('contactOwner',lang), *[str(profile[k]) for k in ('owner_tg_username','owner_wechat') if profile[k]]])
             elif mode=='notes': reply=display_reply
-            else: reply=cs_i18n.t('findProduct' if found else 'noMatchingProducts',lang)+'\n'+'\n'.join(f'{i}: {p["name"]}' for i,p in enumerate(found,1))
+            else: reply=cs_i18n.t('findProduct' if found else 'noMatchingProducts',lang)+'\n'+'\n'.join(f'{i}: {p["name"]}' for i,p in enumerate(found[:3],1))
         kind = 'user' if getattr(request.state,'account_id',None) else 'guest'
         return {'reply':reply,'photo_mode':mode,'batches':note_batches.listing(request_conn(),kind,cust['id'])}
 

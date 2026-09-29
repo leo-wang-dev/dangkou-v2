@@ -44,20 +44,51 @@ def local_candidates(conn, fields, photo):
         except Exception:
             # Photo bookkeeping remains usable when the retrieval provider is unavailable.
             return []
-    return found[:3]
+    return found[:10]
+
+
+def _saved(value):
+    """Accept old list-only candidate rows while keeping a page cursor in new rows."""
+    data = json.loads(value or '[]')
+    if isinstance(data, list):
+        return {'items': data, 'offset': 0}
+    if isinstance(data, dict) and isinstance(data.get('items'), list):
+        return {'items': data['items'], 'offset': max(0, int(data.get('offset') or 0))}
+    return {'items': [], 'offset': 0}
+
+
+def active_candidates(conn, customer_id):
+    row = conn.execute("SELECT candidates FROM cs_photo_candidates WHERE customer_id=? AND expires_at>datetime('now')", (customer_id,)).fetchone()
+    if not row:
+        return None
+    saved = _saved(row['candidates'])
+    return saved['items'][saved['offset']:saved['offset'] + 3]
+
+
+def next_batch(conn, customer_id):
+    row = conn.execute("SELECT candidates FROM cs_photo_candidates WHERE customer_id=? AND expires_at>datetime('now')", (customer_id,)).fetchone()
+    if not row:
+        return None
+    saved = _saved(row['candidates'])
+    offset = saved['offset'] + 3
+    if offset >= len(saved['items']):
+        return []
+    saved['offset'] = offset
+    conn.execute('UPDATE cs_photo_candidates SET candidates=? WHERE customer_id=?',
+                 (json.dumps(saved, ensure_ascii=False), customer_id))
+    return saved['items'][offset:offset + 3]
 
 
 def save(conn, customer_id, found):
     conn.execute("INSERT INTO cs_photo_candidates(customer_id,candidates,expires_at) VALUES(?,?,datetime('now','+30 minutes')) "
                  "ON CONFLICT(customer_id) DO UPDATE SET candidates=excluded.candidates,expires_at=excluded.expires_at",
-                 (customer_id, json.dumps(found, ensure_ascii=False)))
+                 (customer_id, json.dumps({'items': found[:10], 'offset': 0}, ensure_ascii=False)))
 
 
 def selection(conn, customer_id, number):
-    row = conn.execute("SELECT candidates FROM cs_photo_candidates WHERE customer_id=? AND expires_at>datetime('now')", (customer_id,)).fetchone()
-    if not row:
+    found = active_candidates(conn, customer_id)
+    if found is None:
         return None
-    found = json.loads(row['candidates'])
     if not 1 <= number <= len(found):
         return None
     selected = found[number-1]

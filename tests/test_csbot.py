@@ -217,6 +217,53 @@ def test_dynamic_product_query_excludes_cost_and_price(bot, conn, cust):
     assert all(value not in reply for value in ('35.00', '88.00', '成本', '价格', 'http'))
 
 
+def test_managed_photo_selection_returns_selected_public_product_details(bot, conn, cust):
+    from catalog import dynamic_catalog, merchant_policy, photo_inquiry
+    dynamic_catalog.approve_template(conn, {
+        'key': 'photo_selection', 'name': '电器', 'source_sheet': '电器',
+        'fields': [
+            {'key': 'model', 'label': '型号', 'role': 'model', 'visibility': 'public'},
+            {'key': 'material', 'label': '材质', 'role': 'spec', 'visibility': 'public'},
+            {'key': 'price', 'label': '价格', 'role': 'price', 'visibility': 'internal'},
+        ],
+    }, expected_version=0)
+    dynamic_catalog.upsert_approved_products(conn, 'photo_selection', [{
+        'id': 'picked', 'inner_code': 'INTERNAL-1', 'cs_visible': 1,
+        'data': {'model': 'TEST-8226', 'material': 'PBT', 'price': '21.5'},
+    }])
+    merchant_policy.apply(conn, {'wechat_managed': True}, 1)
+    photo_inquiry.save(conn, cust['id'], [
+        {'category': 'photo_selection', 'product_id': 'picked', 'name': 'TEST-8226'}])
+    conn.commit()
+
+    reply = bot._on_text(cust, '询价1')
+
+    assert 'TEST-8226' in reply and 'PBT' in reply
+    assert '21.5' not in reply and '价格' not in reply
+
+
+def test_managed_photo_next_batch_keeps_selection_numbers(bot, conn, cust):
+    from catalog import dynamic_catalog, merchant_policy, photo_inquiry
+    dynamic_catalog.approve_template(conn, {
+        'key': 'page_test', 'name': '分页商品', 'source_sheet': '分页商品',
+        'fields': [{'key': 'model', 'label': '型号', 'role': 'model', 'visibility': 'public'}],
+    }, expected_version=0)
+    dynamic_catalog.upsert_approved_products(conn, 'page_test', [
+        {'id': f'p{i}', 'inner_code': f'I{i}', 'cs_visible': 1,
+         'data': {'model': f'M{i}'}} for i in range(1, 6)])
+    merchant_policy.apply(conn, {'wechat_managed': True}, 1)
+    photo_inquiry.save(conn, cust['id'], [
+        {'category': 'page_test', 'product_id': f'p{i}', 'name': f'M{i}'}
+        for i in range(1, 6)])
+    conn.commit()
+
+    reply = bot._on_text(cust, '换一批')
+
+    assert '询价1：M4' in reply and '询价2：M5' in reply
+    assert 'M4' in bot._on_text(cust, '询价1')
+    assert '暂无更多' in bot._on_text(cust, '换一批')
+
+
 def test_managed_photo_match_does_not_promise_an_unconfigured_handoff(bot, conn, tmp_path):
     from catalog import merchant_policy
     merchant_policy.apply(conn, {'wechat_managed': True}, 1)

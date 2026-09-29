@@ -3,6 +3,22 @@ from catalog import photo_inquiry
 from tests.test_release_gates import env, take_photo
 
 
+def test_candidate_pages_and_selection_follow_visible_batch(env):
+    from tests.conftest import seed_products
+    conn, _, _ = env
+    seed_products(conn, [
+        {'id': f'extra-{i}', 'data': {'model': f'EXTRA-{i}'}, 'cs_visible': 1}
+        for i in range(2, 6)], key='audit_cat')
+    found = [{'category': 'audit_cat', 'product_id': pid, 'name': pid}
+             for pid in ['p1', *(f'extra-{i}' for i in range(2, 6))]]
+    photo_inquiry.save(conn, 'buyer', found)
+    assert photo_inquiry.selection(conn, 'buyer', 1)['id'] == 'p1'
+    assert [x['name'] for x in photo_inquiry.next_batch(conn, 'buyer')] == ['extra-4', 'extra-5']
+    assert photo_inquiry.selection(conn, 'buyer', 1)['id'] == 'extra-4'
+    assert photo_inquiry.selection(conn, 'buyer', 3) is None
+    assert photo_inquiry.next_batch(conn, 'buyer') == []
+
+
 def test_photo_candidate_requires_selection_and_uses_store_tier(env):
     conn,_,bot=env
     bot.llm.chat_vision.return_value=json.dumps([{'型号或品名':'MODEL-1','价格':'0.01','其他':'144含义待确认'}])

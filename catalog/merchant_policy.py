@@ -30,17 +30,15 @@ CS_SYSTEM = (
 def _photo_candidates(bot, cust, catalog=None):
     """Pending photo candidates resolved to live visible products."""
     from . import photo_inquiry
-    row = bot.conn.execute(
-        "SELECT candidates FROM cs_photo_candidates WHERE customer_id=? AND expires_at>datetime('now')",
-        (cust['id'],)).fetchone()
-    if not row:
+    candidates = photo_inquiry.active_candidates(bot.conn, cust['id'])
+    if not candidates:
         return []
     try:
         products = catalog if catalog is not None else customer_catalog.products(bot.conn)
     except customer_catalog.CatalogUnavailable:
         return []
     out = []
-    for item in json.loads(row['candidates'] or '[]'):
+    for item in candidates:
         selected = next((p for p in products
                          if p['id'] == item.get('product_id')
                          and p['_category'] == item.get('category')
@@ -242,6 +240,22 @@ def answer(bot,cust,text,allow_edit=True):
         return '\n\n'.join(x for x in (export_reply, bot._handoff(cust,text,'客户主动要求联系老板')) if x)
     if low.casefold() in ('你好','您好','hi','hello','/start','测试','在吗'):
         return '您好，可以查询本店商品、发照片整理采购清单，或回复“找老板”获取联系方式。'
+    if low in ('换一批', '下一批'):
+        from . import photo_inquiry
+        batch = photo_inquiry.next_batch(bot.conn, cust['id'])
+        if batch is None:
+            return '照片候选已过期，请重新发照片。'
+        if not batch:
+            return '暂无更多符合条件的本店商品；可以补充型号或重新拍照。'
+        visible = _photo_candidates(bot, cust, catalog=catalog())
+        if not visible:
+            return '下一批商品已下架或不可见，请重新发照片。'
+        lines = [f'询价{i}：{product["name"]}'
+                 for i, item in enumerate(batch, 1)
+                 for product in visible
+                 if product['id'] == item.get('product_id')
+                 and product['_category'] == item.get('category')]
+        return '继续看这些本店商品：\n' + '\n'.join(lines)
     if cs_i18n.wants_confirm(text) or low in ('确认入库','确认清单'):return bot._confirm_drafts(cust)
     selection=re.match(r'^询价\s*(\d+)(?:\s|[，,:：]|$)',low)
     if selection:
@@ -295,6 +309,11 @@ def answer(bot,cust,text,allow_edit=True):
             if reply is not None:
                 return reply
         product,_=bot._resolve_product(cust,text,products=catalog())
+        if selection:
+            # “询价1” is a candidate-selection command, not a model name.
+            # Keep the selected live product through the normal public-spec
+            # response path after evaluating any applicable merchant redline.
+            product = selected
     except customer_catalog.CatalogUnavailable:
         return '商品查询暂不可用，请稍后再试；也可回复“找老板”。'
     if product is None:
