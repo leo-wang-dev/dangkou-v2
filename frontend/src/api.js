@@ -19,8 +19,8 @@ let DEFAULT_TOOL_BASE = ''  // 工具端：H5 同源相对路径
 let DEFAULT_CS_BASE = ''    // 客服/清单：H5 同源绝对路径
 // #ifdef MP-WEIXIN
 if (typeof uni !== 'undefined') {  // node 冒烟导入时无 uni，退回同源默认
-  DEFAULT_TOOL_BASE = 'https://134.175.135.102/tool'  // nginx location /tool/ 剥前缀 → user-app
-  DEFAULT_CS_BASE = 'https://134.175.135.102'         // nginx 443 → 商家运行时
+  DEFAULT_TOOL_BASE = 'https://134.175.135.102:80/tool'  // 开发测试机 /tool/ → user-app
+  DEFAULT_CS_BASE = 'https://134.175.135.102:80'         // 档口客服用 mid 选择独立运行时
 }
 // #endif
 
