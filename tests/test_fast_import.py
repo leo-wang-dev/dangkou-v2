@@ -30,13 +30,13 @@ def test_picture_column_with_skus_is_model_and_uses_structured_parser(tmp_path, 
         'key': 'sdq', 'name': 'SDQ', 'source_sheet': 'SDQ', 'title': 'SDQ',
         'header_row': 1, 'fields': [
             {'key': 'image', 'label': 'PICTURE', 'type': 'image', 'role': 'image',
-             'visibility': 'public', 'searchable': False, 'source_column': 1},
-            {'key': 'description', 'label': 'DESCRIPTION', 'type': 'text', 'role': 'spec',
-             'visibility': 'public', 'searchable': False, 'source_column': 2},
+             'visibility': 'public', 'searchable': False, 'source_column': None},
+            {'key': 'description', 'label': 'DESCRIPTION', 'type': 'text', 'role': 'model',
+             'visibility': 'public', 'searchable': True, 'source_column': None},
             {'key': 'packing', 'label': 'PACKING DETAILS', 'type': 'text', 'role': 'spec',
-             'visibility': 'public', 'searchable': False, 'source_column': 3},
+             'visibility': 'public', 'searchable': False, 'source_column': None},
             {'key': 'price', 'label': 'PRICE', 'type': 'money', 'role': 'price',
-             'visibility': 'internal', 'searchable': False, 'source_column': 5}],
+             'visibility': 'internal', 'searchable': False, 'source_column': None}],
     }])
     monkeypatch.setattr(dynamic_import.ai_extract, 'guess_supplier', lambda *args: '')
     import sqlite3
@@ -51,6 +51,7 @@ def test_picture_column_with_skus_is_model_and_uses_structured_parser(tmp_path, 
         assert fields[0]['role'] == 'model'
         assert fields[0]['type'] == 'text'
         assert fields[0]['label'] == '型号'
+        assert fields[1]['role'] == 'spec'
         from catalog import dynamic_catalog
         approved = dynamic_catalog.approve_template(conn, payload['sheets'][0]['template'],
                                                     expected_version=0)
@@ -83,6 +84,29 @@ def test_picture_formula_references_are_not_promoted_to_models(tmp_path):
          'source_column': 1}]}]
     _recover_picture_models(discovered, path)
     assert discovered[0]['fields'][0]['role'] == 'image'
+
+
+def test_picture_skus_do_not_replace_plausible_existing_model(tmp_path):
+    from catalog.dynamic_import import _recover_picture_models
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = 'Products'
+    sheet.append(['PICTURE', 'MODEL'])
+    sheet.append(['PIC-101', 'SKU-101'])
+    sheet.append(['PIC-102', 'SKU-102'])
+    path = tmp_path / 'two-identifiers.xlsx'
+    book.save(path)
+    fields = [
+        {'key': 'image', 'label': 'PICTURE', 'role': 'image', 'type': 'image',
+         'source_column': None},
+        {'key': 'model', 'label': 'MODEL', 'role': 'model', 'type': 'text',
+         'source_column': None},
+    ]
+    _recover_picture_models([{'source_sheet': 'Products', 'header_row': 1,
+                              'fields': fields}], path)
+    assert [(f['role'], f['source_column']) for f in fields] == [
+        ('image', 1), ('model', 2)]
 
 
 def test_exact_header_groups_continuations_and_images(tmp_path):

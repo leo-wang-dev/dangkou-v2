@@ -547,42 +547,72 @@ def _attach_image_header_hints(sections: list[dict], discovered: list[dict], xls
 
 
 def _recover_picture_models(discovered: list[dict], xlsx_path: str) -> None:
-    """Keep SKU text in a picture column when it is the sheet's only model."""
-    pending = []
-    for item in discovered:
-        fields = item.get('fields') or []
-        if any(field.get('role') == 'model' for field in fields):
-            continue
-        candidates = [field for field in fields
-                      if field.get('role') == 'image'
-                      and re.search(r'picture|image|图片|照片', field.get('label', ''), re.I)
-                      and type(field.get('source_column')) is int]
-        if len(candidates) == 1:
-            pending.append((item, candidates[0]))
-    if not pending:
+    """Use source cells to resolve an image-labeled column containing SKUs."""
+    if not any(field.get('role') == 'image' and
+               re.search(r'picture|image|图片|照片', field.get('label', ''), re.I)
+               for item in discovered for field in item.get('fields', [])):
         return
     book = load_workbook(xlsx_path, read_only=True, data_only=False)
     try:
-        for item, field in pending:
+        for item in discovered:
             fields = item.get('fields') or []
             if item.get('source_sheet') not in book.sheetnames:
                 continue
             ws = book[item['source_sheet']]
-            first = max(1, int(item.get('header_row') or 1)) + 1
+            printed = {}
+            for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 30),
+                                    max_col=min(ws.max_column, 200)):
+                for cell in row:
+                    label = workbook_templates._label(cell.value).casefold()
+                    if label:
+                        printed.setdefault(label, []).append((cell.row, cell.column))
+            header_rows = {}
+            for field in fields:
+                hits = printed.get(field.get('label', '').casefold(), [])
+                if len(hits) == 1:
+                    header_rows[id(field)], field['source_column'] = hits[0]
+            candidates = [field for field in fields if field.get('role') == 'image'
+                          and re.search(r'picture|image|图片|照片', field.get('label', ''), re.I)
+                          and type(field.get('source_column')) is int]
+            if len(candidates) != 1:
+                continue
+            field = candidates[0]
+            first = max(1, int(item.get('header_row') or 1),
+                        header_rows.get(id(field), 1)) + 1
             peer_cols = [other['source_column'] for other in fields if other is not field
                          and type(other.get('source_column')) is int]
+            if not peer_cols:
+                continue
             values = []
+            sku_rows = []
             for row in ws.iter_rows(min_row=first, max_row=min(ws.max_row, first + 63)):
                 value = workbook_templates._text(row[field['source_column'] - 1].value)
                 if value and any(workbook_templates._text(row[col - 1].value) for col in peer_cols):
                     values.append(value)
-            values = [value for value in values if value]
+                    if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/+-]{0,39}', value):
+                        sku_rows.append(row[0].row)
             # A picture formula or caption is not a product identity. Require
             # repeated row-aligned, short SKU tokens before changing the schema.
             sku_values = [value for value in values if re.fullmatch(
                 r'[A-Za-z0-9][A-Za-z0-9._/+-]{0,39}', value)]
             if (len(set(sku_values)) < 2 or len(sku_values) * 3 < len(values) * 2):
                 continue
+            models = [other for other in fields if other is not field and other.get('role') == 'model']
+            if len(models) > 1:
+                continue
+            if models:
+                current = models[0]
+                col = current.get('source_column')
+                if type(col) is not int:
+                    continue
+                model_values = [workbook_templates._text(ws.cell(row, col).value)
+                                for row in sku_rows]
+                if sum(bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/+-]{0,39}', value))
+                       for value in model_values) * 2 >= len(sku_rows):
+                    continue  # A plausible existing model must keep the AI's role.
+                current['role'] = 'spec'
+                current['key'] = workbook_templates._field_key(current['label'], 'spec',
+                    {other['key'] for other in fields if other is not current})
             field.update(key=workbook_templates._field_key('型号', 'model',
                          {other['key'] for other in fields if other is not field}),
                          label='型号', role='model', type='text', searchable=True)
