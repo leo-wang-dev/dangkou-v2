@@ -20,6 +20,7 @@
       <text class="hint">{{ t('loginHint') }}</text>
     </view>
     <view v-if="claimPending" class="loginbar"><button class="hbtn" @click="retryClaim">{{ t('refresh') }}</button><text class="hint">{{ t('networkError') }}</text></view>
+    <view v-if="accountMergePending" class="loginbar"><text class="hint">{{ t('accountMergePending') }}</text></view>
 
     <!-- 首访语言选择 -->
 
@@ -99,7 +100,7 @@ function detachViewport(){
   window.visualViewport?.removeEventListener('scroll',updateViewport);window.removeEventListener('resize',updateViewport)
 }
 const loginBar = ref(false), loginEmail = ref(''), loginCode = ref(''), codeSent = ref(false)
-const sending = ref(false), loggingIn = ref(false), claimPending = ref(false)
+const sending = ref(false), loggingIn = ref(false), claimPending = ref(false), accountMergePending = ref(false)
 let ready = Promise.resolve()
 const hasPending=ref(false)
 const photoMode=ref(''), batches=ref([]),unassigned=ref([]),selected=ref([])
@@ -263,7 +264,7 @@ async function openList() {
 }
 
 function toggleNote(id){selected.value=selected.value.includes(id)?selected.value.filter(x=>x!==id):[...selected.value,id]}
-async function refreshSession(){const r=await csApi.session(token.value,visitor.value);if(!r.ok){tip(r.status===410?t('guestSessionExpired'):t('loadError'));return}photoMode.value=r.data.photo_mode;hasPending.value=!!r.data.intent_required;batches.value=r.data.batches||[];unassigned.value=(r.data.notes||[]).filter(n=>['unassigned','legacy_unassigned'].includes(n.batch_state))}
+async function refreshSession(){const r=await csApi.session(token.value,visitor.value);if(!r.ok){tip(r.status===410?t('guestSessionExpired'):t('loadError'));return}photoMode.value=r.data.photo_mode;hasPending.value=!!r.data.intent_required;accountMergePending.value=!!r.data.account_merge_pending;batches.value=r.data.batches||[];unassigned.value=(r.data.notes||[]).filter(n=>['unassigned','legacy_unassigned'].includes(n.batch_state))}
 async function newSession(end=false){
   try{
     if(accountToken.value){

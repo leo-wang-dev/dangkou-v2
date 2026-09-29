@@ -504,9 +504,13 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None,
     def me(request: Request):
         kind, owner_id = _identity(request, '')
         account_id = request_conn().execute('SELECT account_id FROM users WHERE email=?',(owner_id,)).fetchone()[0] if kind == 'user' else ''
+        aliases = [row[0] for row in request_conn().execute(
+            'SELECT old_account_id FROM account_aliases WHERE account_id=? ORDER BY old_account_id',
+            (account_id,))] if account_id else []
         return {'kind': kind, 'email': owner_id if kind == 'user' and not wechat_auth.is_shadow(owner_id) else '',
                 'login_method': 'wechat' if kind == 'user' and wechat_auth.is_shadow(owner_id) else 'email',
                 'account_id':account_id,
+                'account_aliases': aliases,
                 'lang':cs_i18n.normalize_language(request.state.customer_language)}
 
     # ---------- 页面（nginx 经 /tool/ 反代，前缀剥掉后落到这里的根路由） ----

@@ -32,4 +32,10 @@ def verify(request) -> str:
         raise HTTPException(503, 'identity_service_unavailable') from None
     if identity.get('kind') != 'user' or not isinstance(account_id, str) or not re.fullmatch(r'[0-9a-f]{32}', account_id):
         raise HTTPException(503, 'identity_service_unavailable')
+    aliases = identity.get('account_aliases', [])
+    if (not isinstance(aliases, list) or len(aliases) > 32 or
+            any(not isinstance(value, str) or not re.fullmatch(r'[0-9a-f]{32}', value)
+                for value in aliases)):
+        raise HTTPException(503, 'identity_service_unavailable')
+    request.state.account_aliases = list(dict.fromkeys(value for value in aliases if value != account_id))
     return account_id

@@ -35,6 +35,63 @@ def account_session(conn, account_id: str):
     return row
 
 
+def merge_aliases(conn, account_id: str, aliases=()):
+    """Merge old verified account IDs into this shop on the first authenticated visit.
+
+    aliases come exclusively from the central /me response, never the buyer body.
+    All writes use the request transaction, so any conflict rolls back together.
+    """
+    if not aliases:
+        return 0
+    deferred = 0
+    target_session = account_session(conn, account_id)
+    target_id = conn.execute('SELECT id FROM cs_customer WHERE account_id=?',
+                             (account_id,)).fetchone()['id']
+    for alias in aliases:
+        if alias == account_id:
+            continue
+        old = conn.execute('SELECT id FROM cs_customer WHERE account_id=?', (alias,)).fetchone()
+        if not old:
+            continue
+        old_id = old['id']
+        old_session = conn.execute('SELECT * FROM guest_sessions WHERE owner_id=?',
+                                   (owner_id(alias),)).fetchone()
+        if old_session and old_session['pending_photo'] and target_session['pending_photo']:
+            # Keep both photos and the old customer untouched. The current account
+            # must remain usable so its photo can be resolved before retrying.
+            deferred += 1
+            continue
+        conn.execute("UPDATE cs_link SET expires_at='1970-01-01' WHERE customer_id=?", (old_id,))
+        for table in ('cs_note', 'cs_conversation_log'):
+            conn.execute(f'UPDATE {table} SET customer_id=? WHERE customer_id=?',
+                         (target_id, old_id))
+        for table in ('cs_card_info', 'cs_context', 'cs_photo_candidates'):
+            conn.execute(f'UPDATE OR IGNORE {table} SET customer_id=? WHERE customer_id=?',
+                         (target_id, old_id))
+            conn.execute(f'DELETE FROM {table} WHERE customer_id=?', (old_id,))
+        if conn.execute("SELECT 1 FROM note_batches WHERE owner_kind='user' AND owner_id=? AND active=1",
+                        (target_id,)).fetchone():
+            conn.execute("UPDATE note_batches SET active=0 WHERE owner_kind='user' AND owner_id=?",
+                         (old_id,))
+        conn.execute("UPDATE note_batches SET owner_id=? WHERE owner_kind='user' AND owner_id=?",
+                     (target_id, old_id))
+        conn.execute('DELETE FROM cs_customer WHERE id=?', (old_id,))
+        conn.execute('UPDATE guest_sessions SET claimed_account_id=? WHERE claimed_account_id=?',
+                     (account_id, alias))
+        if old_session:
+            if old_session['pending_photo']:
+                conn.execute('UPDATE guest_sessions SET pending_photo=?,photo_mode=? WHERE token_hash=?',
+                             (old_session['pending_photo'], old_session['photo_mode'], target_session['token_hash']))
+            elif old_session['photo_mode'] and not target_session['photo_mode']:
+                conn.execute('UPDATE guest_sessions SET photo_mode=? WHERE token_hash=?',
+                             (old_session['photo_mode'], target_session['token_hash']))
+            conn.execute("UPDATE guest_sessions SET pending_photo='',photo_mode='' WHERE token_hash=?",
+                         (old_session['token_hash'],))
+            target_session = conn.execute('SELECT * FROM guest_sessions WHERE token_hash=?',
+                                          (target_session['token_hash'],)).fetchone()
+    return deferred
+
+
 def resolve(conn, account_id=None, visitor=''):
     if account_id:
         account_session(conn, account_id)
@@ -44,10 +101,12 @@ def resolve(conn, account_id=None, visitor=''):
     return row[0] if row else None
 
 
-def claim(conn, account_id: str, visitor: str) -> str:
+def claim(conn, account_id: str, visitor: str, aliases=()) -> str:
     if not visitor:
+        merge_aliases(conn, account_id, aliases)
         return resolve(conn, account_id=account_id)
     conn.execute('BEGIN IMMEDIATE')
+    merge_aliases(conn, account_id, aliases)
     session = conn.execute('SELECT * FROM guest_sessions WHERE token_hash=?',
                            (guest_sessions.digest(visitor),)).fetchone()
     if not session:

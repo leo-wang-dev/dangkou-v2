@@ -21,6 +21,7 @@ npm run dev:h5            # 本地开发（H5）
 npm run build:h5          # 产出 dist/build/h5（资源为 ./ 相对路径，可挂任意子路径）
 npm run dev:mp-weixin     # 小程序开发编译（dist/dev/mp-weixin）
 npm run build:mp-weixin   # 产出 dist/build/mp-weixin，微信开发者工具导入该目录
+npm run build:mp-weixin:release # 按下方环境变量生成正式配置产物
 npm test                  # node 级冒烟（结构+API 层加载+引用一致性，无网络依赖）
 ```
 
@@ -46,6 +47,16 @@ npm test                  # node 级冒烟（结构+API 层加载+引用一致�
 3. **PATCH**：清单单元格保存用 `wx.request PATCH`，需较新基础库（2.10.1+，2020 年后版本均可）。
 4. **登录合规**：邮箱验证码登录收集邮箱，正式提审前需在小程序后台完成「用户隐私保护指引」声明（收集邮箱/照片），否则审核可能被拒；体验版/开发版不受影响。
 5. **外链**：客服回复里的清单 URL 在小程序里不可直接打开（点击复制到剪贴板），清单请走页内「📋 我的清单」抽屉。
+
+正式小程序使用隔离构建命令，不改仓库中的开发配置：
+
+```bash
+WECHAT_MINIAPP_APP_ID=wx... \
+WECHAT_MINIAPP_API_ORIGIN=https://已备案的业务域名 \
+npm run build:mp-weixin:release
+```
+
+脚本拒绝 IP、非 HTTPS、额外端口和无效 AppID；构建结果位于 `dist/release/mp-weixin`。它在临时副本里写入 AppID 和 API 域名，启用域名校验，并禁用发布包中的服务器地址覆盖。服务端另行配置 `WECHAT_MINIAPP_APP_SECRET`，**不要**将密钥传给这个构建命令。仍需在微信后台配置 request/uploadFile/downloadFile 合法域名并用真机验收。
 
 ## 后端配套（已做的唯一适配）
 

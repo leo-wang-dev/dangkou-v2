@@ -83,8 +83,12 @@ def test_wechat_account_can_link_existing_email_after_otp(tmp_path, monkeypatch)
     guest = _new_guest(client)
     assert _upload(client, guest).status_code == 200
     wx = client.post('/auth/wechat', json={'code': 'first', 'guest': guest}).json()['token']
+    old_account_id = client.get('/me', headers={'Authorization': 'Bearer ' + wx}).json()['account_id']
     linked = _email_login(client, email, link_token=wx)
-    assert client.get('/me', headers={'Authorization': 'Bearer ' + linked}).json()['email'] == email
+    me = client.get('/me', headers={'Authorization': 'Bearer ' + linked}).json()
+    assert me['email'] == email
+    assert me['account_id'] != old_account_id
+    assert me['account_aliases'] == [old_account_id]
     assert len(client.post('/notes', headers={'Authorization': 'Bearer ' + original}).json()['notes']) == 1
     assert client.post('/auth/wechat', json={'code': 'again'}).json()['email'] == email
 

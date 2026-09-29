@@ -11,8 +11,9 @@ from catalog import guest_sessions
 from tests.test_h5_transactions import h5
 
 
-def _central(monkeypatch, account_by_token=None, unavailable=False):
+def _central(monkeypatch, account_by_token=None, unavailable=False, aliases_by_token=None):
     account_by_token = account_by_token or {'one': 'a' * 32, 'two': 'b' * 32}
+    aliases_by_token = aliases_by_token or {}
     monkeypatch.setenv('CUSTOMER_IDENTITY_BASE_URL', 'http://127.0.0.1:19211')
 
     def respond(url, *, headers, timeout, trust_env):
@@ -23,7 +24,9 @@ def _central(monkeypatch, account_by_token=None, unavailable=False):
         token = headers.get('Authorization', '').removeprefix('Bearer ')
         if token not in account_by_token:
             return httpx.Response(401, json={'detail': 'invalid token'})
-        return httpx.Response(200, json={'kind': 'user', 'account_id': account_by_token[token], 'email': 'ignored@example.com'})
+        return httpx.Response(200, json={'kind': 'user', 'account_id': account_by_token[token],
+                                         'account_aliases': aliases_by_token.get(token, []),
+                                         'email': 'ignored@example.com'})
 
     monkeypatch.setattr(httpx, 'get', respond)
 
@@ -78,6 +81,57 @@ def test_claim_merges_guest_notes_card_history_and_reissues_link(h5, monkeypatch
         again = client.post('/cs/chat/test-shop/session/claim', json={'visitor': visitor}, headers=auth)
         assert again.status_code == 200 and again.json()['customer_id'] == cid
         assert app.state.conn.execute('SELECT count(*) FROM cs_note').fetchone()[0] == 1
+
+
+def test_linked_wechat_and_email_accounts_merge_existing_shop_history(h5, monkeypatch):
+    app, _, _ = h5
+    _central(monkeypatch)
+    with TestClient(app) as client:
+        first, _, old_note, _, old_link = _seed_guest(app, client, 'WeChat-old', with_card=True)
+        second, _, new_note, _, _ = _seed_guest(app, client, 'Email-old', with_card=True)
+        assert client.post('/cs/chat/test-shop/session/claim', json={'visitor': first},
+                           headers={'Authorization': 'Bearer one'}).status_code == 200
+        assert client.post('/cs/chat/test-shop/session/claim', json={'visitor': second},
+                           headers={'Authorization': 'Bearer two'}).status_code == 200
+        _central(monkeypatch, aliases_by_token={'two': ['a' * 32]})
+        auth = {'Authorization': 'Bearer two'}
+        state = client.get('/cs/chat/test-shop/session', headers=auth)
+        assert state.status_code == 200, state.text
+        assert {n['id'] for n in state.json()['notes']} == {old_note, new_note}
+        history = client.get('/cs/chat/test-shop/history', headers=auth).json()['messages']
+        assert {m['content'] for m in history} >= {'查WeChat-old', '查Email-old'}
+        assert client.get('/cs/link/' + old_link).status_code == 410
+        assert client.get('/cs/chat/test-shop/session', headers=auth).status_code == 200
+        assert app.state.conn.execute('SELECT COUNT(*) FROM cs_note').fetchone()[0] == 2
+
+
+def test_account_alias_merge_preserves_both_pending_photos_on_conflict(h5, monkeypatch):
+    app, _, _ = h5
+    _central(monkeypatch)
+    with TestClient(app) as client:
+        assert client.get('/cs/chat/test-shop/session', headers={'Authorization': 'Bearer one'}).status_code == 200
+        assert client.get('/cs/chat/test-shop/session', headers={'Authorization': 'Bearer two'}).status_code == 200
+        conn = app.state.conn
+        conn.execute("UPDATE guest_sessions SET pending_photo='old.jpg' WHERE owner_id=?",
+                     ('h5-acct-' + 'a' * 32,))
+        conn.execute("UPDATE guest_sessions SET pending_photo='new.jpg' WHERE owner_id=?",
+                     ('h5-acct-' + 'b' * 32,))
+        conn.commit()
+        _central(monkeypatch, aliases_by_token={'two': ['a' * 32]})
+        result = client.get('/cs/chat/test-shop/session', headers={'Authorization': 'Bearer two'})
+        assert result.status_code == 200
+        assert result.json()['account_merge_pending'] is True
+        assert conn.execute('SELECT COUNT(*) FROM cs_customer').fetchone()[0] == 2
+        assert conn.execute('SELECT pending_photo FROM guest_sessions WHERE owner_id=?',
+                            ('h5-acct-' + 'a' * 32,)).fetchone()[0] == 'old.jpg'
+        conn.execute("UPDATE guest_sessions SET pending_photo='' WHERE owner_id=?",
+                     ('h5-acct-' + 'b' * 32,))
+        conn.commit()
+        merged = client.get('/cs/chat/test-shop/session', headers={'Authorization': 'Bearer two'})
+        assert merged.status_code == 200
+        assert merged.json()['account_merge_pending'] is False
+        assert conn.execute('SELECT pending_photo FROM guest_sessions WHERE owner_id=?',
+                            ('h5-acct-' + 'b' * 32,)).fetchone()[0] == 'old.jpg'
 
 
 def test_first_account_session_creation_is_conflict_safe(h5, monkeypatch):

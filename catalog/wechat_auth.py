@@ -28,6 +28,11 @@ def migrate(conn) -> None:
         created_at TEXT DEFAULT (datetime('now')),
         PRIMARY KEY(appid, openid))''')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_wechat_email ON wechat_identities(email)')
+    conn.execute('''CREATE TABLE IF NOT EXISTS account_aliases(
+        old_account_id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now')))''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_account_aliases_target ON account_aliases(account_id)')
 
 
 def exchange_code(code: str) -> tuple[str, str]:
@@ -81,6 +86,15 @@ def link_email(conn, source_email: str, target_email: str) -> None:
         raise HTTPException(409, '当前账号不是待绑定的微信账号')
     if source_email == target_email:
         return
+    source_id = conn.execute('SELECT account_id FROM users WHERE email=?',
+                             (source_email,)).fetchone()['account_id']
+    target_id = conn.execute('SELECT account_id FROM users WHERE email=?',
+                             (target_email,)).fetchone()['account_id']
+    if source_id != target_id:
+        conn.execute('INSERT INTO account_aliases(old_account_id,account_id) VALUES(?,?)',
+                     (source_id, target_id))
+        conn.execute('UPDATE account_aliases SET account_id=? WHERE account_id=?',
+                     (target_id, source_id))
     conn.execute("UPDATE notes SET owner_id=? WHERE owner_kind='user' AND owner_id=?",
                  (target_email, source_email))
     if conn.execute("SELECT 1 FROM note_batches WHERE owner_kind='user' AND owner_id=? AND active=1",

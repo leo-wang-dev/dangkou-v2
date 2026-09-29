@@ -14,6 +14,7 @@
 //   GET /cs/link/{k}/export.xlsx
 import { storage } from './storage.js'
 import { getLanguage, translate } from './i18n.js'
+import { MINIAPP_RELEASE_ORIGIN } from './release-config.js'
 
 // baseURL 默认值（小程序开发期指向测试服务器；上线前改成正式域名）
 let DEFAULT_TOOL_BASE = ''  // 工具端：H5 同源相对路径
@@ -40,6 +41,10 @@ function customerPrefix() {
 }
 
 export function getBases() {
+  if (MINIAPP_RELEASE_ORIGIN) {
+    return { tool: MINIAPP_RELEASE_ORIGIN + '/tool',
+      cs: MINIAPP_RELEASE_ORIGIN + customerPrefix() }
+  }
   let override = null
   try { override = JSON.parse(storage.get('dk_bases') || '') } catch (e) { override = null }
   return {

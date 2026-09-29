@@ -2954,6 +2954,21 @@
       "vi": "Đã kết nối tài khoản WeChat",
       "th": "เชื่อมบัญชี WeChat แล้ว",
       "id": "Akun WeChat terhubung"
+    },
+    "accountMergePending": {
+      "zh": "另一个账号还有待处理照片。请先处理当前照片，旧记录随后会自动合并。",
+      "en": "Another linked account has a pending photo. Resolve the current photo first; older records will then merge.",
+      "fr": "Un autre compte lié a une photo en attente. Traitez la photo actuelle pour fusionner les anciens dossiers.",
+      "es": "Otra cuenta vinculada tiene una foto pendiente. Resuelve la foto actual para unir los registros anteriores.",
+      "pt": "Outra conta vinculada tem uma foto pendente. Resolva a foto atual para mesclar os registros antigos.",
+      "ru": "В другом привязанном аккаунте есть фото в ожидании. Сначала обработайте текущее фото, затем записи объединятся.",
+      "ar": "توجد صورة معلّقة في حساب مرتبط آخر. عالج الصورة الحالية أولاً، ثم ستُدمج السجلات القديمة.",
+      "de": "Ein weiteres verknüpftes Konto hat ein ausstehendes Foto. Bearbeiten Sie zuerst das aktuelle Foto; ältere Einträge werden dann zusammengeführt.",
+      "ja": "別の連携アカウントに未処理の写真があります。現在の写真を処理すると、過去の記録が統合されます。",
+      "ko": "다른 연결 계정에 처리 대기 중인 사진이 있습니다. 현재 사진을 처리하면 이전 기록이 병합됩니다.",
+      "vi": "Tài khoản liên kết khác còn ảnh chờ xử lý. Xử lý ảnh hiện tại trước, rồi bản ghi cũ sẽ được gộp.",
+      "th": "บัญชีที่เชื่อมโยงอีกบัญชีมีรูปค้างอยู่ จัดการรูปปัจจุบันก่อน แล้วข้อมูลเก่าจะถูกรวม",
+      "id": "Akun tertaut lain memiliki foto tertunda. Selesaikan foto saat ini terlebih dahulu, lalu catatan lama akan digabung."
     }
   }
 }

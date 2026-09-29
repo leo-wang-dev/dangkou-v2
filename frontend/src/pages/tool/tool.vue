@@ -22,7 +22,7 @@
         <button class="btn" :disabled="!codeSent || loggingIn" @click="doLogin">{{ loginMethod === 'wechat' ? t('bindEmail') : t('login') }}</button>
       </view>
       <view class="hint">{{ t('loginHint') }}</view>
-      <view class="cfg" @click="cfgOpen = true">{{ t('server') }}: {{ bases.tool || t('sameOrigin') }} / {{ bases.cs || t('sameOrigin') }} · {{ t('tapToEdit') }}</view>
+      <view v-if="!MINIAPP_RELEASE_ORIGIN" class="cfg" @click="cfgOpen = true">{{ t('server') }}: {{ bases.tool || t('sameOrigin') }} / {{ bases.cs || t('sameOrigin') }} · {{ t('tapToEdit') }}</view>
     </view>
 
     <!-- 消息区 -->
@@ -67,7 +67,7 @@
     </view>
 
     <!-- baseURL 运行时配置（开发期切服务器用） -->
-    <view v-if="cfgOpen" class="drawer">
+    <view v-if="cfgOpen && !MINIAPP_RELEASE_ORIGIN" class="drawer">
       <view class="mask" @click="cfgOpen = false" />
       <view class="cfgbox">
         <view class="dhead"><text class="dtitle">{{ t('serverAddress') }}</text><button class="hbtn" @click="cfgOpen = false">✕ {{ t('close') }}</button></view>
@@ -93,6 +93,7 @@ import { onLoad, onUnload } from '@dcloudio/uni-app'
 import { toolApi, getBases, setBases, choosePhoto } from '../../api.js'
 import { storage } from '../../storage.js'
 import { wechatLoginCode } from '../../wechat-login.js'
+import { MINIAPP_RELEASE_ORIGIN } from '../../release-config.js'
 
 async function pickLang(lang){changeLanguage(lang);const r=await toolApi.setLang(lang);if(!r.ok)tip(r.data?.detail||t('networkError'));if(drawer.value)await openList()}
 

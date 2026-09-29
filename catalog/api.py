@@ -1263,6 +1263,8 @@ def register_routes(app: FastAPI):
             if account_id is None:
                 account_id = buyer_identity.verify(request)
                 request.state.account_id = account_id
+            request.state.alias_merge_pending = shop_account.merge_aliases(
+                request_conn(), account_id, getattr(request.state, 'account_aliases', ()))
             session = shop_account.account_session(request_conn(), account_id)
             from .cs_chat import lookup_visitor
             cust = lookup_visitor(request_conn(),session['owner_id'])
@@ -1306,7 +1308,8 @@ def register_routes(app: FastAPI):
         from . import buyer_identity, shop_account
         _chat_conn(token)
         account_id = buyer_identity.verify(request)
-        customer_id = shop_account.claim(request_conn(), account_id, str(body.get('visitor') or ''))
+        customer_id = shop_account.claim(request_conn(), account_id, str(body.get('visitor') or ''),
+                                         getattr(request.state, 'account_aliases', ()))
         request.state.account_id = account_id
         return {'claimed':True,'customer_id':customer_id}
 
@@ -1319,6 +1322,7 @@ def register_routes(app: FastAPI):
         notes = request_conn().execute("SELECT * FROM cs_note WHERE customer_id=? AND status IN ('draft','confirmed') ORDER BY id",(cust['id'],)).fetchall() if cust else []
         kind = 'user' if getattr(request.state,'account_id',None) else 'guest'
         return {'lang':cs_i18n.request_language(request), 'photo_mode':session['photo_mode'], 'intent_required':bool(session['pending_photo']),
+                'account_merge_pending':bool(getattr(request.state, 'alias_merge_pending', 0)),
                 'batches':note_batches.listing(request_conn(),kind,cust['id']) if cust else [],
                 'notes':[{'id':n['id'],'batch_state':note_batches.project(request_conn(),n)['batch_state'],'fields':shop_link.customer_fields(request_conn(),n)} for n in notes]}
 
