@@ -84,6 +84,36 @@ def test_page_has_refresh_and_replacement_copy():
     assert 'id="v-wechat"' in index and 'id="wechat-frame"' in index
 
 
+def test_binding_page_handles_missing_token_and_copies_usable_link():
+    from playwright.sync_api import sync_playwright
+
+    html = (Path(__file__).parents[1] / 'static' / 'merchant' / 'wechat-bind.html').read_text()
+    base = 'https://binding.example/merchant/manage/' + 'a' * 24 + '/wechat-bind.html'
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        page = browser.new_page()
+        requests = []
+        page.route('https://binding.example/**', lambda route: (
+            route.fulfill(status=200, content_type='text/html', body=html)
+            if route.request.resource_type == 'document' else (
+                requests.append(route.request.headers.get('x-service-token')),
+                route.fulfill(status=200, content_type='application/json', body='{"session":{"state":"idle"}}')
+            )[-1]
+        ))
+        page.goto(base)
+        page.wait_for_timeout(100)
+        assert '缺少授权' in page.locator('#status').inner_text()
+        assert requests == []
+
+        page.goto(base + '?t=fixture-token')
+        page.wait_for_timeout(100)
+        assert requests and all(token == 'fixture-token' for token in requests)
+        page.evaluate('''() => { window.__copied = ''; navigator.clipboard.writeText = async value => { window.__copied = value }; }''')
+        page.locator('#copy-link').click()
+        assert page.evaluate('window.__copied') == base + '?t=fixture-token'
+        browser.close()
+
+
 def test_external_qr_url_is_converted_to_inline_image(service, monkeypatch):
     from catalog import wechat_binding
     svc, _ = service

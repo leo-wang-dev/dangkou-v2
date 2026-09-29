@@ -13,7 +13,7 @@ button{border:0;border-radius:9px;padding:9px 15px;margin:4px 6px 0 0;cursor:poi
 <h1>微信扫码绑定 / 换绑档口</h1>
 <div class="hint">请使用要绑定的老板微信扫描二维码，并在手机上确认。二维码只在本次扫码期间短时有效，绑定关系会长期保存；以后更换老板微信时，回到本页点击“再次换绑微信”即可，确认后会替换原来绑定的微信，旧账号立即失去管理权限。</div>
 <div id="status" class="status" role="status">正在连接微信扫码服务…</div><div id="qr" class="empty">二维码加载中</div>
-<div><button id="start" class="primary">生成/刷新二维码</button><button id="cancel" class="outline">取消本次扫码</button></div>
+<div><button id="start" class="primary">生成/刷新二维码</button><button id="cancel" class="outline">取消本次扫码</button><button id="copy-link" class="outline">复制完整绑定链接</button></div>
 <p class="muted">本页面不显示微信服务密钥。若提示服务未配置，请联系开通人员。</p>
 </div></main>
 <script>
@@ -24,5 +24,7 @@ function render(s){sid=s?.sessionId||sid;const state=s?.state||'idle';$('start')
 const text={idle:'等待生成二维码',qr_ready:'请用要绑定的微信扫描二维码',scanned:'已扫码，请在手机上确认',needs_verification:'请按手机提示完成验证',confirmed:'已确认，正在替换旧微信…',finalized:'绑定完成，新微信已生效',cancelled:'本次扫码已取消',expired:'二维码已过期，正在刷新',failed:'扫码失败，请重新生成'}[state]||state;setStatus(text);if(state==='confirmed'&&sid)finalize();if(state==='expired'||state==='failed')setTimeout(start,500)}
 async function poll(){try{render((await api('wechat-binding/session')).session)}catch(e){setStatus(e.message)}finally{timer=setTimeout(poll,2000)}}async function start(){if(busy)return;busy=true;try{render((await api('wechat-binding/start',{method:'POST'})).session)}catch(e){setStatus(e.message)}finally{busy=false}}
 async function finalize(){if(busy)return;busy=true;try{const d=await api('wechat-binding/finalize',{method:'POST',body:JSON.stringify({sessionId:sid})});setStatus(d.replaced?'绑定完成，已替换旧微信':'绑定完成，新微信已生效');$('qr').className='empty';$('qr').textContent='已完成绑定'}catch(e){setStatus(e.message)}finally{busy=false}}
-$('start').onclick=start;$('cancel').onclick=async()=>{if(!sid)return;try{await api('wechat-binding/cancel',{method:'POST',body:JSON.stringify({sessionId:sid})});render({state:'cancelled',sessionId:sid})}catch(e){setStatus(e.message)}};start();poll();
+$('start').onclick=start;$('cancel').onclick=async()=>{if(!sid)return;try{await api('wechat-binding/cancel',{method:'POST',body:JSON.stringify({sessionId:sid})});render({state:'cancelled',sessionId:sid})}catch(e){setStatus(e.message)}};
+$('copy-link').onclick=async()=>{if(!token)return;try{await navigator.clipboard.writeText(location.origin+location.pathname+'?t='+encodeURIComponent(token));setStatus('完整绑定链接已复制，请只发给有权限的老板')}catch{setStatus('复制失败，请从管理页重新打开绑定入口')}};
+if(token){start();poll()}else{$('start').disabled=true;$('cancel').disabled=true;$('copy-link').disabled=true;$('qr').textContent='当前没有二维码';setStatus('绑定链接缺少授权参数。请从管理页重新打开，或使用包含 ?t= 的完整绑定链接')}
 </script></body></html>
