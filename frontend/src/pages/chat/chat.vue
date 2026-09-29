@@ -3,7 +3,11 @@
     <language-picker @change="pickLang" />
     <!-- 页内操作条（标题栏由 pages.json 提供；token 从链接带入） -->
     <view class="header">
-      <text class="who">{{ accountToken ? accountEmail : t('guestMode') }}</text>
+      <text class="who">{{ accountToken ? (accountEmail || t('wechatUser')) : t('guestMode') }}</text>
+      <!-- #ifdef MP-WEIXIN -->
+      <button v-if="loginMethod !== 'wechat'" class="hbtn ghost" :disabled="loggingIn" @click="doWechatLogin">{{ accountToken ? t('bindWechat') : t('wechatLogin') }}</button>
+      <!-- #endif -->
+      <button v-if="accountToken && loginMethod === 'wechat'" class="hbtn ghost" @click="loginBar = !loginBar">{{ t('bindEmail') }}</button>
       <button class="hbtn ghost" @click="toggleLogin">{{ accountToken ? t('logoutShort') : t('login') }}</button>
       <button class="hbtn ghost" @click="openList">📋 {{ t('myShortList') }}</button>
       <button class="hbtn ghost" @click="photo">📷</button>
@@ -12,7 +16,7 @@
 
     <view v-if="loginBar" class="loginbar">
       <view class="row"><input v-model="loginEmail" class="inp" type="text" :placeholder="t('email')" /><button class="hbtn" :disabled="sending" @click="sendCode">{{ t('sendCodeShort') }}</button></view>
-      <view class="row"><input v-model="loginCode" class="inp" type="number" :placeholder="t('verificationCode')" /><button class="hbtn" :disabled="!codeSent || loggingIn" @click="doLogin">{{ t('login') }}</button></view>
+      <view class="row"><input v-model="loginCode" class="inp" type="number" :placeholder="t('verificationCode')" /><button class="hbtn" :disabled="!codeSent || loggingIn" @click="doLogin">{{ loginMethod === 'wechat' ? t('bindEmail') : t('login') }}</button></view>
       <text class="hint">{{ t('loginHint') }}</text>
     </view>
     <view v-if="claimPending" class="loginbar"><button class="hbtn" @click="retryClaim">{{ t('refresh') }}</button><text class="hint">{{ t('networkError') }}</text></view>
@@ -70,11 +74,13 @@ import { onLoad, onUnload } from '@dcloudio/uni-app'
 import { setCustomerTenant, customerSessionKey } from '../../api.js'
 import { csApi, toolApi, choosePhoto } from '../../api.js'
 import { storage } from '../../storage.js'
+import { wechatLoginCode } from '../../wechat-login.js'
 import NoteTable from '../../components/note-table.vue'
 
 const token = ref('')
 const visitor = ref('')
 const accountToken = ref(''), accountEmail = ref('')
+const loginMethod = ref('email')
 const viewportHeight = ref(0), compactViewport = ref(false)
 function updateViewport(){
   if(typeof window==='undefined')return
@@ -117,7 +123,7 @@ async function toggleLogin(){
   if(accountToken.value){
     const r=await toolApi.endSession()
     if(!r.ok){tip(r.data?.detail||t('networkError'));return}
-    accountToken.value='';accountEmail.value='';storage.remove('ut_token');storage.remove('ut_email')
+    accountToken.value='';accountEmail.value='';loginMethod.value='email';storage.remove('ut_token');storage.remove('ut_email');storage.remove('ut_login_method')
     const unclaimed=claimPending.value&&!!visitor.value
     claimPending.value=false
     if(unclaimed){await refreshSession();await loadHistory()}else await newSession()
@@ -159,13 +165,27 @@ async function doLogin(){
   if(!address||!code){tip(t('enterEmailCode'));return}
   loggingIn.value=true
   try{
-    const r=await toolApi.verify(address,code,storage.get('ut_guest'))
+    const r=await toolApi.verify(address,code,loginMethod.value==='wechat'?'':storage.get('ut_guest'),loginMethod.value==='wechat'?accountToken.value:'')
     if(!r.ok){tip(r.data?.detail||t('loginError'));return}
-    accountToken.value=r.data.token;accountEmail.value=r.data.email
-    storage.set('ut_token',accountToken.value);storage.set('ut_email',accountEmail.value);storage.remove('ut_guest')
+    accountToken.value=r.data.token;accountEmail.value=r.data.email;loginMethod.value='email'
+    storage.set('ut_token',accountToken.value);storage.set('ut_email',accountEmail.value);storage.set('ut_login_method','email');storage.remove('ut_guest')
     if(!await claimCurrentGuest())return
     loginBar.value=false;await refreshSession();await loadHistory();tip(t('loginMergedDetailed',{email:accountEmail.value}))
   }finally{loggingIn.value=false}
+}
+
+async function doWechatLogin(){
+  loggingIn.value=true
+  try{
+    const wxCode=await wechatLoginCode()
+    const r=await toolApi.wechat(wxCode,accountToken.value?'':storage.get('ut_guest'),accountToken.value)
+    if(!r.ok){tip(r.data?.detail||t('wechatLoginFailed'));return}
+    accountToken.value=r.data.token;accountEmail.value=r.data.email||'';loginMethod.value=r.data.login_method||'wechat'
+    storage.set('ut_token',accountToken.value);storage.set('ut_email',accountEmail.value);storage.set('ut_login_method',loginMethod.value);storage.remove('ut_guest')
+    if(!await claimCurrentGuest())return
+    loginBar.value=false;await refreshSession();await loadHistory();tip(t('wechatBound'))
+  }catch(e){tip(t('wechatLoginFailed'))}
+  finally{loggingIn.value=false}
 }
 
 // 回复里的清单链接可点：H5 直接打开；小程序无法外链，点击复制
@@ -292,13 +312,14 @@ onLoad((options) => {
   visitor.value = storage.get(customerSessionKey(token.value))
   accountToken.value = storage.get('ut_token')
   accountEmail.value = storage.get('ut_email')
+  loginMethod.value = storage.get('ut_login_method','email')
   ready = (async()=>{
     if(accountToken.value){
       const me=await toolApi.me()
-      if(me.ok){accountEmail.value=me.data.email;storage.set('ut_email',accountEmail.value)
+      if(me.ok){accountEmail.value=me.data.email||'';loginMethod.value=me.data.login_method||'email';storage.set('ut_email',accountEmail.value);storage.set('ut_login_method',loginMethod.value)
         if(await claimCurrentGuest()){await refreshSession();await loadHistory()}return}
       if(me.status!==401){tip(me.data?.detail||t('networkError'));return}
-      accountToken.value='';accountEmail.value='';storage.remove('ut_token');storage.remove('ut_email')
+      accountToken.value='';accountEmail.value='';loginMethod.value='email';storage.remove('ut_token');storage.remove('ut_email');storage.remove('ut_login_method')
     }
     if(visitor.value){await refreshSession();await loadHistory()}else await newSession()
   })()

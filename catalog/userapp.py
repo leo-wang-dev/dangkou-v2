@@ -25,7 +25,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
-from . import guest_sessions, note_batches, auth_codes
+from . import guest_sessions, note_batches, auth_codes, wechat_auth
 from . import llm as default_llm
 from .cs_export import render_notes
 from . import cs_i18n
@@ -90,7 +90,8 @@ def _send_code_stub(email: str, code: str, codes_log: str):
 _mail_context = ContextVar('otp_mail_context', default=('zh',600))
 
 
-def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
+def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None,
+              wechat_exchange=None):
     """构建独立 FastAPI app；模块导入零副作用（测试传 tmp 路径直建）。"""
     db_path = db_path or os.environ.get(
         'USER_APP_DB', os.path.join(_ROOT, 'data', 'userapp.db'))
@@ -105,6 +106,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     conn.execute('PRAGMA journal_mode=WAL')
     conn.executescript(SCHEMA)
     auth_codes.migrate(conn)
+    wechat_auth.migrate(conn)
     guest_sessions.migrate(conn)
     note_batches.migrate(conn, "notes")
     for table in ('users','guest_sessions'):
@@ -125,6 +127,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
     app.state.photo_dir = photo_dir
     app.state.codes_log = codes_log
     app.state.llm = llm or default_llm
+    app.state.wechat_exchange = wechat_exchange or wechat_auth.exchange_code
     current_connection = ContextVar('userapp_request_connection', default=None)
     model_limiter = anyio.CapacityLimiter(4)
 
@@ -395,6 +398,57 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
 
     # ---------- 邮箱验证码 ----------
 
+    def merge_guest(request: Request, owner_email: str, guest: str) -> None:
+        if not guest:
+            return
+        session = guest_sessions.revoke(request_conn(), guest, 'merged')
+        request_conn().execute('UPDATE users SET lang=? WHERE email=?',
+                               (cs_i18n.request_language(request, session['lang']), owner_email))
+        request_conn().execute(
+            "UPDATE notes SET owner_kind='user', owner_id=? WHERE owner_kind='guest' AND owner_id=?",
+            (owner_email, session['owner_id']))
+        if request_conn().execute(
+                "SELECT 1 FROM note_batches WHERE owner_kind='guest' AND owner_id=? AND active=1",
+                (session['owner_id'],)).fetchone():
+            request_conn().execute(
+                "UPDATE note_batches SET active=0 WHERE owner_kind='user' AND owner_id=?", (owner_email,))
+        request_conn().execute(
+            "UPDATE note_batches SET owner_kind='user', owner_id=? WHERE owner_kind='guest' AND owner_id=?",
+            (owner_email, session['owner_id']))
+
+    @app.post('/auth/wechat')
+    async def auth_wechat(request: Request):
+        try:
+            body = await request.json()
+        except ValueError:
+            raise HTTPException(400, '请求必须为 JSON 对象')
+        if not isinstance(body, dict):
+            raise HTTPException(400, '请求必须为 JSON 对象')
+        code = body.get('code')
+        guest = body.get('guest') or ''
+        if not isinstance(code, str) or not 1 <= len(code) <= 1024 or not isinstance(guest, str):
+            raise HTTPException(400, '微信登录参数无效')
+        if len(guest) > 200:
+            raise HTTPException(400, '游客凭据无效')
+        def login():
+            appid, openid = request.app.state.wechat_exchange(code)
+            auth = request.headers.get('authorization', '')
+            current_email = ''
+            if auth.lower().startswith('bearer '):
+                kind, current_email = _identity(request)
+                if kind != 'user':
+                    raise HTTPException(401, '请先登录邮箱账号')
+            request_conn().execute('BEGIN IMMEDIATE')
+            email = wechat_auth.bind_or_create(request_conn(), appid, openid, current_email)
+            if guest:
+                merge_guest(request, email, guest)
+            token = secrets.token_urlsafe(32)
+            request_conn().execute('INSERT INTO session_tokens(token_hash,email) VALUES(?,?)',
+                                   (_hash(token), email))
+            return {'token': token, 'email': '' if wechat_auth.is_shadow(email) else email,
+                    'login_method': 'wechat' if wechat_auth.is_shadow(email) else 'email'}
+        return await run_request_worker(request, login)
+
     @app.post('/auth/code')
     async def auth_code(request: Request):
         try:
@@ -404,7 +458,7 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         if not isinstance(body, dict):
             raise HTTPException(400, '请求必须为 JSON 对象')
         email = str(body.get('email') or '').strip().lower()
-        if len(email) > 254 or not EMAIL_RE.fullmatch(email):
+        if len(email) > 254 or not EMAIL_RE.fullmatch(email) or wechat_auth.is_shadow(email):
             raise HTTPException(400, '邮箱格式不正确')
         def send_code():
             context = _mail_context.set((cs_i18n.request_language(request), auth_codes.setting('USER_APP_OTP_TTL_SECONDS',600)))
@@ -427,32 +481,32 @@ def build_app(db_path=None, photo_dir=None, codes_log=None, llm=None):
         email = str(body.get('email') or '').strip().lower()
         code = str(body.get('code') or '').strip()
         guest = str(body.get('guest') or '').strip()
+        link_token = str(body.get('link_token') or '').strip()
+        if wechat_auth.is_shadow(email) or len(link_token) > 200:
+            raise HTTPException(400, '邮箱或绑定凭据无效')
         def verify_code():
             auth_codes.consume(request_conn(), email, code)
             request_conn().execute('INSERT OR IGNORE INTO users(email,account_id) VALUES(?,?)', (email,secrets.token_hex(16)))
-            # 合并：当前游客的记录迁到账号名下（guest 行随之清空）。
-            if guest:
-                session = guest_sessions.revoke(request_conn(), guest, 'merged')
-                request_conn().execute('UPDATE users SET lang=? WHERE email=?',(cs_i18n.request_language(request,session['lang']),email))
-                request_conn().execute(
-                    "UPDATE notes SET owner_kind='user', owner_id=? WHERE owner_kind='guest' AND owner_id=?",
-                    (email, session['owner_id']))
-                if request_conn().execute("SELECT 1 FROM note_batches WHERE owner_kind='guest' AND owner_id=? AND active=1",(session['owner_id'],)).fetchone():
-                    request_conn().execute("UPDATE note_batches SET active=0 WHERE owner_kind='user' AND owner_id=?",(email,))
-                request_conn().execute(
-                    "UPDATE note_batches SET owner_kind='user', owner_id=? WHERE owner_kind='guest' AND owner_id=?",
-                    (email, session['owner_id']))
+            if link_token:
+                source = request_conn().execute('SELECT email FROM session_tokens WHERE token_hash=?',
+                                                (_hash(link_token),)).fetchone()
+                if source is None:
+                    raise HTTPException(401, '微信登录已失效，请重新登录')
+                wechat_auth.link_email(request_conn(), source['email'], email)
+            merge_guest(request, email, guest)
             token = secrets.token_urlsafe(32)
             request_conn().execute('INSERT INTO session_tokens(token_hash, email) VALUES(?,?)',
                          (_hash(token), email))
-            return {'token': token, 'email': email}
+            return {'token': token, 'email': email, 'login_method': 'email'}
         return await run_request_worker(request, verify_code)
 
     @app.get('/me')
     def me(request: Request):
         kind, owner_id = _identity(request, '')
         account_id = request_conn().execute('SELECT account_id FROM users WHERE email=?',(owner_id,)).fetchone()[0] if kind == 'user' else ''
-        return {'kind': kind, 'email': owner_id if kind == 'user' else '', 'account_id':account_id,
+        return {'kind': kind, 'email': owner_id if kind == 'user' and not wechat_auth.is_shadow(owner_id) else '',
+                'login_method': 'wechat' if kind == 'user' and wechat_auth.is_shadow(owner_id) else 'email',
+                'account_id':account_id,
                 'lang':cs_i18n.normalize_language(request.state.customer_language)}
 
     # ---------- 页面（nginx 经 /tool/ 反代，前缀剥掉后落到这里的根路由） ----

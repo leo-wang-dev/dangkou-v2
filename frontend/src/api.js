@@ -7,7 +7,8 @@
 //
 // 后端接口对照：
 // - user-app（catalog/userapp.py，:19100）：POST /guest、POST /photo、POST /notes、
-//   GET /notes/{id}/photo、GET /export.xlsx、POST /auth/code、POST /auth/verify、GET /me
+//   GET /notes/{id}/photo、GET /export.xlsx、POST /auth/code、POST /auth/verify、
+//   POST /auth/wechat、GET /me
 // - 商家运行时（catalog/api.py，443→:8890）：POST /cs/chat/{token}/{message|photo|lang}、
 //   GET /cs/chat/{token}/list-token、GET /cs/link/{k}、PATCH /cs/link/{k}/note/{id}、
 //   GET /cs/link/{k}/export.xlsx
@@ -220,8 +221,11 @@ export const toolApi = {
   confirmBatch: (batch_id, note_ids = [], fields = null, action = 'confirm') => request((fields ? 'batches' : 'batches/confirm') + toolQuery(), { method:'POST',base:getBases().tool,headers:toolAuthHeaders(),data:{batch_id,note_ids,fields,action} }),
   newGuest: () => request('guest', { method: 'POST', base: getBases().tool }),
   sendCode: (email) => request('auth/code', { method: 'POST', base: getBases().tool, data: { email } }),
-  verify: (email, code, guest) =>
-    request('auth/verify', { method: 'POST', base: getBases().tool, data: { email, code, guest } }),
+  verify: (email, code, guest, link_token = '') =>
+    request('auth/verify', { method: 'POST', base: getBases().tool, data: { email, code, guest, link_token } }),
+  wechat: (code, guest = '', token = '') =>
+    request('auth/wechat', { method: 'POST', base: getBases().tool,
+      headers: token ? { Authorization: 'Bearer ' + token } : {}, data: { code, guest } }),
   me: () => request('me', { base: getBases().tool, headers: toolAuthHeaders() }),
   uploadPhoto: (filePath) =>
     upload('photo', filePath, { owner: storage.get('ut_guest') }, { base: getBases().tool, headers: toolAuthHeaders() }),

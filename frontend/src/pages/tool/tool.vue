@@ -3,7 +3,11 @@
     <language-picker @change="pickLang" />
     <!-- 页头：身份 + 登录/退出（标题栏由 pages.json 提供） -->
     <view class="header">
-      <text class="who">{{ token ? email : t('guestMode') }}</text>
+      <text class="who">{{ token ? (email || t('wechatUser')) : t('guestMode') }}</text>
+      <!-- #ifdef MP-WEIXIN -->
+      <button v-if="loginMethod !== 'wechat'" class="hbtn" :disabled="loggingIn" @click="doWechatLogin">{{ token ? t('bindWechat') : t('wechatLogin') }}</button>
+      <!-- #endif -->
+      <button v-if="token && loginMethod === 'wechat'" class="hbtn" @click="loginBar = !loginBar">{{ t('bindEmail') }}</button>
       <button class="hbtn" @click="toggleLogin">{{ token ? t('logoutShort') : t('login') }}</button>
     </view>
 
@@ -15,7 +19,7 @@
       </view>
       <view class="row">
         <input v-model="code" class="inp" type="number" :placeholder="t('verificationCode')" />
-        <button class="btn" :disabled="!codeSent || loggingIn" @click="doLogin">{{ t('login') }}</button>
+        <button class="btn" :disabled="!codeSent || loggingIn" @click="doLogin">{{ loginMethod === 'wechat' ? t('bindEmail') : t('login') }}</button>
       </view>
       <view class="hint">{{ t('loginHint') }}</view>
       <view class="cfg" @click="cfgOpen = true">{{ t('server') }}: {{ bases.tool || t('sameOrigin') }} / {{ bases.cs || t('sameOrigin') }} · {{ t('tapToEdit') }}</view>
@@ -88,6 +92,7 @@ import { ref, nextTick } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
 import { toolApi, getBases, setBases, choosePhoto } from '../../api.js'
 import { storage } from '../../storage.js'
+import { wechatLoginCode } from '../../wechat-login.js'
 
 async function pickLang(lang){changeLanguage(lang);const r=await toolApi.setLang(lang);if(!r.ok)tip(r.data?.detail||t('networkError'));if(drawer.value)await openList()}
 
@@ -110,6 +115,7 @@ function detachViewport(){
   window.visualViewport?.removeEventListener('scroll',updateViewport);window.removeEventListener('resize',updateViewport)
 }
 const token = ref('')
+const loginMethod = ref('email')
 const email = ref('')
 const code = ref('')
 const codeSent = ref(null)      // null=未发码（登录禁用）；true=已发
@@ -159,7 +165,7 @@ async function endSession() {
   }catch(e){tip(t('networkError'))}
 }
 async function init() {
-  if(token.value){const r=await toolApi.me();if(r.ok&&r.data.lang)changeLanguage(r.data.lang)}
+  if(token.value){const r=await toolApi.me();if(r.ok){if(r.data.lang)changeLanguage(r.data.lang);email.value=r.data.email||'';loginMethod.value=r.data.login_method||'email';storage.set('ut_email',email.value);storage.set('ut_login_method',loginMethod.value)}}
   if (!guest.value) {
     const r = await toolApi.newGuest()
     if (r.ok && r.data && r.data.guest) {
@@ -181,6 +187,7 @@ async function toggleLogin() {
     email.value = ''
     storage.remove('ut_token')
     storage.remove('ut_email')
+    storage.remove('ut_login_method');loginMethod.value='email'
     guest.value = ''; storage.remove('ut_guest'); await init()
     loginBar.value = false
     bubble('bot', t('signedOutGuest'))
@@ -205,16 +212,32 @@ async function doLogin() {
   const c = (code.value || '').trim()
   if (!addr || !c) { tip(t('enterEmailCode')); return }
   loggingIn.value = true
-  const r = await toolApi.verify(addr, c, token.value ? '' : guest.value)
+  const r = await toolApi.verify(addr, c, token.value ? '' : guest.value, loginMethod.value === 'wechat' ? token.value : '')
   loggingIn.value = false
   if (!r.ok) { tip((r.data && r.data.detail) || t('loginError')); return }
   guest.value = ''; storage.remove('ut_guest')
   token.value = r.data.token
   email.value = r.data.email
+  loginMethod.value = 'email';storage.set('ut_login_method','email')
   storage.set('ut_token', token.value)
   storage.set('ut_email', email.value)
   loginBar.value = false
   bubble('bot', t('loginMergedDetailed',{email:email.value}))
+  await refreshBatches()
+}
+
+async function doWechatLogin() {
+  loggingIn.value=true
+  try {
+    const wxCode=await wechatLoginCode()
+    const r=await toolApi.wechat(wxCode, token.value ? '' : guest.value, token.value)
+    if(!r.ok){tip(r.data?.detail||t('wechatLoginFailed'));return}
+    token.value=r.data.token;email.value=r.data.email||'';loginMethod.value=r.data.login_method||'wechat'
+    storage.set('ut_token',token.value);storage.set('ut_email',email.value);storage.set('ut_login_method',loginMethod.value)
+    guest.value='';storage.remove('ut_guest');loginBar.value=false
+    await refreshBatches();tip(t('wechatBound'))
+  }catch(e){tip(t('wechatLoginFailed'))}
+  finally{loggingIn.value=false}
 }
 
 async function photo() {
@@ -253,6 +276,7 @@ onLoad(() => {
   guest.value = storage.get('ut_guest')
   token.value = storage.get('ut_token')
   email.value = storage.get('ut_email')
+  loginMethod.value = storage.get('ut_login_method','email')
   bases.value = getBases()
   cfgTool.value = bases.value.tool
   cfgCs.value = bases.value.cs
