@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 from . import db, tickets, notify, parser_execution
 
@@ -205,8 +206,16 @@ def _run_owned(conn, doc_id, callback=None, *, owner=None):
             if _sha256(row['input_path']) != row['content_sha256']:
                 raise ValueError('导入源文件校验失败，请重新上传')
             path = row['converted_path']
+            prefetched_xls = None
             if not path or not os.path.isfile(path) or _sha256(path) != row['converted_sha256']:
-                path = _ensure_xlsx(row['input_path'])
+                if phase == 'template' and str(row['input_path']).lower().endswith('.xls'):
+                    with ThreadPoolExecutor(max_workers=1) as pool:
+                        early = pool.submit(dynamic_import.prefetch_xls_template,
+                                            row['input_path'], row['source_key'])
+                        path = _ensure_xlsx(row['input_path'])
+                        prefetched_xls = early.result()
+                else:
+                    path = _ensure_xlsx(row['input_path'])
                 conn.execute('UPDATE import_doc SET converted_path=?,converted_sha256=? WHERE id=? AND lease_owner=?',
                     (path, _sha256(path), doc_id, owner)); conn.commit()
             work_dir = os.path.join(row['work_dir'], 'attempt-' + owner)
@@ -216,7 +225,8 @@ def _run_owned(conn, doc_id, callback=None, *, owner=None):
             kwargs = dict(source_key=row['source_key'], doc_id=doc_id,
                           mode=row['mode'] or None, category_key=row['category_key'] or None)
             if phase == 'template':
-                payload = dynamic_import.build_template_payload(conn, path, work_dir, **kwargs)
+                payload = dynamic_import.build_template_payload(
+                    conn, path, work_dir, prefetched_xls=prefetched_xls, **kwargs)
                 stats = {'phase': phase, 'template_doc_id': doc_id,
                     'categories': [s['template']['name'] for s in payload['sheets']],
                     'review_hints': [dict(hint, source_sheet=s['source_sheet'])

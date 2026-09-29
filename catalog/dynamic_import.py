@@ -192,6 +192,46 @@ def _qwen_template_sheets(xlsx_path: str) -> list[dict] | None:
     return _convert_template_sheets(data)
 
 
+def prefetch_xls_template(xls_path: str, source_key: str) -> dict | None:
+    """Start semantic header discovery while the XLS converter is running."""
+    try:
+        evidence = workbook_templates.extract_xls_header_evidence(xls_path)
+        if not evidence:
+            return None
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            supplier = pool.submit(ai_extract.guess_supplier, source_key, [x['title'] for x in evidence])
+            headers = pool.submit(ai_extract.discover_headers, evidence)
+            result = _convert_template_sheets(headers.result() or [])
+            supplier_guess = supplier.result()
+        return {'evidence': evidence, 'discovered': result, 'supplier_guess': supplier_guess}
+    except Exception as exc:  # Conversion remains the authoritative path.
+        print(f'[dynamic_import] XLS 并行表头预读失败，改用转换后识别：{exc}', flush=True)
+        return None
+
+
+def _safe_prefetched_xls(prefetched: dict | None, converted_evidence: list[dict]) -> bool:
+    """A drawing in an unlabelled column needs the full converted evidence."""
+    if not prefetched or not prefetched.get('discovered'):
+        return False
+    early = prefetched['evidence']
+    if [x['title'] for x in early] != [x['title'] for x in converted_evidence]:
+        return False
+    for sheet in converted_evidence:
+        source = next(x for x in early if x['title'] == sheet['title'])
+        # Only reuse the AI answer when both readers saw the same grid.  An
+        # image-only column still needs the converted drawing anchors.
+        for row_index, row in enumerate(sheet['grid']):
+            before = source['grid'][row_index] if row_index < len(source['grid']) else []
+            for col, value in enumerate(row):
+                if value.strip() != (before[col].strip() if col < len(before) else ''):
+                    return False
+        for raw_col in sheet['图片锚点列']:
+            col = int(raw_col)
+            if not any(col <= len(row) and row[col - 1].strip() for row in sheet['grid']):
+                return False
+    return True
+
+
 def _convert_template_sheets(items: list) -> list[dict] | None:
     """子代理/qwen 共用：columns 输出 → discovered 形状；0 个有效 Sheet 返回 None。"""
     discovered = []
@@ -665,7 +705,8 @@ def _recover_picture_models(discovered: list[dict], xlsx_path: str) -> None:
 
 def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
                            doc_id: int | None = None, mode: str | None = None,
-                           category_key: str | None = None) -> dict:
+                           category_key: str | None = None,
+                           prefetched_xls: dict | None = None) -> dict:
     """Create a small template-only approval payload.
 
     The workbook is opened once for schema discovery, but rows and images are
@@ -688,10 +729,15 @@ def build_template_payload(conn, xlsx_path, work_dir, *, source_key: str,
         visible_sheets = [sheet.title for sheet in book.worksheets if sheet.sheet_state == 'visible']
     finally:
         book.close()
+    converted_evidence = workbook_templates.extract_header_evidence(xlsx_path) if prefetched_xls else []
+    use_prefetched = _safe_prefetched_xls(prefetched_xls, converted_evidence)
     with ThreadPoolExecutor(max_workers=1) as supplier_pool:
-        supplier_future = supplier_pool.submit(
-            ai_extract.guess_supplier, source_key or os.path.basename(xlsx_path), visible_sheets)
-        discovered = _qwen_template_sheets(xlsx_path)
+        if use_prefetched:
+            supplier_future = supplier_pool.submit(lambda: prefetched_xls['supplier_guess'])
+        else:
+            supplier_future = supplier_pool.submit(
+                ai_extract.guess_supplier, source_key or os.path.basename(xlsx_path), visible_sheets)
+        discovered = prefetched_xls['discovered'] if use_prefetched else _qwen_template_sheets(xlsx_path)
         if discovered is not None:
             print(f'[dynamic_import] 模板阶段表头发现：qwen 快路（{len(discovered)} 个 Sheet）', flush=True)
         else:

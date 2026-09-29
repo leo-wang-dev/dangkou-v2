@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import hashlib
+from itertools import islice
 import json
 import os
 import re
 import zipfile
 import xml.etree.ElementTree as ET
-from openpyxl.utils.cell import coordinate_to_tuple
+from openpyxl.utils.cell import coordinate_to_tuple, get_column_letter
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -311,4 +312,30 @@ def extract_header_evidence(path, max_rows=8, max_cols=25) -> list:
         out.append({'title': ws.title, 'grid': grid,
                     '图片锚点列': col_imgs, '合并区': merges})
     wb.close()
+    return out
+
+
+def extract_xls_header_evidence(path, max_rows=8, max_cols=25) -> list:
+    """Read only the old XLS header grid before LibreOffice finishes converting it.
+
+    This provisional evidence intentionally omits drawings.  The caller must
+    compare it with converted XLSX evidence before accepting the AI result.
+    """
+    from python_calamine import CalamineWorkbook
+
+    book = CalamineWorkbook.from_path(str(path))
+    out = []
+    for title in book.sheet_names:
+        sheet = book.get_sheet_by_name(title)
+        left = sheet.start[1]
+        grid = []
+        for row in islice(sheet.iter_rows(), max_rows):
+            cells = [''] * left + [_text(value) for value in row]
+            grid.append(cells[:max_cols])
+        merges = []
+        for (start_row, start_col), (end_row, end_col) in sheet.merged_cell_ranges:
+            first = f'{get_column_letter(start_col + 1)}{start_row + 1}'
+            last = f'{get_column_letter(end_col + 1)}{end_row + 1}'
+            merges.append(first if first == last else f'{first}:{last}')
+        out.append({'title': title, 'grid': grid, '图片锚点列': {}, '合并区': merges[:15]})
     return out
