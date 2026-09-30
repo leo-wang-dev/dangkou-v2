@@ -43,6 +43,8 @@ def _validate_image_bytes(data: bytes) -> str:
 def _auth(request: Request, token: str):
     if not token:
         raise HTTPException(503, '服务未配置认证令牌，管理接口暂不可用')
+    if getattr(request.state, 'app_management', False):
+        return
     h = request.headers.get('X-Service-Token')
     if h != token and request.query_params.get('token') != token and request.query_params.get('auth') != token:
         raise HTTPException(401, 'unauthorized')
@@ -121,6 +123,9 @@ def register_routes(app: FastAPI):
 
     async def run_request_worker(request, work, *, model=False):
         return await run_worker(request, work, limiter=model_limiter if model else None)
+
+    from . import app_entry
+    app_entry.register(app, request_conn)
 
     @app.middleware('http')
     async def database_request(request, call_next):

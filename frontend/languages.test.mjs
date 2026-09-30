@@ -70,7 +70,7 @@ let payload,downloads=0,fail=false
 const quoteContext=vm.createContext({Number,JSON,Error,cur:{cat:'supplier-category'},MANAGE_PREFIX:'/merchant/manage/example',H:{},setTimeout(){},
  document:{getElementById:id=>nodes[id],createTextNode:s=>s,createElement:()=>({click(){downloads++}})},URL:{createObjectURL:()=> 'blob:local',revokeObjectURL(){}},
  api:async (path,options)=>{assert.equal(path,'/quote');payload=JSON.parse(options.body);if(fail)throw Error('明确错误');return {download_url:'/quotes/quote-12345678.xlsx',quantity_adjustment_note:'需求50，按整箱报80'}},
- fetch:async url=>{assert.equal(url,'/merchant/manage/example/quotes/quote-12345678.xlsx');return {ok:true,blob:async()=>({})}}
+ AUTH:{fetch:async url=>{assert.equal(url,'/merchant/manage/example/quotes/quote-12345678.xlsx');return {ok:true,blob:async()=>({})}}}
 })
 vm.runInContext(quoteCode,quoteContext)
 await vm.runInContext("submitQuote('exact-product')",quoteContext)

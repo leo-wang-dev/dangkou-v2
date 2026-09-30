@@ -122,7 +122,7 @@ def register(app):
 
     def public_language_asset(path):
         # Exact public, nonsecret release assets; no merchant lookup/API forwarding.
-        if path in ('customer-catalog.js','customer-sources.js','customer-i18n.js'):
+        if path in ('customer-catalog.js','customer-sources.js','customer-i18n.js','app-auth.js'):
             from fastapi.responses import FileResponse
             return FileResponse(Path(__file__).resolve().parent.parent / 'static' / path,
                                 headers={'Cache-Control':'no-cache'})

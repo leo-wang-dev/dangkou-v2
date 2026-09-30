@@ -9,7 +9,7 @@
     "build:h5": "uni build",
     "build:mp-weixin": "uni build -p mp-weixin",
     "build:mp-weixin:release": "node scripts/build-release-miniapp.mjs",
-    "test": "node test.mjs && node --test session-behavior.test.mjs wechat-login.test.mjs release-build.test.mjs && node languages.test.mjs"
+    "test": "node test.mjs && node --test session-behavior.test.mjs wechat-login.test.mjs release-build.test.mjs && node languages.test.mjs && node --test ../tests/app-auth.test.mjs"
   },
   "dependencies": {
     "@dcloudio/uni-app": "3.0.0-5020620260917001",

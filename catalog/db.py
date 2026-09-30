@@ -25,6 +25,8 @@ def init_db(conn):
     note_batches.migrate(conn, "cs_note")
     from . import shop_account
     shop_account.migrate(conn)
+    from . import app_entry
+    app_entry.migrate(conn)
     _seed_cs(conn)
     conn.commit()
 

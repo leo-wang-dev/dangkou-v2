@@ -93,13 +93,15 @@ def test_binding_page_handles_missing_token_and_copies_usable_link():
         browser = pw.chromium.launch(headless=True)
         page = browser.new_page()
         requests = []
-        page.route('https://binding.example/**', lambda route: (
-            route.fulfill(status=200, content_type='text/html', body=html)
-            if route.request.resource_type == 'document' else (
-                requests.append(route.request.headers.get('x-service-token')),
-                route.fulfill(status=200, content_type='application/json', body='{"session":{"state":"idle"}}')
-            )[-1]
-        ))
+        def serve(route):
+            if route.request.resource_type == 'document':
+                return route.fulfill(status=200, content_type='text/html', body=html)
+            if route.request.url.endswith('/app-auth.js'):
+                script = (Path(__file__).parents[1] / 'static' / 'app-auth.js').read_text()
+                return route.fulfill(status=200, content_type='application/javascript', body=script)
+            requests.append(route.request.headers.get('x-service-token'))
+            return route.fulfill(status=200, content_type='application/json', body='{"session":{"state":"idle"}}')
+        page.route('https://binding.example/**', serve)
         page.goto(base)
         page.wait_for_timeout(100)
         assert '缺少授权' in page.locator('#status').inner_text()

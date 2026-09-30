@@ -110,18 +110,14 @@ img.big{width:86px;height:86px}
 </div>
 <div id="modal"><div class="box" id="modalBox"></div></div>
 <script src="./customer-catalog.js"></script>
+<script src="./app-auth.js"></script>
 <script>
 const MANAGE_PREFIX = location.pathname.match(/^\/merchant\/manage\/[a-f0-9]{24}/)?.[0] || '';
-const QUERY_TOKEN = new URLSearchParams(location.search).get('t') || '';
-const TOKEN_STORE = 'catalog-service-token:' + (MANAGE_PREFIX || '/');
-const TOKEN = QUERY_TOKEN || sessionStorage.getItem(TOKEN_STORE) || '';
-if(QUERY_TOKEN){
-  sessionStorage.setItem(TOKEN_STORE, QUERY_TOKEN);
-  history.replaceState(null,'',location.pathname);
-}
-const H = {'X-Service-Token': TOKEN, 'Content-Type': 'application/json'};
+const AUTH = window.createCatalogAuth(MANAGE_PREFIX);
+const TOKEN = AUTH.token;
+const H = {'Content-Type': 'application/json'};
 function openWechatBinding(){
-  const u=MANAGE_PREFIX+'/wechat-bind.html'+(TOKEN?'?t='+encodeURIComponent(TOKEN):'');
+  const u=MANAGE_PREFIX+'/wechat-bind.html'+(AUTH.appMode?'?app_session=1':(TOKEN?'?t='+encodeURIComponent(TOKEN):''));
   window.open(u,'_blank','noopener');
 }
 let CAT_NAMES = {};
@@ -137,7 +133,7 @@ const esc = s => str(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,
 // page can be mounted below /merchant/manage/<id>, so make every audit image
 // use the same mount prefix as the API calls and product page.
 function manageAssetUrl(value){
-  const src = str(value);
+  const src = AUTH.url(str(value));
   if(!src || /^(?:https?:|data:|blob:)/i.test(src)) return src;
   if(MANAGE_PREFIX && src.startsWith(MANAGE_PREFIX+'/')) return src;
   if(src.startsWith('/')){
@@ -159,7 +155,10 @@ function cleanSrc(n){
                       .replace(/-[0-9a-f]{8}(\.\w+)?$/, '$1') || '（未记录）';
 }
 const api = async (p, opt={}) => {
-  const r = await fetch(MANAGE_PREFIX+p, {...opt, headers:H});
+  const r = await AUTH.fetch(MANAGE_PREFIX+p, {...opt, headers:H}).catch(error=>{
+    if(AUTH.appMode){ document.getElementById('review').textContent=error.message; document.getElementById('plist').textContent=error.message; }
+    throw error;
+  });
   if(!r.ok){
     if(r.status===401 || r.status===503){
       document.getElementById('review').textContent='管理链接无效或服务未配置，请使用商家专属链接。';
@@ -179,7 +178,7 @@ function show(v){
   if(v==='products') { loadCats(); }
   if(v==='wechat'){
     const frame=document.getElementById('wechat-frame');
-    if(!frame.src) frame.src=MANAGE_PREFIX+'/wechat-bind.html'+(TOKEN?'?t='+encodeURIComponent(TOKEN):'');
+    if(!frame.src) frame.src=MANAGE_PREFIX+'/wechat-bind.html'+(AUTH.appMode?'?app_session=1':(TOKEN?'?t='+encodeURIComponent(TOKEN):''));
   }
 }
 
@@ -449,10 +448,10 @@ async function addImgs(input){
   const files=[...input.files]; input.value='';
   for(const f of files){
     const fd=new FormData(); fd.append('file',f);
-    const r=await fetch(MANAGE_PREFIX+'/upload',{method:'POST',headers:{'X-Service-Token':TOKEN},body:fd});
+    const r=await AUTH.fetch(MANAGE_PREFIX+'/upload',{method:'POST',headers:{'X-Service-Token':TOKEN},body:fd});
     if(!r.ok){ alert('上传失败:'+await r.text()); return; }
     const rel=(await r.json()).path;
-    formCtx.images.push({rel, url:`${MANAGE_PREFIX}/img/${rel}?token=${TOKEN}`});
+    formCtx.images.push({rel, url:AUTH.url(`${MANAGE_PREFIX}/img/${rel}?token=${TOKEN}`)});
   }
   renderImgMan();
 }
@@ -532,7 +531,7 @@ async function openForm(pid){
   const fields = await tplFields(cur.cat);
   const p = pid ? cur.prods.find(x=>x['id']===pid) : null;
   formCtx = {mode: p?'product':'create', pid,
-    images: (p?(p['图集']||[p['主图']].filter(Boolean)):[]).map(rel=>({rel, url:`${MANAGE_PREFIX}/img/${rel}?token=${TOKEN}`}))};
+    images: (p?(p['图集']||[p['主图']].filter(Boolean)):[]).map(rel=>({rel, url:AUTH.url(`${MANAGE_PREFIX}/img/${rel}?token=${TOKEN}`)}))};
   document.getElementById('modalBox').innerHTML =
     formHtml(`${p?'编辑':'新增'}商品（${CAT_NAMES[cur.cat]||cur.tpl?.name||cur.cat}）`, p||{}, fields).replace('{{FORM_NOTE}}','提交后生成审批工单，批准后生效。');
   document.getElementById('modal').style.display='flex';
@@ -673,7 +672,7 @@ function renderProducts(){
   el.innerHTML = rows.map(p=>{
     const visible = String(p['可观测'])==='1';
     const imgs=(p['图集']&&p['图集'].length?p['图集']:[p['主图']].filter(Boolean))
-      .map(r=>`${MANAGE_PREFIX}/img/${r}?token=${TOKEN}`);
+      .map(r=>AUTH.url(`${MANAGE_PREFIX}/img/${r}?token=${TOKEN}`));
     return `<div class="card pcard">
       <div class="phead">
         ${imgs.length?`<div class="imgwrap"><img class="p big" src="${imgs[0]}" onclick='lbGallery(${JSON.stringify(imgs)})'>
@@ -713,7 +712,7 @@ async function submitQuote(pid){
   const button=document.getElementById('quote-submit');button.disabled=true;
   try{
     const data=await api('/quote',{method:'POST',body:JSON.stringify({items:[{category:cur.cat,product_id:pid,quantity}],target_language:document.getElementById('quote-language').value})});
-    const file=await fetch(MANAGE_PREFIX+data.download_url,{headers:H});
+    const file=await AUTH.fetch(MANAGE_PREFIX+data.download_url,{headers:H});
     if(!file.ok)throw Error('报价已生成，但下载失败，请重试');
     const url=URL.createObjectURL(await file.blob()),a=document.createElement('a');a.href=url;a.download='quotation.xlsx';a.textContent='重新下载报价单';result.replaceChildren(a);a.click();
     if(data.quantity_adjustment_note)result.append(document.createTextNode(' '+data.quantity_adjustment_note));
