@@ -395,6 +395,17 @@ def _agent_rows(template: dict, xlsx_path: str, work_dir, sheet: str = '') -> li
             reason = '来源行不在已观察到的数据区域，请核对表头或商品分组'
         if not refs:
             uncertain = True
+        # 模型偶发把 field_xxxx…key 抄短一两位（实发：glm-5.3 把 field_0f4371a7a9 写成
+        # field_0f4371a7，价格整列被静默丢弃）。非模板键若恰好是唯一模板键的前缀
+        # （≥8 字符，label 撞名排除），按前缀回映射；无法唯一映射的键打印告警，不再无声蒸发。
+        template_keys = {f['key'] for f in template['fields'] if f.get('role') != 'image'}
+        for extra in set(product) - template_keys - {'source_sheet', 'source_rows', 'source_row',
+                                                     'supplier', 'image_main', 'images', 'image_count'}:
+            candidates = [key for key in template_keys if key.startswith(extra) and len(extra) >= 8]
+            if len(candidates) == 1:
+                product.setdefault(candidates[0], product[extra])
+            else:
+                print(f'[dynamic_import] agent 输出含未知字段键 {extra!r}（值首段：{str(product[extra])[:24]!r}），已丢弃', flush=True)
         data = {f['key']: '' if product.get(f['key'], product.get(f['label'])) is None else str(product.get(f['key'], product.get(f['label'])))
                 for f in template['fields'] if f.get('role') != 'image'}
         if not any(v.strip() for v in data.values()):
