@@ -15,7 +15,7 @@ done
 
 echo "== 2. 端口 =="
 for p in 8890 19010 17605 17606 4000; do
-  ss -tln | grep -q "127.0.0.1:$p " && ok "port $p" || bad "port $p"
+  ss -tln | grep -qE "(127.0.0.1|0.0.0.0):$p " && ok "port $p" || bad "port $p"
 done
 curl -sk -o /dev/null -w "" https://106.55.20.61/health && ok "https 443 → health" || bad "https 443"
 
