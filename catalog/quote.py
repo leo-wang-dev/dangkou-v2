@@ -201,7 +201,17 @@ def generate_generic(conn, storage, items, price_adjustment_pct, out_path, depos
         ws.row_dimensions[r].height = _DATA_ROW_H
         row = extract(p)
         try:
-            base = Decimal(str(row['price'] or '0').replace('¥', '').replace(',', ''))
+            # 商家表价格常带单位/附注（实发：「28.5元/台\n（不含税运）」「AC：42.5元/台 DC：32元/台」）。
+            # 逐字入库不动原文，出报价单时取文本中的首个金额数字（多价取第一个，如 AC/DC 双规格）；
+            # 提不出数字才按无效报错——数字来自商家原文，不是编造。
+            price_text = str(row['price'] or '0').replace('¥', '').replace(',', '').replace('￥', '')
+            try:
+                base = Decimal(price_text)
+            except InvalidOperation:
+                match = re.search(r'\d+(?:\.\d+)?', price_text)
+                if not match:
+                    raise
+                base = Decimal(match.group())
             if not base.is_finite() or base < 0:
                 raise ValueError('商品价格必须为有效非负金额')
             unit = (base * (1 + Decimal(str(price_adjustment_pct)) / 100)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)

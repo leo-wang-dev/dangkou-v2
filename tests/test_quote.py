@@ -443,3 +443,26 @@ def test_negative_adjustment_floor_and_decimal_half_up(tmp_path):
     conn.execute("UPDATE product_dynamic SET data_json=json_set(data_json,'$.price','1.005') WHERE id='r0'")
     quote.generate_generic(conn, st, items, 0, out)
     assert openpyxl.load_workbook(out).active['E2'].value == 1.01
+
+
+def test_verbose_price_text_first_number_extracted(tmp_path):
+    """商家价格带单位/附注（如「28.5元/台（不含税运）」「AC：42.5元 DC：32元」）：
+    取首个金额数字出单，逐字原文不改写；无任何数字才报价格格式无效。"""
+    conn = sqlite3.connect(':memory:', check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    db.init_db(conn)
+    st = LocalStorage(str(tmp_path))
+    seed_products(conn, [
+        {'id': 'p1', 'inner_code': 'KS-CCCCCCCC',
+         'data': {'model': 'KZ-228', 'price': '28.5元/台\n（不含税运）', 'ctn': ''}},
+        {'id': 'p2', 'inner_code': 'KS-DDDDDDDD',
+         'data': {'model': 'KZ-928', 'price': 'AC：42.5元/台\nDC：32元/台', 'ctn': ''}},
+    ])
+    out = str(tmp_path / 'verbose.xlsx')
+    quote.generate_generic(conn, st, [
+        {'category': 'test_cat', 'product_id': 'p1', 'quantity': 100},
+        {'category': 'test_cat', 'product_id': 'p2', 'quantity': 100},
+    ], price_adjustment_pct=0, out_path=out)
+    ws = openpyxl.load_workbook(out).active
+    assert ws.cell(2, 5).value == 28.5
+    assert ws.cell(3, 5).value == 42.5
