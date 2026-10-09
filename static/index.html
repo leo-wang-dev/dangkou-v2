@@ -477,13 +477,16 @@ function closeForm(){ document.getElementById('modal').style.display='none'; for
 
 async function editTemplateDraft(tid, key){
   const item=dynamicImportRows[tid]?.[key];
-  if(!item) return;
+  if(!item){ alert('该行已刷新或不存在，请关闭后重新打开编辑'); return; }
   const fields=[...formFields(item.tpl.fields).map(field=>({...field,col:field.key})),{col:'__supplier',label:'供应商',role:'spec'}];
   const row=item.row, srcImgs=(row._imgs||[]).map(manageAssetUrl), srcRels=row.images||[];
-  formCtx={mode:'template-draft',tid,key,cat:item.tpl.key,fields,
+  // 弹窗必须亮明正在编辑哪一行：型号优先，没有型号就用供应商+行号，杜绝"传错行要等批准后才发现"
+  const modelField=(item.tpl.fields||[]).find(f=>f.role==='model');
+  const rowLabel=String((row.data||{})[modelField?modelField.key:'model']||row.supplier||key).slice(0,40);
+  formCtx={mode:'template-draft',tid,key,cat:item.tpl.key,fields,rowLabel,
     images:srcImgs.map((url,index)=>({rel:srcRels[index]||null,url}))};
   document.getElementById('modalBox').innerHTML=
-    formHtml('编辑导入商品',{...row.data,__supplier:row.supplier||item.tpl.supplier||''},fields).replace('{{FORM_NOTE}}','修改会保存到本工单，通过整单后才生效。');
+    formHtml(`编辑导入商品 · ${esc(rowLabel)}`,{...row.data,__supplier:row.supplier||item.tpl.supplier||''},fields).replace('{{FORM_NOTE}}','修改会保存到本工单，通过整单后才生效。');
   document.getElementById('modal').style.display='flex';
 }
 
@@ -551,7 +554,9 @@ async function submitForm(){
       const t=(await api('/tickets')).tickets.find(x=>x.id===tid);
       await api(`/tickets/${tid}/draft`,{method:'PATCH',body:JSON.stringify(
         {token:t.token,row_key:key,edits:allEdits})});
+      const label=formCtx.rowLabel||key;
       closeForm(); refreshDetail(tid);
+      alert(`已保存到「${label}」（${rels.length}张图）。核对一下列表里这行的图片，不对就点它重新编辑。`);
     }else if(formCtx.mode==='draft'){
       const {tid,key}=formCtx;
       const allEdits={...changes};
@@ -561,6 +566,7 @@ async function submitForm(){
         const t=(await api('/tickets')).tickets.find(x=>x.id===tid);
         await api(`/tickets/${tid}/draft`, {method:'PATCH', body:JSON.stringify(
           {token:t.token, row_key:key, edits:allEdits})});
+        alert(`已保存（${rels.length}张图）。请在列表里核对目标行的图片。`);
       }
       closeForm();
       refreshDetail(tid);
