@@ -531,8 +531,17 @@ export async function apply(ctx, _config = {}) {
   })
 
   ctx.tools.register({
+    name: 'customer_link_get', output: OUT,
+    description: '获取本店客服入口链接（H5 网页，发给客户微信即可用：发消息、拍照整理清单、找老板）。TG 客服已下线，这是唯一客服入口。',
+    parameters: {type:'object', properties:{}},
+    async execute(){
+      const d = await call('/shop/linkage')
+      return JSON.stringify({cs_chat_url: `${PUBLIC}/cs/chat/${d.chat_token || ''}`, note: '客服入口=H5链接（TG已下线）'})
+    },
+  })
+  ctx.tools.register({
     name: 'shop_contact_get', output: OUT,
-    description: '查看本档口唯一ID、名称、档口号、绑定的TG bot和老板联系方式。',
+    description: '查看本档口唯一ID、名称、档口号和老板联系方式。TG 客服已下线，客服入口用 customer_link_get。',
     parameters: {type:'object', properties:{}},
     async execute(){ return JSON.stringify(await call('/shop')) },
   })
